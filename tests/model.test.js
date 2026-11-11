@@ -11,6 +11,7 @@ import {
   overlaps,
   parseProject,
   projectBounds,
+  rotatePart,
   serialize,
   snapPosition,
   starterProject,
@@ -135,4 +136,37 @@ test('movePart changes only the given axes and refuses positions beyond the limi
     { x: 12.3, y: 6, z: 7 },
   );
   assert.equal(movePart(board, { y: 20000 }), board);
+});
+
+test('turning a board swaps the two axes around the turn axis and keeps its centre', () => {
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, orientation: 'xzy', x: 18, y: 300, z: 6 });
+  const turned = rotatePart(shelf, 'y');
+  assert.equal(turned.orientation, 'zxy');
+  assert.deepEqual(extents(turned), { z: 764, x: 244, y: 18 });
+  const centre = (part) => {
+    const size = extents(part);
+    return [part.x + size.x / 2, part.y + size.y / 2, part.z + size.z / 2];
+  };
+  assert.deepEqual(centre(turned), centre(shelf));
+  assert.deepEqual(rotatePart(turned, 'y'), shelf);
+});
+
+test('every rotation gives a valid orientation and four turns bring the board back', () => {
+  for (const orientation of Object.keys(ORIENTATIONS)) {
+    for (const axis of ['x', 'y', 'z']) {
+      const board = makePart({ orientation, y: 2000 });
+      const once = rotatePart(board, axis);
+      assert.ok(once.orientation in ORIENTATIONS, `${orientation} around ${axis}`);
+      let back = board;
+      for (let i = 0; i < 4; i++) back = rotatePart(back, axis);
+      assert.deepEqual(back, board);
+    }
+  }
+});
+
+test('tipping a board that lies on the floor keeps it on the floor, not through it', () => {
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, orientation: 'xzy', y: 0 });
+  const tipped = rotatePart(shelf, 'x');
+  assert.equal(tipped.orientation, 'xyz');
+  assert.equal(tipped.y, 0);
 });

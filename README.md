@@ -12,7 +12,10 @@ For anyone building furniture or other projects from boards and sheet goods: lay
 
 - A project is a name and a list of parts. Every part is a rectangular board: length, width and thickness in millimetres, the position of its left, bottom, back corner, how it lies (six orientations), and its wood.
 - Add, duplicate, delete and edit boards. Clicking a board in the 3D view picks it in the list and the other way round.
-- Move a board by dragging it in the 3D view once it is picked: it slides along the floor, Shift lifts or lowers it, and it snaps flush to other boards or to a 10 mm grid (Alt places it freely). Arrow keys nudge it 10 mm, Shift+arrow 1 mm, Alt+↑/↓ back and forth. A whole drag is one undo step.
+- Move a board by dragging it in the 3D view once it is picked. Floor or Height in the toolbar picks whether it slides along the floor or goes up and down; Shift switches for one drag. With Snap on (remembered per browser) it sits flush against other boards or on a 10 mm grid; Alt does the opposite for one drag. Arrow keys nudge it 10 mm, Shift+arrow 1 mm, Alt+↑/↓ back and forth. A whole drag is one undo step.
+- Turn, Tip and Roll rotate the picked board 90° around its centre (keys R, T, L), and a board on the floor stays on it. The Lies list still sets any of the six ways directly.
+- The 3D view redraws only when something changes, so an idle page leaves the GPU alone.
+- Debug (top bar) shows the graphics card in use, frames per second, GPU time per frame where the browser allows measuring it, and the app's CPU time. A web page cannot read the whole computer's GPU or CPU load, so these are the app's own share.
 - 3D view with wood colours and grain along the length, shadows, a 100 mm floor grid, orbit, zoom and pan, Iso, Front, Side and Top cameras, and Fit.
 - Workbench layout: parts on the left, the 3D view with the cut list under it in the middle, the selected board on the right. On a phone the 3D view stays on top with Parts, Edit and Cut list tabs below.
 - Boards that overlap are flagged in the list.

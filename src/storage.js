@@ -1,6 +1,37 @@
 import { parseProject, serialize } from './model.js';
 
 const KEY = 'woodworking-planner:project';
+const SNAP_KEY = 'woodworking-planner:snap';
+
+export function loadSnap() {
+  try {
+    return localStorage.getItem(SNAP_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+const DEBUG_KEY = 'woodworking-planner:debug';
+
+export function loadDebug() {
+  try {
+    return localStorage.getItem(DEBUG_KEY) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+export function saveDebug(on) {
+  try {
+    localStorage.setItem(DEBUG_KEY, on ? 'on' : 'off');
+  } catch {}
+}
+
+export function saveSnap(on) {
+  try {
+    localStorage.setItem(SNAP_KEY, on ? 'on' : 'off');
+  } catch {}
+}
 
 export function loadSaved() {
   try {

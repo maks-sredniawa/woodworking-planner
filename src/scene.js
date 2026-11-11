@@ -48,6 +48,11 @@ export function createScene(container, { onSelect, onDrag }) {
   let fitted = false;
   let lastBox = null;
   let theme = THEMES.light;
+  let dirty = true;
+  const invalidate = () => {
+    dirty = true;
+  };
+  controls.addEventListener('change', invalidate);
 
   function grainTexture(species) {
     if (grain.has(species)) return grain.get(species);
@@ -117,6 +122,7 @@ export function createScene(container, { onSelect, onDrag }) {
   function moveBoard(part) {
     const mesh = boards.children.find((child) => child.userData.partId === part.id);
     if (mesh) placeMesh(mesh, part);
+    invalidate();
   }
 
   function disposeBoards() {
@@ -133,6 +139,7 @@ export function createScene(container, { onSelect, onDrag }) {
   }
 
   function paintSelection() {
+    invalidate();
     for (const mesh of boards.children) {
       const selected = mesh.userData.partId === selectedId;
       const edges = mesh.children[0];
@@ -217,6 +224,7 @@ export function createScene(container, { onSelect, onDrag }) {
   const canvas = renderer.domElement;
   let down = null;
   let drag = null;
+  let liftMode = false;
 
   function boardUnder(event) {
     const rect = canvas.getBoundingClientRect();
@@ -240,7 +248,8 @@ export function createScene(container, { onSelect, onDrag }) {
       if (event.button !== 0 || !selectedId) return;
       const hit = boardUnder(event);
       if (hit?.object.userData.partId !== selectedId) return;
-      drag = { id: selectedId, start: hit.point.clone(), plane: dragPlane(hit.point, event.shiftKey), vertical: event.shiftKey };
+      const vertical = event.shiftKey !== liftMode;
+      drag = { id: selectedId, start: hit.point.clone(), plane: dragPlane(hit.point, vertical), vertical };
       controls.enabled = false;
       canvas.setPointerCapture(event.pointerId);
       canvas.style.cursor = 'grabbing';
@@ -262,7 +271,7 @@ export function createScene(container, { onSelect, onDrag }) {
       phase: 'move',
       id: drag.id,
       delta: drag.vertical ? { y: delta.y } : { x: delta.x, z: delta.z },
-      snap: !event.altKey,
+      invertSnap: event.altKey,
     });
   });
 
@@ -289,21 +298,94 @@ export function createScene(container, { onSelect, onDrag }) {
     renderer.setSize(clientWidth, clientHeight, false);
     camera.aspect = clientWidth / clientHeight;
     camera.updateProjectionMatrix();
+    invalidate();
   }
   new ResizeObserver(resize).observe(container);
   resize();
 
+  const gl = renderer.getContext();
+  const timer = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  const pendingQueries = [];
+  const measured = { frames: 0, cpuMs: 0, gpuMs: 0, gpuFrames: 0, since: performance.now() };
+  let measuring = false;
+
+  function collectGpuTimes() {
+    while (pendingQueries.length) {
+      const query = pendingQueries[0];
+      if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) break;
+      pendingQueries.shift();
+      if (!gl.getParameter(timer.GPU_DISJOINT_EXT)) {
+        measured.gpuMs += gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6;
+        measured.gpuFrames += 1;
+      }
+      gl.deleteQuery(query);
+    }
+  }
+
+  function draw() {
+    if (!measuring) {
+      renderer.render(scene, camera);
+      return;
+    }
+    const query = timer && pendingQueries.length < 8 ? gl.createQuery() : null;
+    if (query) gl.beginQuery(timer.TIME_ELAPSED_EXT, query);
+    const started = performance.now();
+    renderer.render(scene, camera);
+    measured.cpuMs += performance.now() - started;
+    measured.frames += 1;
+    if (query) {
+      gl.endQuery(timer.TIME_ELAPSED_EXT);
+      pendingQueries.push(query);
+    }
+  }
+
+  function gpuName() {
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  }
+
+  function readStats() {
+    if (timer) collectGpuTimes();
+    const now = performance.now();
+    const result = {
+      seconds: (now - measured.since) / 1000,
+      frames: measured.frames,
+      cpuMs: measured.cpuMs,
+      gpuMs: timer ? measured.gpuMs : null,
+      gpuFrames: measured.gpuFrames,
+      gpu: gpuName(),
+      calls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      geometries: renderer.info.memory.geometries,
+      textures: renderer.info.memory.textures,
+    };
+    Object.assign(measured, { frames: 0, cpuMs: 0, gpuMs: 0, gpuFrames: 0, since: now });
+    return result;
+  }
+
   renderer.setAnimationLoop(() => {
     controls.update();
-    renderer.render(scene, camera);
+    if (measuring && timer) collectGpuTimes();
+    if (!dirty) return;
+    dirty = false;
+    draw();
   });
 
   return {
     setParts,
     moveBoard,
     setSelected,
+    setLiftMode: (on) => {
+      liftMode = on;
+    },
     setTheme,
     fit: () => lastBox && frame(lastBox),
     look: (name) => lastBox && frame(lastBox, VIEWS[name]),
+    framesDrawn: () => renderer.info.render.frame,
+    setMeasuring: (on) => {
+      measuring = on;
+      readStats();
+    },
+    readStats,
   };
 }
