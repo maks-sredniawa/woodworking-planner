@@ -17,7 +17,8 @@ const THEMES = {
 
 export function createScene(container, { onSelect, onDrag }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const fullPixelRatio = () => Math.min(window.devicePixelRatio, 2);
+  renderer.setPixelRatio(fullPixelRatio());
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.append(renderer.domElement);
@@ -49,6 +50,8 @@ export function createScene(container, { onSelect, onDrag }) {
   let lastBox = null;
   let theme = THEMES.light;
   let dirty = true;
+  let potato = false;
+  let lastParts = [];
   const invalidate = () => {
     dirty = true;
   };
@@ -85,15 +88,19 @@ export function createScene(container, { onSelect, onDrag }) {
     return texture;
   }
 
-  function boardMesh(part) {
-    const geometry = new THREE.BoxGeometry(part.length, part.thickness, part.width);
+  function woodMaterial(part) {
     const map = grainTexture(part.species).clone();
     map.needsUpdate = true;
     map.repeat.set(part.length / 900, Math.max(part.width, part.thickness) / 220);
-    const material = new THREE.MeshStandardMaterial({ map, roughness: 0.75, metalness: 0 });
+    return new THREE.MeshStandardMaterial({ map, roughness: 0.75, metalness: 0 });
+  }
+
+  function boardMesh(part) {
+    const geometry = new THREE.BoxGeometry(part.length, part.thickness, part.width);
+    const material = potato ? new THREE.MeshLambertMaterial({ color: SPECIES[part.species].color }) : woodMaterial(part);
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = !potato;
+    mesh.receiveShadow = !potato;
     mesh.userData.partId = part.id;
 
     const [lengthAxis, widthAxis, thicknessAxis] = part.orientation;
@@ -128,7 +135,7 @@ export function createScene(container, { onSelect, onDrag }) {
   function disposeBoards() {
     for (const mesh of boards.children) {
       mesh.geometry.dispose();
-      mesh.material.map.dispose();
+      mesh.material.map?.dispose();
       mesh.material.dispose();
       for (const child of mesh.children) {
         child.geometry.dispose();
@@ -189,6 +196,7 @@ export function createScene(container, { onSelect, onDrag }) {
   }
 
   function setParts(parts) {
+    lastParts = parts;
     disposeBoards();
     for (const part of parts) boards.add(boardMesh(part));
     paintSelection();
@@ -204,6 +212,16 @@ export function createScene(container, { onSelect, onDrag }) {
   function setSelected(id) {
     selectedId = id;
     paintSelection();
+  }
+
+  function setPotato(on) {
+    potato = on;
+    renderer.setPixelRatio(on ? 1 : fullPixelRatio());
+    renderer.shadowMap.enabled = !on;
+    sun.castShadow = !on;
+    floor.visible = !on;
+    resize();
+    setParts(lastParts);
   }
 
   function setTheme(dark) {
@@ -419,5 +437,6 @@ export function createScene(container, { onSelect, onDrag }) {
       readStats();
     },
     readStats,
+    setPotato,
   };
 }

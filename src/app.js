@@ -14,7 +14,7 @@ import {
   updatePart,
 } from './model.js';
 import { createScene } from './scene.js';
-import { download, loadDebug, loadSaved, loadSnap, readFile, save, saveDebug, saveSnap } from './storage.js';
+import { download, loadDebug, loadPotato, loadSaved, loadSnap, readFile, save, saveDebug, savePotato, saveSnap } from './storage.js';
 import { createDebugPanel } from './debug.js';
 
 const HISTORY_LIMIT = 100;
@@ -426,6 +426,13 @@ function setDebug(on) {
 $('debug-toggle').addEventListener('click', () => setDebug($('debug-toggle').getAttribute('aria-pressed') !== 'true'));
 setDebug(loadDebug());
 
+function setPotato(on) {
+  savePotato(on);
+  view.setPotato(on);
+  $('potato-toggle').setAttribute('aria-pressed', String(on));
+}
+$('potato-toggle').addEventListener('click', () => setPotato($('potato-toggle').getAttribute('aria-pressed') !== 'true'));
+
 const ARROWS = {
   ArrowLeft: () => ['x', -1],
   ArrowRight: () => ['x', 1],
@@ -470,5 +477,6 @@ darkQuery.addEventListener('change', applyTheme);
 applyTheme();
 
 render();
+setPotato(loadPotato());
 persist();
 window.woodworkingPlanner = { get project() { return project; }, select, framesDrawn: () => view.framesDrawn() };

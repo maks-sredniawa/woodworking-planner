@@ -210,6 +210,17 @@ try:
         page.keyboard.press('Control+z')
         assert shelf()[0] == 'zxy', f'each rotation is its own undo step: {shelf()}'
 
+        assert page.evaluate('document.querySelector(".bar").getBoundingClientRect().height') < 60, 'top bar wrapped onto two rows'
+        page.click('#potato-toggle')
+        expect(page.locator('#potato-toggle')).to_have_attribute('aria-pressed', 'true')
+        page.reload()
+        expect(page.locator('#potato-toggle')).to_have_attribute('aria-pressed', 'true')
+        page.mouse.click(cx, cy)
+        expect(page.locator('.row.sel .nm')).to_have_text('Back panel')
+        page.click('#potato-toggle')
+        expect(page.locator('#potato-toggle')).to_have_attribute('aria-pressed', 'false')
+        expect(page.locator('.row.sel .nm')).to_have_text('Back panel')
+
         expect(page.locator('#debug')).to_be_hidden()
         page.click('#debug-toggle')
         expect(page.locator('#debug')).to_contain_text('Graphics')
