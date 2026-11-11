@@ -12,6 +12,7 @@ For anyone building furniture or other projects from boards and sheet goods: lay
 
 - A project is a name and a list of parts. Every part is a rectangular board: length, width and thickness in millimetres, the position of its left, bottom, back corner, how it lies (six orientations), and its wood.
 - Add, duplicate, delete and edit boards. Clicking a board in the 3D view picks it in the list and the other way round.
+- Move a board by dragging it in the 3D view once it is picked: it slides along the floor, Shift lifts or lowers it, and it snaps flush to other boards or to a 10 mm grid (Alt places it freely). Arrow keys nudge it 10 mm, Shift+arrow 1 mm, Alt+↑/↓ back and forth. A whole drag is one undo step.
 - 3D view with wood colours and grain along the length, shadows, a 100 mm floor grid, orbit, zoom and pan, Iso, Front, Side and Top cameras, and Fit.
 - Workbench layout: parts on the left, the 3D view with the cut list under it in the middle, the selected board on the right. On a phone the 3D view stays on top with Parts, Edit and Cut list tabs below.
 - Boards that overlap are flagged in the list.
@@ -44,7 +45,6 @@ uv run --with playwright python tests/browser/ui_test.py
 - Joinery: should parts know about joints (dados, tenons, dowels) so lengths and the cut list account for them?
 - Sheet goods: a cutting plan that nests parts onto standard boards or plywood sheets, with saw kerf?
 - Shapes beyond rectangular boards (rounds, angled cuts)?
-- Moving boards by dragging in 3D, and snapping to other boards.
 - Hosting: a page on maksforge.com, installable for offline use.
 
 ## Contributing

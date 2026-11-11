@@ -203,3 +203,47 @@ export function starterProject() {
     ],
   };
 }
+
+export const SNAP_GRID_MM = 10;
+export const SNAP_REACH_MM = 15;
+
+export function snapPosition(part, proposed, others, { snap = true } = {}) {
+  const size = extents(part);
+  const result = {};
+  for (const axis of POSITION) {
+    if (!(axis in proposed)) continue;
+    const value = proposed[axis];
+    if (!snap) {
+      result[axis] = roundMm(value);
+      continue;
+    }
+    let best = null;
+    const consider = (target) => {
+      const distance = Math.abs(target - value);
+      if (distance <= SNAP_REACH_MM && (best === null || distance < Math.abs(best - value))) best = target;
+    };
+    if (axis === 'y') consider(0);
+    for (const other of others) {
+      if (other.id === part.id) continue;
+      const box = bounds(other);
+      for (const face of [box.min[axis], box.max[axis]]) {
+        consider(face);
+        consider(face - size[axis]);
+      }
+    }
+    result[axis] = roundMm(best ?? Math.round(value / SNAP_GRID_MM) * SNAP_GRID_MM);
+  }
+  if ('y' in result && result.y < 0 && snap) result.y = 0;
+  return result;
+}
+
+export function movePart(part, position) {
+  const next = { ...part };
+  for (const axis of POSITION) {
+    if (!(axis in position)) continue;
+    const value = roundMm(position[axis]);
+    if (!Number.isFinite(value) || Math.abs(value) > MAX_SIZE_MM) return part;
+    next[axis] = value;
+  }
+  return next;
+}

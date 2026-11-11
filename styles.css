@@ -195,6 +195,7 @@ main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 312px; min-hei
 }
 .fields input.num { font-family: var(--mono); }
 .fields input[aria-invalid="true"] { border-color: var(--danger); outline-color: var(--danger); }
+.help { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .wood { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; }
 .wood .sw { width: auto; height: 34px; border-radius: 6px; }

@@ -15,7 +15,7 @@ const THEMES = {
   dark: { background: 0x16191c, gridMajor: 0x363d44, gridMinor: 0x262b30, select: 0x2dd4bf },
 };
 
-export function createScene(container, { onSelect }) {
+export function createScene(container, { onSelect, onDrag }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -98,8 +98,7 @@ export function createScene(container, { onSelect }) {
     if (new THREE.Matrix4().makeBasis(basisX, basisY, basisZ).determinant() < 0) basisZ.negate();
     mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(basisX, basisY, basisZ));
 
-    const size = extents(part);
-    mesh.position.set(part.x + size.x / 2, part.y + size.y / 2, part.z + size.z / 2);
+    placeMesh(mesh, part);
 
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(geometry),
@@ -108,6 +107,16 @@ export function createScene(container, { onSelect }) {
     edges.raycast = () => {};
     mesh.add(edges);
     return mesh;
+  }
+
+  function placeMesh(mesh, part) {
+    const size = extents(part);
+    mesh.position.set(part.x + size.x / 2, part.y + size.y / 2, part.z + size.z / 2);
+  }
+
+  function moveBoard(part) {
+    const mesh = boards.children.find((child) => child.userData.partId === part.id);
+    if (mesh) placeMesh(mesh, part);
   }
 
   function disposeBoards() {
@@ -205,17 +214,72 @@ export function createScene(container, { onSelect }) {
 
   const pointer = new THREE.Vector2();
   const raycaster = new THREE.Raycaster();
+  const canvas = renderer.domElement;
   let down = null;
-  renderer.domElement.addEventListener('pointerdown', (event) => {
-    down = { x: event.clientX, y: event.clientY };
-  });
-  renderer.domElement.addEventListener('pointerup', (event) => {
-    if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_SLOP_PX) return;
-    const rect = renderer.domElement.getBoundingClientRect();
+  let drag = null;
+
+  function boardUnder(event) {
+    const rect = canvas.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     camera.updateMatrixWorld();
     raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.intersectObjects(boards.children, false)[0];
+    return raycaster.intersectObjects(boards.children, false)[0] ?? null;
+  }
+
+  function dragPlane(point, vertical) {
+    if (!vertical) return new THREE.Plane().setFromNormalAndCoplanarPoint(AXIS.y, point);
+    const facing = camera.position.clone().sub(controls.target).setY(0);
+    const normal = facing.lengthSq() < 1e-6 ? AXIS.z.clone() : facing.normalize();
+    return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point);
+  }
+
+  canvas.addEventListener(
+    'pointerdown',
+    (event) => {
+      down = { x: event.clientX, y: event.clientY };
+      if (event.button !== 0 || !selectedId) return;
+      const hit = boardUnder(event);
+      if (hit?.object.userData.partId !== selectedId) return;
+      drag = { id: selectedId, start: hit.point.clone(), plane: dragPlane(hit.point, event.shiftKey), vertical: event.shiftKey };
+      controls.enabled = false;
+      canvas.setPointerCapture(event.pointerId);
+      canvas.style.cursor = 'grabbing';
+      onDrag({ phase: 'start', id: drag.id });
+    },
+    { capture: true },
+  );
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!drag) {
+      if (event.buttons === 0 && selectedId) canvas.style.cursor = boardUnder(event)?.object.userData.partId === selectedId ? 'grab' : '';
+      return;
+    }
+    boardUnder(event);
+    const point = raycaster.ray.intersectPlane(drag.plane, new THREE.Vector3());
+    if (!point) return;
+    const delta = point.sub(drag.start);
+    onDrag({
+      phase: 'move',
+      id: drag.id,
+      delta: drag.vertical ? { y: delta.y } : { x: delta.x, z: delta.z },
+      snap: !event.altKey,
+    });
+  });
+
+  function endDrag() {
+    if (!drag) return;
+    const { id } = drag;
+    drag = null;
+    controls.enabled = true;
+    canvas.style.cursor = 'grab';
+    onDrag({ phase: 'end', id });
+  }
+  canvas.addEventListener('pointercancel', endDrag);
+
+  canvas.addEventListener('pointerup', (event) => {
+    endDrag();
+    if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_SLOP_PX) return;
+    const hit = boardUnder(event);
     onSelect(hit ? hit.object.userData.partId : null);
   });
 
@@ -236,6 +300,7 @@ export function createScene(container, { onSelect }) {
 
   return {
     setParts,
+    moveBoard,
     setSelected,
     setTheme,
     fit: () => lastBox && frame(lastBox),

@@ -7,10 +7,12 @@ import {
   duplicatePart,
   extents,
   makePart,
+  movePart,
   overlaps,
   parseProject,
   projectBounds,
   serialize,
+  snapPosition,
   starterProject,
   totals,
   updatePart,
@@ -103,4 +105,34 @@ test('loading rejects files that are not projects or hold bad parts', () => {
     () => parseProject('{"format":"woodworking-planner","version":1,"parts":[{"length":-1}]}'),
     /Part 1 has an invalid length/,
   );
+});
+
+test('a dragged board snaps flush against a nearby board face', () => {
+  const side = makePart({ length: 1000, width: 244, thickness: 18, orientation: 'yzx', x: 0 });
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, orientation: 'xzy' });
+  assert.deepEqual(snapPosition(shelf, { x: 25, z: 7 }, [side, shelf]), { x: 18, z: 0 });
+  const right = makePart({ length: 1000, width: 244, thickness: 18, orientation: 'yzx', x: 900 });
+  assert.equal(snapPosition(shelf, { x: 130 }, [right]).x, 136);
+});
+
+test('away from other boards a dragged board snaps to the 10 mm grid, and Alt turns snapping off', () => {
+  const board = makePart();
+  assert.deepEqual(snapPosition(board, { x: 343, z: -127 }, [board]), { x: 340, z: -130 });
+  assert.deepEqual(snapPosition(board, { x: 343.27 }, [board], { snap: false }), { x: 343.3 });
+});
+
+test('a dragged board settles on the floor and never snaps below it', () => {
+  const board = makePart();
+  assert.equal(snapPosition(board, { y: 9 }, [board]).y, 0);
+  assert.equal(snapPosition(board, { y: -40 }, [board]).y, 0);
+  assert.equal(snapPosition(board, { y: -40 }, [board], { snap: false }).y, -40);
+});
+
+test('movePart changes only the given axes and refuses positions beyond the limit', () => {
+  const board = makePart({ x: 5, y: 6, z: 7 });
+  assert.deepEqual(
+    (({ x, y, z }) => ({ x, y, z }))(movePart(board, { x: 12.34 })),
+    { x: 12.3, y: 6, z: 7 },
+  );
+  assert.equal(movePart(board, { y: 20000 }), board);
 });
