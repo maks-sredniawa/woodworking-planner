@@ -1,3 +1,4 @@
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -6,7 +7,9 @@ from playwright.sync_api import expect, sync_playwright
 
 HERE = Path(__file__).parent
 ROOT = HERE.parent.parent
-PORT = 8777
+with socket.socket() as probe:
+    probe.bind(('127.0.0.1', 0))
+    PORT = probe.getsockname()[1]
 URL = f'http://127.0.0.1:{PORT}/index.html'
 
 server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT), '--bind', '127.0.0.1'], cwd=ROOT,
