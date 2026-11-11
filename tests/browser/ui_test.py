@@ -98,6 +98,60 @@ try:
                 bad.unlink()
             page.close()
 
+        page = browser.new_page(viewport={'width': 1280, 'height': 900})
+        page.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.goto(URL)
+        expect(page.locator('#parts li')).to_have_count(7)
+        part = lambda: page.evaluate('(() => { const p = woodworkingPlanner.project.parts[0]; return { x: p.x, y: p.y, z: p.z } })()')
+        box = page.locator('#viewport canvas').bounding_box()
+        cx, cy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+        page.mouse.click(cx, cy)
+        expect(page.locator('.row.sel .nm')).to_have_text('Back panel')
+        start = part()
+
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx + 160, cy + 10, steps=10)
+        page.mouse.up()
+        moved = part()
+        assert moved['x'] > start['x'] + 50 and moved['y'] == start['y'], f'drag did not move along the floor: {moved}'
+        assert moved['x'] % 10 == 0 or moved['x'] in (18, 800), f'drag did not snap: {moved}'
+        expect(page.locator('#editor [name=x]')).to_have_value(str(int(moved['x'])) if moved['x'] == int(moved['x']) else str(moved['x']))
+
+        page.keyboard.down('Shift')
+        page.mouse.move(cx + 270, cy)
+        page.mouse.down()
+        page.mouse.move(cx + 270, cy - 100, steps=10)
+        page.mouse.up()
+        page.keyboard.up('Shift')
+        lifted = part()
+        assert lifted['y'] > 50 and lifted['x'] == moved['x'], f'Shift-drag did not lift the board: {lifted}'
+
+        page.keyboard.press('Control+z')
+        assert part() == moved, 'one undo should take back the whole lift'
+        page.keyboard.press('Control+z')
+        assert part() == start, 'one undo should take back the whole drag'
+
+        page.keyboard.press('ArrowRight')
+        page.keyboard.press('ArrowRight')
+        page.keyboard.press('Shift+ArrowUp')
+        page.keyboard.press('Alt+ArrowDown')
+        assert part() == {'x': start['x'] + 20, 'y': start['y'] + 1, 'z': start['z'] + 10}, part()
+        page.keyboard.press('Control+z')
+        assert part() == start, 'quick nudges undo in one step'
+
+        page.locator('#parts li').nth(3).locator('.row-main').click()
+        before = part()
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx - 200, cy, steps=8)
+        page.mouse.up()
+        assert part() == before, 'dragging an unpicked board must turn the view, not move anything'
+        page.wait_for_timeout(300)
+        page.screenshot(path=str(HERE / 'moved-1280.png'))
+        page.close()
+
         dark = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='dark')
         dark.goto(URL)
         dark.wait_for_timeout(600)

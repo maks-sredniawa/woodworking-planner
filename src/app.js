@@ -4,8 +4,10 @@ import {
   cutList,
   duplicatePart,
   makePart,
+  movePart,
   overlaps,
   projectBounds,
+  snapPosition,
   starterProject,
   totals,
   updatePart,
@@ -23,7 +25,46 @@ const undoStack = [];
 const redoStack = [];
 let lastEdit = null;
 
-const view = createScene($('viewport'), { onSelect: select });
+const NUDGE_MM = 10;
+const FINE_NUDGE_MM = 1;
+let dragStart = null;
+
+const view = createScene($('viewport'), { onSelect: select, onDrag: handleDrag });
+
+function handleDrag({ phase, id, delta, snap }) {
+  if (phase === 'start') {
+    dragStart = { project, part: project.parts.find((part) => part.id === id) };
+    return;
+  }
+  if (!dragStart) return;
+  if (phase === 'move') {
+    const from = dragStart.part;
+    const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
+    const current = selectedPart();
+    const next = movePart(current, snapPosition(from, proposed, project.parts, { snap }));
+    if (next === current || ['x', 'y', 'z'].every((axis) => next[axis] === current[axis])) return;
+    project = { ...project, parts: project.parts.map((part) => (part.id === id ? next : part)) };
+    view.moveBoard(next);
+    renderEditor();
+    return;
+  }
+  const before = dragStart.project;
+  dragStart = null;
+  if (project === before) return;
+  undoStack.push(before);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+  lastEdit = null;
+  persist();
+  render();
+}
+
+function nudge(axis, amount) {
+  const part = selectedPart();
+  if (!part) return;
+  const next = movePart(part, { [axis]: part[axis] + amount });
+  if (next !== part) replacePart(next, 'nudge');
+}
 
 function commit(next, editKey = null) {
   const now = Date.now();
@@ -314,8 +355,21 @@ $('starter').addEventListener('click', () => {
   view.fit();
 });
 
+const ARROWS = {
+  ArrowLeft: () => ['x', -1],
+  ArrowRight: () => ['x', 1],
+  ArrowUp: (alt) => (alt ? ['z', -1] : ['y', 1]),
+  ArrowDown: (alt) => (alt ? ['z', 1] : ['y', -1]),
+};
+
 document.addEventListener('keydown', (event) => {
   const typing = event.target.closest('input, textarea');
+  if (event.key in ARROWS && selectedId && !event.ctrlKey && !event.metaKey && !event.target.closest('input, select, textarea')) {
+    event.preventDefault();
+    const [axis, sign] = ARROWS[event.key](event.altKey);
+    nudge(axis, sign * (event.shiftKey ? FINE_NUDGE_MM : NUDGE_MM));
+    return;
+  }
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 'z' && !typing) {
     event.preventDefault();
