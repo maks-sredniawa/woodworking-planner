@@ -241,6 +241,27 @@ export function createScene(container, { onSelect, onDrag }) {
     return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point);
   }
 
+  function updateDrag() {
+    const vertical = drag.shift !== liftMode;
+    if (vertical !== drag.vertical) {
+      drag.start = drag.last.clone();
+      drag.plane = dragPlane(drag.last, vertical);
+      drag.vertical = vertical;
+      onDrag({ phase: 'rebase', id: drag.id });
+    }
+    boardUnder(drag.pointer);
+    const point = raycaster.ray.intersectPlane(drag.plane, new THREE.Vector3());
+    if (point) drag.last = point.clone();
+    const delta = (point ?? drag.last.clone()).sub(drag.start);
+    onDrag({
+      phase: 'move',
+      id: drag.id,
+      delta: drag.vertical ? { y: delta.y } : { x: delta.x, z: delta.z },
+      vertical: drag.vertical,
+      invertSnap: drag.alt,
+    });
+  }
+
   canvas.addEventListener(
     'pointerdown',
     (event) => {
@@ -249,11 +270,20 @@ export function createScene(container, { onSelect, onDrag }) {
       const hit = boardUnder(event);
       if (hit?.object.userData.partId !== selectedId) return;
       const vertical = event.shiftKey !== liftMode;
-      drag = { id: selectedId, start: hit.point.clone(), plane: dragPlane(hit.point, vertical), vertical };
+      drag = {
+        id: selectedId,
+        start: hit.point.clone(),
+        last: hit.point.clone(),
+        plane: dragPlane(hit.point, vertical),
+        vertical,
+        pointer: { clientX: event.clientX, clientY: event.clientY },
+        shift: event.shiftKey,
+        alt: event.altKey,
+      };
       controls.enabled = false;
       canvas.setPointerCapture(event.pointerId);
       canvas.style.cursor = 'grabbing';
-      onDrag({ phase: 'start', id: drag.id });
+      onDrag({ phase: 'start', id: drag.id, vertical, invertSnap: event.altKey });
     },
     { capture: true },
   );
@@ -263,17 +293,19 @@ export function createScene(container, { onSelect, onDrag }) {
       if (event.buttons === 0 && selectedId) canvas.style.cursor = boardUnder(event)?.object.userData.partId === selectedId ? 'grab' : '';
       return;
     }
-    boardUnder(event);
-    const point = raycaster.ray.intersectPlane(drag.plane, new THREE.Vector3());
-    if (!point) return;
-    const delta = point.sub(drag.start);
-    onDrag({
-      phase: 'move',
-      id: drag.id,
-      delta: drag.vertical ? { y: delta.y } : { x: delta.x, z: delta.z },
-      invertSnap: event.altKey,
-    });
+    Object.assign(drag, { pointer: { clientX: event.clientX, clientY: event.clientY }, shift: event.shiftKey, alt: event.altKey });
+    updateDrag();
   });
+
+  function modifierChanged(event) {
+    if (!drag || (event.key !== 'Shift' && event.key !== 'Alt')) return;
+    event.preventDefault();
+    if (drag.shift === event.shiftKey && drag.alt === event.altKey) return;
+    Object.assign(drag, { shift: event.shiftKey, alt: event.altKey });
+    updateDrag();
+  }
+  window.addEventListener('keydown', modifierChanged);
+  window.addEventListener('keyup', modifierChanged);
 
   function endDrag() {
     if (!drag) return;

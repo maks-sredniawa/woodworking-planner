@@ -31,16 +31,29 @@ const NUDGE_MM = 10;
 const FINE_NUDGE_MM = 1;
 let dragStart = null;
 let snapOn = loadSnap();
+let liftOn = false;
+
+function showDragModes(lifting, snapping) {
+  $('mode-floor').setAttribute('aria-pressed', String(!lifting));
+  $('mode-height').setAttribute('aria-pressed', String(lifting));
+  $('snap').setAttribute('aria-pressed', String(snapping));
+}
 
 const view = createScene($('viewport'), { onSelect: (id) => select(id), onDrag: (event) => handleDrag(event) });
 
-const handleDrag = timed(({ phase, id, delta, invertSnap }) => {
+const handleDrag = timed(({ phase, id, delta, vertical, invertSnap }) => {
   if (phase === 'start') {
     dragStart = { project, part: project.parts.find((part) => part.id === id) };
+    showDragModes(vertical, snapOn !== invertSnap);
     return;
   }
   if (!dragStart) return;
+  if (phase === 'rebase') {
+    dragStart.part = selectedPart();
+    return;
+  }
   if (phase === 'move') {
+    showDragModes(vertical, snapOn !== invertSnap);
     const from = dragStart.part;
     const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
     const current = selectedPart();
@@ -53,6 +66,7 @@ const handleDrag = timed(({ phase, id, delta, invertSnap }) => {
   }
   const before = dragStart.project;
   dragStart = null;
+  showDragModes(liftOn, snapOn);
   if (project === before) return;
   undoStack.push(before);
   if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
@@ -72,13 +86,13 @@ function rotateSelected(axis) {
 function setSnap(on) {
   snapOn = on;
   saveSnap(on);
-  $('snap').setAttribute('aria-pressed', String(on));
+  showDragModes(liftOn, snapOn);
 }
 
 function setLift(on) {
+  liftOn = on;
   view.setLiftMode(on);
-  $('mode-floor').setAttribute('aria-pressed', String(!on));
-  $('mode-height').setAttribute('aria-pressed', String(on));
+  showDragModes(liftOn, snapOn);
 }
 
 function nudge(axis, amount) {

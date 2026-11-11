@@ -133,6 +133,31 @@ try:
         page.keyboard.press('Control+z')
         assert part() == start, 'one undo should take back the whole drag'
 
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx + 80, cy, steps=6)
+        slid = part()
+        assert slid['x'] > start['x'] and slid['y'] == start['y'], f'first leg should slide along the floor: {slid}'
+        expect(page.locator('#mode-floor')).to_have_attribute('aria-pressed', 'true')
+        page.keyboard.down('Shift')
+        expect(page.locator('#mode-height')).to_have_attribute('aria-pressed', 'true')
+        page.mouse.move(cx + 80, cy - 90, steps=6)
+        raised = part()
+        assert raised['y'] > 50 and raised['x'] == slid['x'] and raised['z'] == slid['z'], f'holding Shift mid-drag should lift: {raised}'
+        page.keyboard.up('Shift')
+        expect(page.locator('#mode-floor')).to_have_attribute('aria-pressed', 'true')
+        page.mouse.move(cx + 140, cy - 90, steps=6)
+        again = part()
+        assert again['y'] == raised['y'] and again['x'] > raised['x'], f'releasing Shift should slide again at the new height: {again}'
+        page.keyboard.down('Alt')
+        expect(page.locator('#snap')).to_have_attribute('aria-pressed', 'false')
+        page.mouse.move(cx + 163, cy - 87, steps=6)
+        page.keyboard.up('Alt')
+        expect(page.locator('#snap')).to_have_attribute('aria-pressed', 'true')
+        page.mouse.up()
+        page.keyboard.press('Control+z')
+        assert part() == start, f'the whole mixed drag should undo in one step: {part()}'
+
         page.keyboard.press('ArrowRight')
         page.keyboard.press('ArrowRight')
         page.keyboard.press('Shift+ArrowUp')
