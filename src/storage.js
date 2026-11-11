@@ -12,6 +12,21 @@ export function loadSnap() {
 }
 
 const DEBUG_KEY = 'woodworking-planner:debug';
+const POTATO_KEY = 'woodworking-planner:potato';
+
+export function loadPotato() {
+  try {
+    return localStorage.getItem(POTATO_KEY) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+export function savePotato(on) {
+  try {
+    localStorage.setItem(POTATO_KEY, on ? 'on' : 'off');
+  } catch {}
+}
 
 export function loadDebug() {
   try {
