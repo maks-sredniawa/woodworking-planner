@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Woodworking planner</title>
+<meta name="description" content="Plan a woodworking project and see it in 3D before you cut the first board. Everything stays on your own computer.">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<header class="bar" id="bar">
+  <div class="brand">Woodworking planner</div>
+  <label class="proj"><span class="vh">Project name</span><input id="project-name" maxlength="80" autocomplete="off"></label>
+  <span id="save-state" class="saved" role="status"></span>
+  <button type="button" id="menu-toggle" class="more" aria-label="Undo, files and more" aria-expanded="false" aria-controls="bar-actions">⋯</button>
+  <div class="bar-actions" id="bar-actions">
+    <button type="button" id="undo" title="Undo (Ctrl+Z)">Undo</button>
+    <button type="button" id="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    <button type="button" id="new-project">New</button>
+    <button type="button" id="starter" title="Replace the project with the example bookshelf">Example</button>
+    <button type="button" id="open-file">Open file…</button>
+    <button type="button" id="save-file">Save file</button>
+  </div>
+  <input type="file" id="file-input" accept=".json,application/json" hidden>
+  <p id="file-error" class="file-error" role="alert" hidden></p>
+</header>
+
+<main id="main" data-tab="parts">
+  <section class="parts" aria-labelledby="parts-title">
+    <div class="pane-h">
+      <h2 id="parts-title">Parts <span id="part-count" class="count"></span></h2>
+      <button type="button" id="add" class="primary">Add board</button>
+    </div>
+    <ul id="parts" class="list"></ul>
+    <p id="parts-empty" class="empty" hidden>No boards yet. Add one to start.</p>
+  </section>
+
+  <section class="stage">
+    <div class="view" aria-label="3D view">
+      <div id="viewport" class="viewport"></div>
+      <div class="view-tools" role="group" aria-label="Camera">
+        <button type="button" data-view="iso" aria-pressed="true">Iso</button>
+        <button type="button" data-view="front" aria-pressed="false">Front</button>
+        <button type="button" data-view="side" aria-pressed="false">Side</button>
+        <button type="button" data-view="top" aria-pressed="false">Top</button>
+        <button type="button" id="fit">Fit</button>
+      </div>
+      <div id="view-sel" class="view-sel" hidden></div>
+      <div class="view-hint">Drag to turn · scroll to zoom · right-drag to pan · click a board to pick it</div>
+    </div>
+    <section class="cut" aria-labelledby="cut-title">
+      <div class="pane-h">
+        <h2 id="cut-title">Cut list</h2>
+        <span id="overall" class="overall"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="cut-list">
+          <thead>
+            <tr><th class="num">Qty</th><th>Size (mm)</th><th>Parts</th><th>Wood</th><th class="num">Volume</th><th class="num">Face</th></tr>
+          </thead>
+          <tbody id="cut-rows"></tbody>
+        </table>
+      </div>
+      <p id="totals" class="totals"></p>
+    </section>
+  </section>
+
+  <aside class="inspector" aria-labelledby="editor-title">
+    <div class="pane-h"><h2 id="editor-title">Selected board</h2></div>
+    <p id="editor-empty" class="empty">Pick a board in the list or in the 3D view to change it.</p>
+    <form id="editor" class="fields" hidden>
+      <label>Name <input name="name" autocomplete="off"></label>
+      <fieldset>
+        <legend>Size (mm)</legend>
+        <div class="trio">
+          <label>Length <input name="length" class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
+          <label>Width <input name="width" class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
+          <label>Thickness <input name="thickness" class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Left, bottom, back corner (mm)</legend>
+        <div class="trio">
+          <label>From left <input name="x" class="num" type="number" step="any" inputmode="decimal"></label>
+          <label>From floor <input name="y" class="num" type="number" step="any" inputmode="decimal"></label>
+          <label>From back <input name="z" class="num" type="number" step="any" inputmode="decimal"></label>
+        </div>
+      </fieldset>
+      <label>Lies <select name="orientation" id="field-orientation"></select></label>
+      <label>Wood
+        <span class="wood"><i id="wood-swatch" class="sw"></i><select name="species" id="field-species"></select></span>
+      </label>
+      <div class="duo">
+        <button type="button" id="duplicate">Duplicate</button>
+        <button type="button" id="delete" class="danger">Delete</button>
+      </div>
+    </form>
+  </aside>
+
+  <nav class="tabs" aria-label="Panels">
+    <button type="button" data-tab="parts" aria-pressed="true">Parts</button>
+    <button type="button" data-tab="edit" aria-pressed="false">Edit</button>
+    <button type="button" data-tab="cut" aria-pressed="false">Cut list</button>
+  </nav>
+</main>
+<div class="add-bar"><button type="button" id="add-phone" class="primary">Add board</button></div>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

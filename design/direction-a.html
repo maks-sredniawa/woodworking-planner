@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Woodworking planner · Direction A · Workbench</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #eef0f2; --panel: #ffffff; --panel-2: #f6f7f8; --line: #dde0e4; --text: #1a1d21; --muted: #5f6975;
+  --accent: #0f766e; --accent-soft: #d8f1ed; --on-accent: #ffffff; --danger: #b42318;
+  --view: #e6e9ec; --grid: #d3d8dd; --grid-major: #bcc3ca; --shadow: rgba(40, 50, 60, .10);
+  --wood-t: #e6c594; --wood-f: #cfa56d; --wood-s: #b38952; --ply-t: #f1e2c0; --ply-f: #e4d2a9; --ply-s: #cdb98c; --edge: #7a5a30;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121416; --panel: #1b1e21; --panel-2: #22262a; --line: #31363c; --text: #e7e9ec; --muted: #9aa4af;
+    --accent: #2dd4bf; --accent-soft: #123c38; --on-accent: #06221f; --danger: #ff8a7a;
+    --view: #16191c; --grid: #262b30; --grid-major: #363d44; --shadow: rgba(0, 0, 0, .35);
+    --wood-t: #d2b07e; --wood-f: #b48a56; --wood-s: #946f41; --ply-t: #d9c9a4; --ply-f: #c2b08a; --ply-s: #a5936f; --edge: #4d3817;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: grid; grid-template-rows: 48px 1fr; background: var(--bg); color: var(--text); font: 14px/1.4 var(--sans); }
+h2 { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+button, input, select { font: inherit; color: inherit; }
+button { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; white-space: nowrap; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+button.danger { color: var(--danger); }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+.bar { display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; }
+.brand { font-weight: 700; white-space: nowrap; }
+.proj { flex: 0 1 260px; min-width: 0; }
+.proj input { width: 100%; height: 32px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: var(--panel-2); font-weight: 600; }
+.saved { color: var(--muted); font-size: 12px; margin-right: auto; white-space: nowrap; }
+.saved::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--accent); }
+.bar-actions { display: flex; gap: 8px; }
+.more { display: none; }
+
+main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 312px; min-height: 0; }
+.parts, .inspector { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.parts { border-right: 1px solid var(--line); }
+.inspector { border-left: 1px solid var(--line); padding-bottom: 16px; overflow: auto; }
+.pane-h { display: flex; align-items: center; justify-content: space-between; height: 48px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); flex: none; }
+.count { margin-left: 6px; padding: 1px 7px; border-radius: 10px; background: var(--panel-2); color: var(--text); }
+
+.list { list-style: none; margin: 0; padding: 6px; overflow: auto; }
+.row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: "sw nm q" "sw dim q"; column-gap: 10px; align-items: center; padding: 7px 10px; border-radius: 6px; border: 1px solid transparent; }
+.row.sel { background: var(--accent-soft); border-color: var(--accent); }
+.sw { grid-area: sw; width: 14px; height: 14px; border-radius: 3px; background: var(--c); border: 1px solid var(--edge); }
+.nm { grid-area: nm; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dim { grid-area: dim; font: 12px var(--mono); color: var(--muted); }
+.q { grid-area: q; font: 12px var(--mono); color: var(--muted); }
+.row-acts { grid-column: 2 / -1; display: flex; gap: 6px; margin-top: 6px; }
+.row-acts button { height: 26px; padding: 0 8px; font-size: 12px; }
+
+.stage { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+.view { position: relative; overflow: hidden; background: var(--view); }
+.shelf { position: absolute; inset: 56px 24px 40px; width: calc(100% - 48px); height: calc(100% - 96px); overflow: visible; }
+.grid { fill: none; stroke: var(--grid); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.grid.major { stroke: var(--grid-major); }
+.shadow { fill: var(--shadow); }
+.part polygon { stroke: var(--edge); stroke-width: .8; stroke-linejoin: round; }
+.ft { fill: var(--wood-t); } .ff { fill: var(--wood-f); } .fs { fill: var(--wood-s); }
+.ply .ft { fill: var(--ply-t); } .ply .ff { fill: var(--ply-f); } .ply .fs { fill: var(--ply-s); }
+.part.sel polygon { stroke: var(--accent); stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+.view-tools { position: absolute; top: 12px; left: 12px; display: flex; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow: hidden; }
+.view-tools span { padding: 5px 10px; font-size: 12px; border-right: 1px solid var(--line); }
+.view-tools span:last-child { border-right: 0; }
+.view-tools .on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.view-sel { position: absolute; top: 12px; right: 12px; padding: 5px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--accent); font-size: 12px; }
+.view-sel b { font-weight: 600; }
+.view-hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); }
+
+.cut { background: var(--panel); border-top: 1px solid var(--line); }
+.cut .pane-h span { font-size: 12px; color: var(--muted); }
+.cut-rows { list-style: none; margin: 0; padding: 4px 16px; }
+.cut-row { display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 100px 82px 62px; gap: 12px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.cut-row > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cq { font: 600 13px var(--mono); }
+.cd { font: 13px var(--mono); }
+.cn, .cs { color: var(--muted); }
+.cv, .ca { font: 13px var(--mono); text-align: right; }
+.totals { display: flex; gap: 24px; padding: 10px 16px 14px; font-size: 13px; }
+.totals b { font: 600 14px var(--mono); margin-right: 4px; }
+
+.fields { padding: 14px 16px 0; display: grid; gap: 14px; }
+.fields label, .fields .lbl { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.fields input, .fields select { width: 100%; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+.fields input.num { font-family: var(--mono); }
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.trio label { margin: 0; }
+.trio span { display: block; margin-bottom: 4px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg span { padding: 7px 0; text-align: center; background: var(--panel-2); border-right: 1px solid var(--line); }
+.seg span:last-child { border-right: 0; }
+.seg .on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.wood { display: grid; grid-template-columns: 34px 1fr; gap: 8px; }
+.wood i { border-radius: 6px; background: #d9b27c; border: 1px solid var(--edge); }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.tabs, .add-bar { display: none; }
+
+@media (max-width: 720px) {
+  body { display: block; padding-bottom: 76px; }
+  .bar { height: 52px; position: relative; }
+  .brand, .saved, .bar-actions { display: none; }
+  .proj { flex: 1; }
+  .proj input { height: 40px; font-size: 16px; }
+  .more { display: block; width: 44px; height: 40px; padding: 0; font-size: 20px; }
+  main { display: flex; flex-direction: column; }
+  .stage { display: contents; }
+  .view { order: 1; height: 264px; position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--line); }
+  .shelf { inset: 14px 16px 14px; width: calc(100% - 32px); height: calc(100% - 28px); }
+  .view-tools, .view-hint { display: none; }
+  .view-sel { top: 10px; right: 16px; }
+  .tabs { order: 2; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--panel); border-bottom: 1px solid var(--line); }
+  .tabs span { height: 46px; display: grid; place-items: center; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs .on { color: var(--text); border-bottom-color: var(--accent); }
+  .parts { order: 3; border: 0; }
+  .parts .pane-h, .cut, .inspector { display: none; }
+  .list { padding: 8px 16px; overflow: visible; }
+  .row { padding: 9px 10px; min-height: 52px; }
+  .row-acts button { height: 36px; padding: 0 12px; font-size: 14px; }
+  .add-bar { display: block; position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); z-index: 3; }
+  .add-bar button { width: 100%; height: 48px; font-size: 16px; }
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">Woodworking planner</div>
+  <label class="proj"><span class="vh">Project name</span><input value="Small bookshelf"></label>
+  <span class="saved">Saved in this browser</span>
+  <div class="bar-actions"><button>Import</button><button>Export</button></div>
+  <button class="more" aria-label="Import, export and more">⋯</button>
+</header>
+<main>
+  <section class="parts">
+    <div class="pane-h"><h2>Parts <span class="count">7</span></h2><button class="primary">Add part</button></div>
+    <ul class="list">
+      <li class="row"><i class="sw" style="--c:#d9b27c"></i><span class="nm">Left side</span><span class="dim">1000 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row"><i class="sw" style="--c:#d9b27c"></i><span class="nm">Right side</span><span class="dim">1000 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row"><i class="sw" style="--c:#d9b27c"></i><span class="nm">Top</span><span class="dim">764 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row"><i class="sw" style="--c:#d9b27c"></i><span class="nm">Bottom</span><span class="dim">764 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row sel"><i class="sw" style="--c:#d9b27c"></i><span class="nm">Upper shelf</span><span class="dim">764 × 280 × 18</span><span class="q">×1</span>
+        <span class="row-acts"><button>Duplicate</button><button class="danger">Delete</button></span></li>
+      <li class="row"><i class="sw" style="--c:#d9b27c"></i><span class="nm">Lower shelf</span><span class="dim">764 × 280 × 18</span><span class="q">×1</span></li>
+      <li class="row"><i class="sw" style="--c:#ead9b5"></i><span class="nm">Back panel</span><span class="dim">1000 × 800 × 6</span><span class="q">×1</span></li>
+    </ul>
+  </section>
+  <section class="stage">
+    <div class="view">
+      <svg class="shelf" viewBox="-30 -600 540 830" role="img" aria-label="Placeholder for the 3D view: a small bookshelf"><path class="grid" d="M-2165.1 0.0L346.4 -1450.0M-2165.1 0.0L346.4 1450.0M-2121.8 25.0L389.7 -1425.0M-2121.8 -25.0L389.7 1425.0M-2078.5 50.0L433.0 -1400.0M-2078.5 -50.0L433.0 1400.0M-2035.2 75.0L476.3 -1375.0M-2035.2 -75.0L476.3 1375.0M-1991.9 100.0L519.6 -1350.0M-1991.9 -100.0L519.6 1350.0M-1948.6 125.0L562.9 -1325.0M-1948.6 -125.0L562.9 1325.0M-1905.3 150.0L606.2 -1300.0M-1905.3 -150.0L606.2 1300.0M-1862.0 175.0L649.5 -1275.0M-1862.0 -175.0L649.5 1275.0M-1818.7 200.0L692.8 -1250.0M-1818.7 -200.0L692.8 1250.0M-1775.4 225.0L736.1 -1225.0M-1775.4 -225.0L736.1 1225.0M-1732.1 250.0L779.4 -1200.0M-1732.1 -250.0L779.4 1200.0M-1688.7 275.0L822.7 -1175.0M-1688.7 -275.0L822.7 1175.0M-1645.4 300.0L866.0 -1150.0M-1645.4 -300.0L866.0 1150.0M-1602.1 325.0L909.3 -1125.0M-1602.1 -325.0L909.3 1125.0M-1558.8 350.0L952.6 -1100.0M-1558.8 -350.0L952.6 1100.0M-1515.5 375.0L995.9 -1075.0M-1515.5 -375.0L995.9 1075.0M-1472.2 400.0L1039.2 -1050.0M-1472.2 -400.0L1039.2 1050.0M-1428.9 425.0L1082.5 -1025.0M-1428.9 -425.0L1082.5 1025.0M-1385.6 450.0L1125.8 -1000.0M-1385.6 -450.0L1125.8 1000.0M-1342.3 475.0L1169.1 -975.0M-1342.3 -475.0L1169.1 975.0M-1299.0 500.0L1212.4 -950.0M-1299.0 -500.0L1212.4 950.0M-1255.7 525.0L1255.7 -925.0M-1255.7 -525.0L1255.7 925.0M-1212.4 550.0L1299.0 -900.0M-1212.4 -550.0L1299.0 900.0M-1169.1 575.0L1342.3 -875.0M-1169.1 -575.0L1342.3 875.0M-1125.8 600.0L1385.6 -850.0M-1125.8 -600.0L1385.6 850.0M-1082.5 625.0L1428.9 -825.0M-1082.5 -625.0L1428.9 825.0M-1039.2 650.0L1472.2 -800.0M-1039.2 -650.0L1472.2 800.0M-995.9 675.0L1515.5 -775.0M-995.9 -675.0L1515.5 775.0M-952.6 700.0L1558.8 -750.0M-952.6 -700.0L1558.8 750.0M-909.3 725.0L1602.1 -725.0M-909.3 -725.0L1602.1 725.0M-866.0 750.0L1645.4 -700.0M-866.0 -750.0L1645.4 700.0M-822.7 775.0L1688.7 -675.0M-822.7 -775.0L1688.7 675.0M-779.4 800.0L1732.1 -650.0M-779.4 -800.0L1732.1 650.0M-736.1 825.0L1775.4 -625.0M-736.1 -825.0L1775.4 625.0M-692.8 850.0L1818.7 -600.0M-692.8 -850.0L1818.7 600.0M-649.5 875.0L1862.0 -575.0M-649.5 -875.0L1862.0 575.0M-606.2 900.0L1905.3 -550.0M-606.2 -900.0L1905.3 550.0M-562.9 925.0L1948.6 -525.0M-562.9 -925.0L1948.6 525.0M-519.6 950.0L1991.9 -500.0M-519.6 -950.0L1991.9 500.0M-476.3 975.0L2035.2 -475.0M-476.3 -975.0L2035.2 475.0M-433.0 1000.0L2078.5 -450.0M-433.0 -1000.0L2078.5 450.0M-389.7 1025.0L2121.8 -425.0M-389.7 -1025.0L2121.8 425.0M-346.4 1050.0L2165.1 -400.0M-346.4 -1050.0L2165.1 400.0M-303.1 1075.0L2208.4 -375.0M-303.1 -1075.0L2208.4 375.0M-259.8 1100.0L2251.7 -350.0M-259.8 -1100.0L2251.7 350.0M-216.5 1125.0L2295.0 -325.0M-216.5 -1125.0L2295.0 325.0M-173.2 1150.0L2338.3 -300.0M-173.2 -1150.0L2338.3 300.0M-129.9 1175.0L2381.6 -275.0M-129.9 -1175.0L2381.6 275.0M-86.6 1200.0L2424.9 -250.0M-86.6 -1200.0L2424.9 250.0M-43.3 1225.0L2468.2 -225.0M-43.3 -1225.0L2468.2 225.0M0.0 1250.0L2511.5 -200.0M0.0 -1250.0L2511.5 200.0M43.3 1275.0L2554.8 -175.0M43.3 -1275.0L2554.8 175.0M86.6 1300.0L2598.1 -150.0M86.6 -1300.0L2598.1 150.0M129.9 1325.0L2641.4 -125.0M129.9 -1325.0L2641.4 125.0M173.2 1350.0L2684.7 -100.0M173.2 -1350.0L2684.7 100.0M216.5 1375.0L2728.0 -75.0M216.5 -1375.0L2728.0 75.0M259.8 1400.0L2771.3 -50.0M259.8 -1400.0L2771.3 50.0M303.1 1425.0L2814.6 -25.0M303.1 -1425.0L2814.6 25.0M346.4 1450.0L2857.9 0.0M346.4 -1450.0L2857.9 0.0"/><path class="grid major" d="M-2165.1 0.0L433.0 -1500.0M-2165.1 0.0L433.0 1500.0M-1948.6 125.0L649.5 -1375.0M-1948.6 -125.0L649.5 1375.0M-1732.1 250.0L866.0 -1250.0M-1732.1 -250.0L866.0 1250.0M-1515.5 375.0L1082.5 -1125.0M-1515.5 -375.0L1082.5 1125.0M-1299.0 500.0L1299.0 -1000.0M-1299.0 -500.0L1299.0 1000.0M-1082.5 625.0L1515.5 -875.0M-1082.5 -625.0L1515.5 875.0M-866.0 750.0L1732.1 -750.0M-866.0 -750.0L1732.1 750.0M-649.5 875.0L1948.6 -625.0M-649.5 -875.0L1948.6 625.0M-433.0 1000.0L2165.1 -500.0M-433.0 -1000.0L2165.1 500.0M-216.5 1125.0L2381.6 -375.0M-216.5 -1125.0L2381.6 375.0M0.0 1250.0L2598.1 -250.0M0.0 -1250.0L2598.1 250.0M216.5 1375.0L2814.6 -125.0M216.5 -1375.0L2814.6 125.0M433.0 1500.0L3031.1 0.0M433.0 -1500.0L3031.1 0.0"/><polygon class="shadow" points="-30.3,2.5 372.4,235.0 532.6,142.5 129.9,-90.0"/><g class="part ply"><polygon class="ff" points="129.9,-75.0 476.3,125.0 476.3,-375.0 129.9,-575.0"/><polygon class="fs" points="476.3,125.0 478.9,123.5 478.9,-376.5 476.3,-375.0"/><polygon class="ft" points="129.9,-575.0 476.3,-375.0 478.9,-376.5 132.5,-576.5"/></g><g class="part "><polygon class="ff" points="0.0,0.0 7.8,4.5 7.8,-495.5 0.0,-500.0"/><polygon class="fs" points="7.8,4.5 137.7,-70.5 137.7,-570.5 7.8,-495.5"/><polygon class="ft" points="0.0,-500.0 7.8,-495.5 137.7,-570.5 129.9,-575.0"/></g><g class="part "><polygon class="ff" points="7.8,4.5 338.6,195.5 338.6,186.5 7.8,-4.5"/><polygon class="fs" points="338.6,195.5 468.5,120.5 468.5,111.5 338.6,186.5"/><polygon class="ft" points="7.8,-4.5 338.6,186.5 468.5,111.5 137.7,-79.5"/></g><g class="part "><polygon class="ff" points="16.5,-164.0 347.3,27.0 347.3,18.0 16.5,-173.0"/><polygon class="fs" points="347.3,27.0 468.5,-43.0 468.5,-52.0 347.3,18.0"/><polygon class="ft" points="16.5,-173.0 347.3,18.0 468.5,-52.0 137.7,-243.0"/></g><g class="part sel"><polygon class="ff" points="16.5,-327.5 347.3,-136.5 347.3,-145.5 16.5,-336.5"/><polygon class="fs" points="347.3,-136.5 468.5,-206.5 468.5,-215.5 347.3,-145.5"/><polygon class="ft" points="16.5,-336.5 347.3,-145.5 468.5,-215.5 137.7,-406.5"/></g><g class="part "><polygon class="ff" points="7.8,-486.5 338.6,-295.5 338.6,-304.5 7.8,-495.5"/><polygon class="fs" points="338.6,-295.5 468.5,-370.5 468.5,-379.5 338.6,-304.5"/><polygon class="ft" points="7.8,-495.5 338.6,-304.5 468.5,-379.5 137.7,-570.5"/></g><g class="part "><polygon class="ff" points="338.6,195.5 346.4,200.0 346.4,-300.0 338.6,-304.5"/><polygon class="fs" points="346.4,200.0 476.3,125.0 476.3,-375.0 346.4,-300.0"/><polygon class="ft" points="338.6,-304.5 346.4,-300.0 476.3,-375.0 468.5,-379.5"/></g></svg>
+      <div class="view-tools"><span class="on">Iso</span><span>Front</span><span>Side</span><span>Top</span><span>Fit</span></div>
+      <div class="view-sel"><b>Upper shelf</b> · 764 × 280 × 18</div>
+      <div class="view-hint">Drag to orbit · scroll to zoom · click a board to select it</div>
+    </div>
+    <div class="cut">
+      <div class="pane-h"><h2>Cut list</h2><span>Identical parts are grouped</span></div>
+      <ul class="cut-rows">
+        <li class="cut-row"><span class="cq">2 ×</span><span class="cd">1000 × 300 × 18</span><span class="cn">Left side, Right side</span><span class="cs">Oak</span><span class="cv">0.0108 m³</span><span class="ca">1.29 m²</span></li>
+        <li class="cut-row"><span class="cq">2 ×</span><span class="cd">764 × 300 × 18</span><span class="cn">Top, Bottom</span><span class="cs">Oak</span><span class="cv">0.0083 m³</span><span class="ca">0.99 m²</span></li>
+        <li class="cut-row"><span class="cq">2 ×</span><span class="cd">764 × 280 × 18</span><span class="cn">Upper shelf, Lower shelf</span><span class="cs">Oak</span><span class="cv">0.0077 m³</span><span class="ca">0.93 m²</span></li>
+        <li class="cut-row"><span class="cq">1 ×</span><span class="cd">1000 × 800 × 6</span><span class="cn">Back panel</span><span class="cs">Birch plywood</span><span class="cv">0.0048 m³</span><span class="ca">1.62 m²</span></li>
+      </ul>
+      <div class="totals"><span><b>7</b>boards</span><span><b>0.0316</b>m³ volume</span><span><b>4.84</b>m² surface</span></div>
+    </div>
+  </section>
+  <aside class="inspector">
+    <div class="pane-h"><h2>Selected part</h2></div>
+    <div class="fields">
+      <div><label for="a-name">Name</label><input id="a-name" value="Upper shelf"></div>
+      <div><span class="lbl">Size (mm)</span>
+        <div class="trio">
+          <label><span>Length</span><input class="num" value="764"></label>
+          <label><span>Width</span><input class="num" value="280"></label>
+          <label><span>Thickness</span><input class="num" value="18"></label>
+        </div></div>
+      <div><span class="lbl">Position (mm)</span>
+        <div class="trio">
+          <label><span>X</span><input class="num" value="18"></label>
+          <label><span>Y</span><input class="num" value="20"></label>
+          <label><span>Z</span><input class="num" value="654"></label>
+        </div></div>
+      <div><span class="lbl">Length runs along</span><div class="seg"><span class="on">X</span><span>Y</span><span>Z</span></div></div>
+      <div><label for="a-wood">Wood</label><div class="wood"><i></i><select id="a-wood"><option>Oak</option></select></div></div>
+      <div><label for="a-qty">Quantity</label><input id="a-qty" class="num" value="1"></div>
+      <div class="duo"><button>Duplicate</button><button class="danger">Delete</button></div>
+    </div>
+  </aside>
+  <nav class="tabs"><span class="on">Parts</span><span>Edit</span><span>Cut list</span></nav>
+</main>
+<div class="add-bar"><button class="primary">Add part</button></div>
+</body>
+</html>
