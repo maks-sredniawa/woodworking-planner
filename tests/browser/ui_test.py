@@ -141,6 +141,59 @@ try:
         page.keyboard.press('Control+z')
         assert part() == start, 'quick nudges undo in one step'
 
+        page.wait_for_timeout(500)
+        idle = page.evaluate('woodworkingPlanner.framesDrawn()')
+        page.wait_for_timeout(1000)
+        assert page.evaluate('woodworkingPlanner.framesDrawn()') == idle, 'the 3D view keeps redrawing while nothing changes'
+
+        page.click('#mode-height')
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx, cy - 100, steps=10)
+        page.mouse.up()
+        assert part()['y'] > 50 and part()['x'] == start['x'], f'Height mode did not lift the board: {part()}'
+        page.keyboard.press('Control+z')
+        page.click('#mode-floor')
+
+        page.click('#snap')
+        expect(page.locator('#snap')).to_have_attribute('aria-pressed', 'false')
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx + 137, cy + 3, steps=10)
+        page.mouse.up()
+        assert part()['x'] % 10 != 0, f'with Snap off the board should land between grid lines: {part()}'
+        page.keyboard.press('Control+z')
+        page.reload()
+        expect(page.locator('#snap')).to_have_attribute('aria-pressed', 'false')
+        page.click('#snap')
+        expect(page.locator('#snap')).to_have_attribute('aria-pressed', 'true')
+
+        expect(page.locator('[data-rotate=y]')).to_be_disabled()
+        page.locator('#parts li').nth(4).locator('.row-main').click()
+        shelf = lambda: page.evaluate('(() => { const p = woodworkingPlanner.project.parts[4]; return [p.orientation, p.y] })()')
+        page.click('[data-rotate=y]')
+        assert shelf()[0] == 'zxy', shelf()
+        expect(page.locator('#editor [name=orientation]')).to_have_value('zxy')
+        page.keyboard.press('r')
+        assert shelf()[0] == 'xzy', shelf()
+        page.click('[data-rotate=x]')
+        assert shelf()[0] == 'xyz', shelf()
+        page.wait_for_timeout(300)
+        page.screenshot(path=str(HERE / 'tipped-1280.png'))
+        page.keyboard.press('Control+z')
+        assert shelf()[0] == 'xzy', f'one undo should take back only the Tip: {shelf()}'
+        page.keyboard.press('Control+z')
+        assert shelf()[0] == 'zxy', f'each rotation is its own undo step: {shelf()}'
+
+        expect(page.locator('#debug')).to_be_hidden()
+        page.click('#debug-toggle')
+        expect(page.locator('#debug')).to_contain_text('Graphics')
+        expect(page.locator('#debug')).to_contain_text('CPU 3D')
+        page.reload()
+        expect(page.locator('#debug')).to_be_visible()
+        page.wait_for_timeout(2300)
+        expect(page.locator('#debug')).to_contain_text('0 per second')
+        debug_text = page.inner_text('#debug')
         page.locator('#parts li').nth(3).locator('.row-main').click()
         before = part()
         page.mouse.move(cx, cy)
@@ -150,6 +203,11 @@ try:
         assert part() == before, 'dragging an unpicked board must turn the view, not move anything'
         page.wait_for_timeout(300)
         page.screenshot(path=str(HERE / 'moved-1280.png'))
+        page.wait_for_timeout(1100)
+        expect(page.locator('#debug')).not_to_contain_text(' 0 per second')
+        page.click('#debug-toggle')
+        expect(page.locator('#debug')).to_be_hidden()
+        print(debug_text)
         page.close()
 
         dark = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='dark')

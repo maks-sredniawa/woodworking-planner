@@ -7,13 +7,15 @@ import {
   movePart,
   overlaps,
   projectBounds,
+  rotatePart,
   snapPosition,
   starterProject,
   totals,
   updatePart,
 } from './model.js';
 import { createScene } from './scene.js';
-import { download, loadSaved, readFile, save } from './storage.js';
+import { download, loadDebug, loadSaved, loadSnap, readFile, save, saveDebug, saveSnap } from './storage.js';
+import { createDebugPanel } from './debug.js';
 
 const HISTORY_LIMIT = 100;
 const TYPING_MERGE_MS = 1200;
@@ -28,10 +30,11 @@ let lastEdit = null;
 const NUDGE_MM = 10;
 const FINE_NUDGE_MM = 1;
 let dragStart = null;
+let snapOn = loadSnap();
 
-const view = createScene($('viewport'), { onSelect: select, onDrag: handleDrag });
+const view = createScene($('viewport'), { onSelect: (id) => select(id), onDrag: (event) => handleDrag(event) });
 
-function handleDrag({ phase, id, delta, snap }) {
+const handleDrag = timed(({ phase, id, delta, invertSnap }) => {
   if (phase === 'start') {
     dragStart = { project, part: project.parts.find((part) => part.id === id) };
     return;
@@ -41,7 +44,7 @@ function handleDrag({ phase, id, delta, snap }) {
     const from = dragStart.part;
     const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
     const current = selectedPart();
-    const next = movePart(current, snapPosition(from, proposed, project.parts, { snap }));
+    const next = movePart(current, snapPosition(from, proposed, project.parts, { snap: snapOn !== invertSnap }));
     if (next === current || ['x', 'y', 'z'].every((axis) => next[axis] === current[axis])) return;
     project = { ...project, parts: project.parts.map((part) => (part.id === id ? next : part)) };
     view.moveBoard(next);
@@ -57,6 +60,25 @@ function handleDrag({ phase, id, delta, snap }) {
   lastEdit = null;
   persist();
   render();
+});
+
+function rotateSelected(axis) {
+  const part = selectedPart();
+  if (!part) return;
+  const turned = rotatePart(part, axis);
+  commit({ ...project, parts: project.parts.map((each) => (each.id === part.id ? turned : each)) });
+}
+
+function setSnap(on) {
+  snapOn = on;
+  saveSnap(on);
+  $('snap').setAttribute('aria-pressed', String(on));
+}
+
+function setLift(on) {
+  view.setLiftMode(on);
+  $('mode-floor').setAttribute('aria-pressed', String(!on));
+  $('mode-height').setAttribute('aria-pressed', String(on));
 }
 
 function nudge(axis, amount) {
@@ -252,7 +274,22 @@ function renderCutList() {
     : '';
 }
 
-function render() {
+const debug = createDebugPanel($('debug'), view);
+
+function timed(work) {
+  return (...args) => {
+    const started = performance.now();
+    try {
+      return work(...args);
+    } finally {
+      debug.addAppTime(performance.now() - started);
+    }
+  };
+}
+
+const render = timed(renderAll);
+
+function renderAll() {
   if (document.activeElement !== $('project-name')) $('project-name').value = project.name;
   document.title = `${project.name} · Woodworking planner`;
   view.setParts(project.parts);
@@ -269,6 +306,7 @@ function renderButtons() {
   $('redo').disabled = redoStack.length === 0;
   $('duplicate').disabled = !selectedId;
   $('delete').disabled = !selectedId;
+  for (const button of document.querySelectorAll('.move-tools [data-rotate], .move-tools [data-mode]')) button.disabled = !selectedId;
 }
 
 function fillSelect(select, options) {
@@ -355,6 +393,25 @@ $('starter').addEventListener('click', () => {
   view.fit();
 });
 
+const ROTATE_KEYS = { r: 'y', t: 'x', l: 'z' };
+
+$('snap').addEventListener('click', () => setSnap(!snapOn));
+$('mode-floor').addEventListener('click', () => setLift(false));
+$('mode-height').addEventListener('click', () => setLift(true));
+for (const button of document.querySelectorAll('.move-tools [data-rotate]')) {
+  button.addEventListener('click', () => rotateSelected(button.dataset.rotate));
+}
+setSnap(snapOn);
+setLift(false);
+
+function setDebug(on) {
+  saveDebug(on);
+  debug.show(on);
+  $('debug-toggle').setAttribute('aria-pressed', String(on));
+}
+$('debug-toggle').addEventListener('click', () => setDebug($('debug-toggle').getAttribute('aria-pressed') !== 'true'));
+setDebug(loadDebug());
+
 const ARROWS = {
   ArrowLeft: () => ['x', -1],
   ArrowRight: () => ['x', 1],
@@ -368,6 +425,12 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     const [axis, sign] = ARROWS[event.key](event.altKey);
     nudge(axis, sign * (event.shiftKey ? FINE_NUDGE_MM : NUDGE_MM));
+    return;
+  }
+  const rotateAxis = ROTATE_KEYS[event.key.toLowerCase()];
+  if (rotateAxis && selectedId && !typing && !event.target.closest('select') && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault();
+    rotateSelected(rotateAxis);
     return;
   }
   const mod = event.ctrlKey || event.metaKey;
@@ -394,4 +457,4 @@ applyTheme();
 
 render();
 persist();
-window.woodworkingPlanner = { get project() { return project; }, select };
+window.woodworkingPlanner = { get project() { return project; }, select, framesDrawn: () => view.framesDrawn() };

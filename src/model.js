@@ -247,3 +247,14 @@ export function movePart(part, position) {
   }
   return next;
 }
+
+export function rotatePart(part, axis) {
+  const [a, b] = POSITION.filter((other) => other !== axis);
+  const orientation = [...part.orientation].map((letter) => (letter === a ? b : letter === b ? a : letter)).join('');
+  const before = extents(part);
+  const turned = { ...part, orientation };
+  const after = extents(turned);
+  for (const dim of POSITION) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
+  if (part.y >= 0 && turned.y < 0) turned.y = 0;
+  return turned;
+}
