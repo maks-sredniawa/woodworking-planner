@@ -179,9 +179,16 @@ function duplicateSelected() {
 }
 
 function deleteSelected() {
-  if (!selectedId) return;
+  if (!selectedId || selectedPart()?.locked) return;
   commit({ ...project, parts: project.parts.filter((part) => part.id !== selectedId) });
   select(null);
+}
+
+function toggleLock() {
+  const part = selectedPart();
+  if (!part) return;
+  const toggled = updatePart(part, 'locked', !part.locked);
+  commit({ ...project, parts: project.parts.map((each) => (each.id === part.id ? toggled : each)) });
 }
 
 const mm = (value) => `${Number(value).toLocaleString('en-GB', { maximumFractionDigits: 1 })}`;
@@ -209,17 +216,24 @@ function renderParts() {
       const swatch = element('i', 'sw');
       swatch.style.background = SPECIES[part.species].color;
       main.append(swatch, element('span', 'nm', part.name || 'Unnamed'), element('span', 'dim', sizeText(part)));
+      if (part.locked) main.append(element('span', 'tag', '🔒 Locked'));
       if (clashing.has(part.id)) main.append(element('span', 'warn', 'Overlaps another board'));
       item.append(main);
       if (selected) {
         const actions = element('div', 'row-acts');
+        const lock = element('button', '', part.locked ? 'Unlock' : 'Lock');
+        lock.type = 'button';
+        lock.setAttribute('aria-pressed', String(part.locked));
+        lock.title = part.locked ? 'Let this board be moved, rotated and resized again' : 'Stop this board from being moved, rotated, resized or deleted';
+        lock.addEventListener('click', toggleLock);
         const copy = element('button', '', 'Duplicate');
         copy.type = 'button';
         copy.addEventListener('click', duplicateSelected);
         const remove = element('button', 'danger', 'Delete');
         remove.type = 'button';
         remove.addEventListener('click', deleteSelected);
-        actions.append(copy, remove);
+        remove.disabled = part.locked;
+        actions.append(lock, copy, remove);
         item.append(actions);
       }
       return item;
@@ -234,7 +248,7 @@ function renderSelectionChip() {
   const chip = $('view-sel');
   chip.hidden = !part;
   if (!part) return;
-  chip.replaceChildren(element('b', '', part.name || 'Unnamed'), ` · ${sizeText(part)}`);
+  chip.replaceChildren(...(part.locked ? ['🔒 '] : []), element('b', '', part.name || 'Unnamed'), ` · ${sizeText(part)}`);
 }
 
 function renderEditor() {
@@ -249,6 +263,10 @@ function renderEditor() {
     input.dataset.partId = part.id;
     input.removeAttribute('aria-invalid');
   }
+  for (const input of form.querySelectorAll('[data-geometry]')) input.disabled = part.locked;
+  $('lock').setAttribute('aria-pressed', String(part.locked));
+  $('lock').textContent = part.locked ? '🔒 Locked · unlock' : 'Lock in place';
+  $('locked-note').hidden = !part.locked;
   $('wood-swatch').style.background = SPECIES[part.species].color;
 }
 
@@ -319,8 +337,10 @@ function renderButtons() {
   $('undo').disabled = undoStack.length === 0;
   $('redo').disabled = redoStack.length === 0;
   $('duplicate').disabled = !selectedId;
-  $('delete').disabled = !selectedId;
-  for (const button of document.querySelectorAll('.move-tools [data-rotate], .move-tools [data-mode]')) button.disabled = !selectedId;
+  const locked = Boolean(selectedPart()?.locked);
+  $('delete').disabled = !selectedId || locked;
+  for (const button of document.querySelectorAll('.move-tools [data-mode]')) button.disabled = !selectedId;
+  for (const button of document.querySelectorAll('.move-tools [data-rotate]')) button.disabled = !selectedId || locked;
 }
 
 function fillSelect(select, options) {
@@ -379,6 +399,7 @@ document.addEventListener('pointerdown', (event) => {
   if (!event.target.closest('#bar')) setMenu(false);
 });
 $('duplicate').addEventListener('click', duplicateSelected);
+$('lock').addEventListener('click', toggleLock);
 $('delete').addEventListener('click', deleteSelected);
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);

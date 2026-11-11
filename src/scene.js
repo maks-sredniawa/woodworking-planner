@@ -102,6 +102,7 @@ export function createScene(container, { onSelect, onDrag }) {
     mesh.castShadow = !potato;
     mesh.receiveShadow = !potato;
     mesh.userData.partId = part.id;
+    mesh.userData.locked = part.locked;
 
     const [lengthAxis, widthAxis, thicknessAxis] = part.orientation;
     const basisX = AXIS[lengthAxis].clone();
@@ -286,7 +287,7 @@ export function createScene(container, { onSelect, onDrag }) {
       down = { x: event.clientX, y: event.clientY };
       if (event.button !== 0 || !selectedId) return;
       const hit = boardUnder(event);
-      if (hit?.object.userData.partId !== selectedId) return;
+      if (hit?.object.userData.partId !== selectedId || hit.object.userData.locked) return;
       const vertical = event.shiftKey !== liftMode;
       drag = {
         id: selectedId,
@@ -308,7 +309,10 @@ export function createScene(container, { onSelect, onDrag }) {
 
   canvas.addEventListener('pointermove', (event) => {
     if (!drag) {
-      if (event.buttons === 0 && selectedId) canvas.style.cursor = boardUnder(event)?.object.userData.partId === selectedId ? 'grab' : '';
+      if (event.buttons === 0 && selectedId) {
+        const hovered = boardUnder(event)?.object.userData;
+        canvas.style.cursor = hovered?.partId === selectedId && !hovered.locked ? 'grab' : '';
+      }
       return;
     }
     Object.assign(drag, { pointer: { clientX: event.clientX, clientY: event.clientY }, shift: event.shiftKey, alt: event.altKey });

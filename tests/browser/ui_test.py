@@ -56,7 +56,7 @@ try:
                 page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
                 expect(page.locator('#editor')).to_be_visible()
                 expect(page.locator('#view-sel')).to_be_visible()
-                expect(page.locator('.row.sel .row-acts button')).to_have_count(2)
+                expect(page.locator('.row.sel .row-acts button')).to_have_count(3)
                 picked = page.evaluate('woodworkingPlanner.project.parts.find(p => document.getElementById("part-" + p.id).querySelector("[aria-pressed=true]"))?.name')
                 assert picked, 'clicking the 3D view did not select a board'
 
@@ -165,6 +165,35 @@ try:
         assert part() == {'x': start['x'] + 20, 'y': start['y'] + 1, 'z': start['z'] + 10}, part()
         page.keyboard.press('Control+z')
         assert part() == start, 'quick nudges undo in one step'
+
+        page.click('#lock')
+        expect(page.locator('#lock')).to_have_attribute('aria-pressed', 'true')
+        expect(page.locator('.row.sel')).to_contain_text('Locked')
+        expect(page.locator('#editor [name=x]')).to_be_disabled()
+        expect(page.locator('#editor [name=orientation]')).to_be_disabled()
+        expect(page.locator('#delete')).to_be_disabled()
+        expect(page.locator('[data-rotate=y]')).to_be_disabled()
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx + 150, cy, steps=8)
+        page.mouse.up()
+        page.keyboard.press('ArrowRight')
+        page.keyboard.press('r')
+        page.keyboard.press('Delete')
+        assert part() == start, f'a locked board moved: {part()}'
+        expect(page.locator('#parts li')).to_have_count(7)
+        page.fill('#editor [name=name]', 'Fixed back')
+        expect(page.locator('.row.sel .nm')).to_have_text('Fixed back')
+        page.fill('#editor [name=name]', 'Back panel')
+        page.reload()
+        page.click('.view-tools [data-view=iso]')
+        page.mouse.click(cx, cy)
+        expect(page.locator('#lock')).to_have_attribute('aria-pressed', 'true')
+        page.click('#lock')
+        expect(page.locator('#editor [name=x]')).to_be_enabled()
+        page.keyboard.press('ArrowRight')
+        assert part()['x'] == start['x'] + 10, f'unlocked board should move again: {part()}'
+        page.keyboard.press('Control+z')
 
         page.wait_for_timeout(500)
         idle = page.evaluate('woodworkingPlanner.framesDrawn()')

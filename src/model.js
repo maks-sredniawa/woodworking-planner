@@ -112,6 +112,7 @@ export function makePart(fields = {}) {
     thickness: 18,
     orientation: 'xzy',
     species: 'pine',
+    locked: false,
     x: 0,
     y: 0,
     z: 0,
@@ -119,7 +120,11 @@ export function makePart(fields = {}) {
   };
 }
 
+const GEOMETRY = [...DIMENSIONS, ...POSITION, 'orientation'];
+
 export function updatePart(part, field, raw) {
+  if (field === 'locked') return typeof raw === 'boolean' ? { ...part, locked: raw } : null;
+  if (part.locked && GEOMETRY.includes(field)) return null;
   if (DIMENSIONS.includes(field)) {
     const value = Number(raw);
     if (!Number.isFinite(value) || value <= 0 || value > MAX_SIZE_MM) return null;
@@ -139,7 +144,7 @@ export function updatePart(part, field, raw) {
 export function duplicatePart(part) {
   const size = extents(part);
   const step = part.orientation[2];
-  return { ...part, id: newId(), [step]: part[step] + size[step] + 20 };
+  return { ...part, id: newId(), locked: false, [step]: part[step] + size[step] + 20 };
 }
 
 function roundMm(value) {
@@ -171,7 +176,7 @@ export function parseProject(text) {
   if (!Array.isArray(data.parts)) throw new Error('This project has no list of parts.');
   const parts = data.parts.map((raw, index) => {
     let part = makePart();
-    for (const field of ['name', ...DIMENSIONS, ...POSITION, 'orientation', 'species']) {
+    for (const field of ['name', ...GEOMETRY, 'species', 'locked']) {
       if (raw?.[field] === undefined) continue;
       part = updatePart(part, field, raw[field]);
       if (!part) throw new Error(`Part ${index + 1} has an invalid ${field}.`);
@@ -238,6 +243,7 @@ export function snapPosition(part, proposed, others, { snap = true } = {}) {
 }
 
 export function movePart(part, position) {
+  if (part.locked) return part;
   const next = { ...part };
   for (const axis of POSITION) {
     if (!(axis in position)) continue;
@@ -249,6 +255,7 @@ export function movePart(part, position) {
 }
 
 export function rotatePart(part, axis) {
+  if (part.locked) return part;
   const [a, b] = POSITION.filter((other) => other !== axis);
   const orientation = [...part.orientation].map((letter) => (letter === a ? b : letter === b ? a : letter)).join('');
   const before = extents(part);
