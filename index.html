@@ -94,24 +94,26 @@
       <fieldset>
         <legend>Size (mm)</legend>
         <div class="trio">
-          <label>Length <input name="length" class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
-          <label>Width <input name="width" class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
-          <label>Thickness <input name="thickness" class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
+          <label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
+          <label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
+          <label>Thickness <input name="thickness" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
         </div>
       </fieldset>
       <fieldset>
         <legend>Left, bottom, back corner (mm)</legend>
         <div class="trio">
-          <label>From left <input name="x" class="num" type="number" step="any" inputmode="decimal"></label>
-          <label>From floor <input name="y" class="num" type="number" step="any" inputmode="decimal"></label>
-          <label>From back <input name="z" class="num" type="number" step="any" inputmode="decimal"></label>
+          <label>From left <input name="x" data-geometry class="num" type="number" step="any" inputmode="decimal"></label>
+          <label>From floor <input name="y" data-geometry class="num" type="number" step="any" inputmode="decimal"></label>
+          <label>From back <input name="z" data-geometry class="num" type="number" step="any" inputmode="decimal"></label>
         </div>
         <p class="help">Or drag the board in the 3D view. Floor or Height above the view picks which way it goes; hold Shift mid-drag to switch and let go to switch back. With Snap on it sits flush against other boards or on a 10 mm grid; hold Alt to do the opposite. Turn, Tip and Roll rotate it 90° (keys R, T, L). Arrow keys nudge it 10 mm (Shift: 1 mm); Alt+↑ and Alt+↓ move it back and forth.</p>
       </fieldset>
-      <label>Lies <select name="orientation" id="field-orientation"></select></label>
+      <label>Lies <select name="orientation" id="field-orientation" data-geometry></select></label>
       <label>Wood
         <span class="wood"><i id="wood-swatch" class="sw"></i><select name="species" id="field-species"></select></span>
       </label>
+      <button type="button" id="lock" class="lock" aria-pressed="false" title="Stop this board from being moved, rotated, resized or deleted">Lock in place</button>
+      <p id="locked-note" class="help" hidden>Locked: it can't be moved, rotated, resized or deleted until you unlock it. Its name and wood can still change.</p>
       <div class="duo">
         <button type="button" id="duplicate">Duplicate</button>
         <button type="button" id="delete" class="danger">Delete</button>

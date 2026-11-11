@@ -170,3 +170,27 @@ test('tipping a board that lies on the floor keeps it on the floor, not through 
   assert.equal(tipped.orientation, 'xyz');
   assert.equal(tipped.y, 0);
 });
+
+test('a locked board refuses moves, rotations and size changes but keeps its name and wood editable', () => {
+  const board = updatePart(makePart({ x: 40 }), 'locked', true);
+  assert.equal(board.locked, true);
+  assert.equal(movePart(board, { x: 90 }), board);
+  assert.equal(rotatePart(board, 'y'), board);
+  for (const field of ['length', 'width', 'thickness', 'x', 'y', 'z']) assert.equal(updatePart(board, field, '120'), null, field);
+  assert.equal(updatePart(board, 'orientation', 'zxy'), null);
+  assert.equal(updatePart(board, 'name', 'Leg').name, 'Leg');
+  assert.equal(updatePart(board, 'species', 'oak').species, 'oak');
+  assert.equal(updatePart(board, 'locked', false).locked, false);
+  assert.equal(updatePart(board, 'locked', 'yes'), null);
+});
+
+test('a copy of a locked board starts unlocked, and the lock survives saving', () => {
+  const board = updatePart(makePart({ x: 300, y: 20 }), 'locked', true);
+  assert.equal(duplicatePart(board).locked, false);
+  const [loaded] = parseProject(serialize({ name: 'Locked', parts: [board] })).parts;
+  assert.equal(loaded.locked, true);
+  assert.equal(loaded.x, 300);
+  assert.equal(loaded.y, 20);
+  const [old] = parseProject('{"format":"woodworking-planner","version":1,"parts":[{"length":500}]}').parts;
+  assert.equal(old.locked, false);
+});
