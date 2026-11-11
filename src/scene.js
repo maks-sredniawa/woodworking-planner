@@ -1,0 +1,244 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { SPECIES, extents, projectBounds } from './model.js';
+
+const AXIS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+const CLICK_SLOP_PX = 5;
+const VIEWS = {
+  iso: new THREE.Vector3(0.62, 0.45, 0.85),
+  front: new THREE.Vector3(0, 0.02, 1),
+  side: new THREE.Vector3(1, 0.02, 0),
+  top: new THREE.Vector3(0, 1, 0.002),
+};
+const THEMES = {
+  light: { background: 0xe6e9ec, gridMajor: 0xbcc3ca, gridMinor: 0xd3d8dd, select: 0x0f766e },
+  dark: { background: 0x16191c, gridMajor: 0x363d44, gridMinor: 0x262b30, select: 0x2dd4bf },
+};
+
+export function createScene(container, { onSelect }) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.append(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1, 10, 100000);
+  camera.position.set(1800, 1400, 2200);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.maxPolarAngle = Math.PI * 0.495;
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a66, 1.6));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  scene.add(sun, sun.target);
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.18 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  let grid = null;
+
+  const boards = new THREE.Group();
+  scene.add(boards);
+  const grain = new Map();
+  let selectedId = null;
+  let fitted = false;
+  let lastBox = null;
+  let theme = THEMES.light;
+
+  function grainTexture(species) {
+    if (grain.has(species)) return grain.get(species);
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = SPECIES[species].color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let seed = [...species].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 70; i++) {
+      const y = random() * canvas.height;
+      const wave = 1 + random() * 3;
+      ctx.strokeStyle = `rgba(60, 35, 15, ${0.04 + random() * 0.12})`;
+      ctx.lineWidth = 0.5 + random() * 1.8;
+      ctx.beginPath();
+      for (let x = 0; x <= canvas.width; x += 16) {
+        const dy = Math.sin((x / canvas.width) * Math.PI * 2 * wave + i) * 2.5;
+        if (x === 0) ctx.moveTo(x, y + dy);
+        else ctx.lineTo(x, y + dy);
+      }
+      ctx.stroke();
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    grain.set(species, texture);
+    return texture;
+  }
+
+  function boardMesh(part) {
+    const geometry = new THREE.BoxGeometry(part.length, part.thickness, part.width);
+    const map = grainTexture(part.species).clone();
+    map.needsUpdate = true;
+    map.repeat.set(part.length / 900, Math.max(part.width, part.thickness) / 220);
+    const material = new THREE.MeshStandardMaterial({ map, roughness: 0.75, metalness: 0 });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.partId = part.id;
+
+    const [lengthAxis, widthAxis, thicknessAxis] = part.orientation;
+    const basisX = AXIS[lengthAxis].clone();
+    const basisY = AXIS[thicknessAxis].clone();
+    const basisZ = AXIS[widthAxis].clone();
+    if (new THREE.Matrix4().makeBasis(basisX, basisY, basisZ).determinant() < 0) basisZ.negate();
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(basisX, basisY, basisZ));
+
+    const size = extents(part);
+    mesh.position.set(part.x + size.x / 2, part.y + size.y / 2, part.z + size.z / 2);
+
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry),
+      new THREE.LineBasicMaterial({ color: 0x3b2a1a, transparent: true, opacity: 0.55 }),
+    );
+    edges.raycast = () => {};
+    mesh.add(edges);
+    return mesh;
+  }
+
+  function disposeBoards() {
+    for (const mesh of boards.children) {
+      mesh.geometry.dispose();
+      mesh.material.map.dispose();
+      mesh.material.dispose();
+      for (const child of mesh.children) {
+        child.geometry.dispose();
+        child.material.dispose();
+      }
+    }
+    boards.clear();
+  }
+
+  function paintSelection() {
+    for (const mesh of boards.children) {
+      const selected = mesh.userData.partId === selectedId;
+      const edges = mesh.children[0];
+      mesh.material.emissive.set(selected ? theme.select : 0x000000);
+      mesh.material.emissiveIntensity = selected ? 0.3 : 0;
+      edges.material.color.set(selected ? theme.select : 0x3b2a1a);
+      edges.material.opacity = selected ? 1 : 0.55;
+    }
+  }
+
+  function frame(box, direction = camera.position.clone().sub(controls.target).normalize()) {
+    const center = new THREE.Vector3(
+      (box.min.x + box.max.x) / 2,
+      (box.min.y + box.max.y) / 2,
+      (box.min.z + box.max.z) / 2,
+    );
+    const radius = Math.max(300, new THREE.Vector3(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z).length() / 2);
+    const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.05;
+    controls.target.copy(center);
+    camera.position.copy(center).addScaledVector(direction.clone().normalize(), distance);
+    controls.update();
+  }
+
+  function placeGroundAndLight(box) {
+    const span = Math.max(2000, (box.max.x - box.min.x) * 3, (box.max.z - box.min.z) * 3);
+    const gridSize = Math.ceil(span / 1000) * 1000;
+    if (!grid || grid.userData.size !== gridSize) {
+      if (grid) {
+        scene.remove(grid);
+        grid.geometry.dispose();
+        grid.material.dispose();
+      }
+      grid = new THREE.GridHelper(gridSize, gridSize / 100, theme.gridMajor, theme.gridMinor);
+      grid.userData.size = gridSize;
+      scene.add(grid);
+    }
+    const cx = (box.min.x + box.max.x) / 2;
+    const cz = (box.min.z + box.max.z) / 2;
+    grid.position.set(cx, Math.min(0, box.min.y) - 0.5, cz);
+    floor.position.copy(grid.position).setY(grid.position.y + 0.2);
+    floor.scale.set(gridSize, gridSize, 1);
+    const reach = span / 2;
+    sun.position.set(cx + reach * 0.6, reach * 1.4 + box.max.y, cz + reach);
+    sun.target.position.set(cx, 0, cz);
+    Object.assign(sun.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach, near: 1, far: reach * 6 });
+    sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  function setParts(parts) {
+    disposeBoards();
+    for (const part of parts) boards.add(boardMesh(part));
+    paintSelection();
+    const box = projectBounds(parts) ?? { min: { x: -500, y: 0, z: -500 }, max: { x: 500, y: 500, z: 500 } };
+    placeGroundAndLight(box);
+    if (!fitted) {
+      frame(box, VIEWS.iso);
+      fitted = true;
+    }
+    lastBox = box;
+  }
+
+  function setSelected(id) {
+    selectedId = id;
+    paintSelection();
+  }
+
+  function setTheme(dark) {
+    theme = dark ? THEMES.dark : THEMES.light;
+    scene.background = new THREE.Color(theme.background);
+    if (grid) {
+      scene.remove(grid);
+      grid.geometry.dispose();
+      grid.material.dispose();
+      grid = null;
+    }
+    if (lastBox) placeGroundAndLight(lastBox);
+    paintSelection();
+  }
+
+  const pointer = new THREE.Vector2();
+  const raycaster = new THREE.Raycaster();
+  let down = null;
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    down = { x: event.clientX, y: event.clientY };
+  });
+  renderer.domElement.addEventListener('pointerup', (event) => {
+    if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_SLOP_PX) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    camera.updateMatrixWorld();
+    raycaster.setFromCamera(pointer, camera);
+    const hit = raycaster.intersectObjects(boards.children, false)[0];
+    onSelect(hit ? hit.object.userData.partId : null);
+  });
+
+  function resize() {
+    const { clientWidth, clientHeight } = container;
+    if (!clientWidth || !clientHeight) return;
+    renderer.setSize(clientWidth, clientHeight, false);
+    camera.aspect = clientWidth / clientHeight;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(container);
+  resize();
+
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    renderer.render(scene, camera);
+  });
+
+  return {
+    setParts,
+    setSelected,
+    setTheme,
+    fit: () => lastBox && frame(lastBox),
+    look: (name) => lastBox && frame(lastBox, VIEWS[name]),
+  };
+}

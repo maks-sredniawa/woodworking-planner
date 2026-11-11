@@ -1,0 +1,109 @@
+import subprocess
+import sys
+from pathlib import Path
+
+from playwright.sync_api import expect, sync_playwright
+
+HERE = Path(__file__).parent
+ROOT = HERE.parent.parent
+PORT = 8777
+URL = f'http://127.0.0.1:{PORT}/index.html'
+
+server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT), '--bind', '127.0.0.1'], cwd=ROOT,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+errors = []
+try:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='chrome', headless=True, args=['--enable-unsafe-swiftshader'])
+        for width, height in [(1280, 900), (360, 800)]:
+            page = browser.new_page(viewport={'width': width, 'height': height})
+            page.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            page.goto(URL)
+            expect(page.locator('#parts li')).to_have_count(7)
+            expect(page.locator('#totals')).to_contain_text('7 boards')
+            expect(page.locator('#overall')).to_contain_text('800 wide × 1,000 high × 250 deep')
+            page.wait_for_timeout(600)
+            page.screenshot(path=str(HERE / f'start-{width}.png'), full_page=True)
+            assert page.evaluate('document.documentElement.scrollWidth') <= width, 'horizontal scroll'
+
+            if width == 360:
+                page.click('.tabs [data-tab=cut]')
+                expect(page.locator('#totals')).to_be_visible()
+                expect(page.locator('#parts')).to_be_hidden()
+                page.click('#menu-toggle')
+                expect(page.locator('#save-file')).to_be_visible()
+                page.screenshot(path=str(HERE / 'menu-360.png'))
+                page.click('#starter')
+                expect(page.locator('#save-file')).to_be_hidden()
+                page.click('#add-phone')
+                expect(page.locator('#editor')).to_be_visible()
+                expect(page.locator('#view-sel')).to_contain_text('Board')
+                page.wait_for_timeout(400)
+                page.screenshot(path=str(HERE / 'edit-360.png'), full_page=True)
+
+            if width == 1280:
+                for name in ['front', 'side', 'top', 'iso']:
+                    page.click(f'.view-tools [data-view={name}]')
+                    page.wait_for_timeout(250)
+                    if name == 'front':
+                        page.screenshot(path=str(HERE / 'front-1280.png'))
+                expect(page.locator('.view-tools [data-view=iso]')).to_have_attribute('aria-pressed', 'true')
+                box = page.locator('#viewport canvas').bounding_box()
+                page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+                expect(page.locator('#editor')).to_be_visible()
+                expect(page.locator('#view-sel')).to_be_visible()
+                expect(page.locator('.row.sel .row-acts button')).to_have_count(2)
+                picked = page.evaluate('woodworkingPlanner.project.parts.find(p => document.getElementById("part-" + p.id).querySelector("[aria-pressed=true]"))?.name')
+                assert picked, 'clicking the 3D view did not select a board'
+
+                page.locator('#parts li').nth(4).locator('.row-main').click()
+                page.fill('#editor [name=y]', '10')
+                expect(page.locator('#parts li').nth(4)).to_contain_text('Overlaps')
+                page.keyboard.press('Escape')
+                page.keyboard.press('Control+z')
+                expect(page.locator('.warn')).to_have_count(0)
+
+                page.click('#add')
+                expect(page.locator('#parts li')).to_have_count(8)
+                page.fill('#editor [name=length]', '-3')
+                expect(page.locator('#editor [name=length]')).to_have_attribute('aria-invalid', 'true')
+                page.click('#duplicate')
+                expect(page.locator('#parts li')).to_have_count(9)
+                page.wait_for_timeout(400)
+                page.screenshot(path=str(HERE / 'edited-1280.png'))
+
+                page.reload()
+                expect(page.locator('#parts li')).to_have_count(9)
+                page.locator('#parts li').last.locator('.row-main').click()
+                page.click('#delete')
+                expect(page.locator('#parts li')).to_have_count(8)
+                with page.expect_download() as download:
+                    page.click('#save-file')
+                assert download.value.suggested_filename == 'small-bookshelf.woodplan.json'
+                saved = HERE / 'saved.json'
+                download.value.save_as(saved)
+                page.click('#new-project')
+                expect(page.locator('#parts li')).to_have_count(0)
+                page.set_input_files('#file-input', str(saved))
+                expect(page.locator('#parts li')).to_have_count(8)
+                saved.unlink()
+                bad = HERE / 'bad.json'
+                bad.write_text('{"format":"nope"}')
+                page.set_input_files('#file-input', str(bad))
+                expect(page.locator('#file-error')).to_contain_text('not a Woodworking planner project')
+                bad.unlink()
+            page.close()
+
+        dark = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='dark')
+        dark.goto(URL)
+        dark.wait_for_timeout(600)
+        dark.screenshot(path=str(HERE / 'dark-1280.png'))
+        browser.close()
+finally:
+    server.terminate()
+
+if errors:
+    print('Console errors:', *errors, sep='\n  ')
+    sys.exit(1)
+print('UI test passed')

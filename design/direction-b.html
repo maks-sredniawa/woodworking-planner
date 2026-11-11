@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Woodworking planner · Direction B · Drafting sheet</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --paper: #e9eff5; --sheet: #f9fbfd; --ink: #153e6d; --ink-soft: #55779d; --rule: #b7c8da; --hl: #d6e6f8; --on-ink: #f9fbfd;
+  --grid: #d5e0ec; --grid-major: #b9cade; --shadow: rgba(21, 62, 109, .10);
+  --wood-t: #ecd0a3; --wood-f: #d8b27c; --wood-s: #c09a64; --ply-t: #f4e8cc; --ply-f: #e9dab6; --ply-s: #d6c59c;
+  --sel-t: #cfe3fa; --sel-f: #a9cbf2; --sel-s: #86b2e6;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0b1c30; --sheet: #102741; --ink: #d6e7f8; --ink-soft: #8eb0d2; --rule: #2c4d72; --hl: #1b4572; --on-ink: #0b1c30;
+    --grid: #183354; --grid-major: #24476f; --shadow: rgba(0, 0, 0, .30);
+    --wood-t: #d6b684; --wood-f: #b8915d; --wood-s: #987547; --ply-t: #dccba6; --ply-f: #c5b38c; --ply-s: #a89670;
+    --sel-t: #9cc8f5; --sel-f: #6fa9e8; --sel-s: #4b8bd0;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--mono); }
+button, input, select { font: inherit; color: inherit; }
+button { height: 32px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 2px; background: transparent; cursor: pointer; white-space: nowrap; }
+button.primary { background: var(--ink); color: var(--on-ink); }
+.cap { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
+
+.head { display: flex; align-items: flex-end; gap: 24px; padding: 20px 24px 14px; }
+.head h1 { margin: 0; font: 600 30px/1.1 var(--serif); letter-spacing: -.01em; }
+.head .cap { display: block; margin-bottom: 4px; }
+.head-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.head-right .cap { margin: 0; }
+
+.page { display: grid; grid-template-columns: minmax(0, 1fr) 472px; gap: 24px; padding: 0 24px 24px; align-items: start; }
+.sheet { position: sticky; top: 16px; height: calc(100vh - 106px); min-height: 420px; padding: 6px; border: 2px solid var(--ink); background: var(--sheet); }
+.view { position: relative; height: 100%; overflow: hidden; border: 1px solid var(--ink); }
+.shelf { position: absolute; inset: 40px 24px 190px; width: calc(100% - 48px); height: calc(100% - 230px); overflow: visible; }
+.grid { fill: none; stroke: var(--grid); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.grid.major { stroke: var(--grid-major); }
+.shadow { fill: var(--shadow); }
+.part polygon { stroke: var(--ink); stroke-width: 1.3; stroke-linejoin: round; }
+.ft { fill: var(--wood-t); } .ff { fill: var(--wood-f); } .fs { fill: var(--wood-s); }
+.ply .ft { fill: var(--ply-t); } .ply .ff { fill: var(--ply-f); } .ply .fs { fill: var(--ply-s); }
+.sel .ft { fill: var(--sel-t); } .sel .ff { fill: var(--sel-f); } .sel .fs { fill: var(--sel-s); }
+.part.sel polygon { stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+.note { position: absolute; left: 12px; top: 10px; }
+.block { position: absolute; right: -1px; bottom: -1px; display: grid; grid-template-columns: repeat(3, auto); background: var(--sheet); border: 1px solid var(--ink); }
+.block div { padding: 6px 12px 7px; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.block div:nth-child(3n) { border-right: 0; }
+.block div:nth-last-child(-n+3) { border-bottom: 0; }
+.block .wide { grid-column: 1 / -1; border-right: 0; }
+.block b { display: block; font-weight: 600; font-size: 14px; }
+.block .wide b { font: 600 18px var(--serif); }
+
+.sched { background: var(--sheet); border: 1px solid var(--rule); padding: 4px 16px 16px; }
+.sec-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0 10px; border-bottom: 2px solid var(--ink); }
+.sec-h h2 { margin: 0; font: 600 20px var(--serif); }
+.rows { list-style: none; margin: 0; padding: 0; }
+.row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 28px; gap: 10px; align-items: baseline; padding: 8px 6px; border-bottom: 1px solid var(--rule); }
+.row .no { color: var(--ink-soft); font-size: 12px; }
+.row .nm { font: 600 15px var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .nm i { display: inline-block; width: 10px; height: 10px; margin-right: 8px; background: var(--c); border: 1px solid var(--ink); }
+.row .dim { font-size: 13px; }
+.row .q { text-align: right; font-size: 13px; color: var(--ink-soft); }
+.row.sel { background: var(--hl); border-bottom: 0; box-shadow: inset 3px 0 0 var(--ink); }
+.edit { display: grid; gap: 10px; padding: 4px 12px 14px 38px; background: var(--hl); border-bottom: 1px solid var(--ink); box-shadow: inset 3px 0 0 var(--ink); }
+.edit label { display: block; min-width: 0; }
+.edit label > .cap { display: block; margin-bottom: 3px; }
+.edit input, .edit select { width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--ink-soft); border-radius: 2px; background: var(--sheet); }
+.six { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.three { display: grid; grid-template-columns: 1.1fr 1.4fr .7fr; gap: 8px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); height: 32px; border: 1px solid var(--ink-soft); border-radius: 2px; background: var(--sheet); }
+.seg b { display: grid; place-items: center; font-weight: 400; border-right: 1px solid var(--ink-soft); }
+.seg b:last-child { border-right: 0; }
+.seg .on { background: var(--ink); color: var(--on-ink); font-weight: 600; }
+.acts { display: flex; gap: 8px; }
+
+.sec-h.cutlist { margin-top: 18px; }
+.cut-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 84px 64px; gap: 10px; align-items: baseline; padding: 8px 6px; border-bottom: 1px solid var(--rule); }
+.cut-row .cq { font-weight: 600; }
+.cut-row .cd { display: block; font-size: 13px; }
+.cut-row .cn { display: block; font: 13px var(--serif); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cut-row .cv, .cut-row .ca { text-align: right; font-size: 13px; }
+.cut-row.total { border-bottom: 0; border-top: 2px solid var(--ink); margin-top: -1px; font-weight: 600; }
+.cut-row.total .cn { font: 600 15px var(--serif); color: var(--ink); }
+
+@media (max-width: 720px) {
+  .head { padding: 14px 16px 10px; gap: 12px; align-items: center; }
+  .head .cap { display: none; }
+  .head h1 { font-size: 22px; }
+  .head-right .cap, .head-right .imp { display: none; }
+  .head-right button { height: 40px; }
+  .page { display: block; padding: 0 16px 24px; }
+  .sheet { top: 0; z-index: 2; height: 250px; min-height: 0; padding: 4px; margin-bottom: 14px; box-shadow: 0 8px 0 0 var(--paper); }
+  .shelf { inset: 10px 12px 34px; width: calc(100% - 24px); height: calc(100% - 44px); }
+  .note { display: none; }
+  .block { grid-template-columns: auto; }
+  .block div { display: none; }
+  .block .sum { display: block; border: 0; padding: 4px 8px; }
+  .block .sum b { font-size: 12px; }
+  .sched { padding: 0 12px 12px; }
+  .sec-h button { height: 40px; }
+  .row { padding: 12px 4px; grid-template-columns: 18px minmax(0, 1fr) auto; }
+  .row .q { display: none; }
+  .edit { padding: 4px 12px 14px 12px; }
+  .edit input, .edit select, .seg { height: 44px; font-size: 16px; }
+  .six, .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .three .wd { grid-column: span 2; }
+  .acts button { height: 44px; flex: 1; }
+  .cut-row { grid-template-columns: 26px minmax(0, 1fr) auto; }
+  .cut-row .ca { grid-column: 3; }
+  .cut-row .cv { grid-column: 3; grid-row: 1; }
+  .cut-row .cq, .cut-row .cm { grid-row: 1 / span 2; }
+}
+@media (min-width: 721px) { .block .sum { display: none; } }
+</style>
+</head>
+<body>
+<header class="head">
+  <div><span class="cap">Woodworking planner · project</span><h1>Small bookshelf</h1></div>
+  <div class="head-right"><span class="cap">Saved on this computer</span><button class="imp">Import</button><button>Export</button></div>
+</header>
+<div class="page">
+  <section class="sheet">
+    <div class="view">
+      <svg class="shelf" viewBox="-30 -600 540 830" role="img" aria-label="Placeholder for the 3D view: a small bookshelf"><path class="grid" d="M-2165.1 0.0L346.4 -1450.0M-2165.1 0.0L346.4 1450.0M-2121.8 25.0L389.7 -1425.0M-2121.8 -25.0L389.7 1425.0M-2078.5 50.0L433.0 -1400.0M-2078.5 -50.0L433.0 1400.0M-2035.2 75.0L476.3 -1375.0M-2035.2 -75.0L476.3 1375.0M-1991.9 100.0L519.6 -1350.0M-1991.9 -100.0L519.6 1350.0M-1948.6 125.0L562.9 -1325.0M-1948.6 -125.0L562.9 1325.0M-1905.3 150.0L606.2 -1300.0M-1905.3 -150.0L606.2 1300.0M-1862.0 175.0L649.5 -1275.0M-1862.0 -175.0L649.5 1275.0M-1818.7 200.0L692.8 -1250.0M-1818.7 -200.0L692.8 1250.0M-1775.4 225.0L736.1 -1225.0M-1775.4 -225.0L736.1 1225.0M-1732.1 250.0L779.4 -1200.0M-1732.1 -250.0L779.4 1200.0M-1688.7 275.0L822.7 -1175.0M-1688.7 -275.0L822.7 1175.0M-1645.4 300.0L866.0 -1150.0M-1645.4 -300.0L866.0 1150.0M-1602.1 325.0L909.3 -1125.0M-1602.1 -325.0L909.3 1125.0M-1558.8 350.0L952.6 -1100.0M-1558.8 -350.0L952.6 1100.0M-1515.5 375.0L995.9 -1075.0M-1515.5 -375.0L995.9 1075.0M-1472.2 400.0L1039.2 -1050.0M-1472.2 -400.0L1039.2 1050.0M-1428.9 425.0L1082.5 -1025.0M-1428.9 -425.0L1082.5 1025.0M-1385.6 450.0L1125.8 -1000.0M-1385.6 -450.0L1125.8 1000.0M-1342.3 475.0L1169.1 -975.0M-1342.3 -475.0L1169.1 975.0M-1299.0 500.0L1212.4 -950.0M-1299.0 -500.0L1212.4 950.0M-1255.7 525.0L1255.7 -925.0M-1255.7 -525.0L1255.7 925.0M-1212.4 550.0L1299.0 -900.0M-1212.4 -550.0L1299.0 900.0M-1169.1 575.0L1342.3 -875.0M-1169.1 -575.0L1342.3 875.0M-1125.8 600.0L1385.6 -850.0M-1125.8 -600.0L1385.6 850.0M-1082.5 625.0L1428.9 -825.0M-1082.5 -625.0L1428.9 825.0M-1039.2 650.0L1472.2 -800.0M-1039.2 -650.0L1472.2 800.0M-995.9 675.0L1515.5 -775.0M-995.9 -675.0L1515.5 775.0M-952.6 700.0L1558.8 -750.0M-952.6 -700.0L1558.8 750.0M-909.3 725.0L1602.1 -725.0M-909.3 -725.0L1602.1 725.0M-866.0 750.0L1645.4 -700.0M-866.0 -750.0L1645.4 700.0M-822.7 775.0L1688.7 -675.0M-822.7 -775.0L1688.7 675.0M-779.4 800.0L1732.1 -650.0M-779.4 -800.0L1732.1 650.0M-736.1 825.0L1775.4 -625.0M-736.1 -825.0L1775.4 625.0M-692.8 850.0L1818.7 -600.0M-692.8 -850.0L1818.7 600.0M-649.5 875.0L1862.0 -575.0M-649.5 -875.0L1862.0 575.0M-606.2 900.0L1905.3 -550.0M-606.2 -900.0L1905.3 550.0M-562.9 925.0L1948.6 -525.0M-562.9 -925.0L1948.6 525.0M-519.6 950.0L1991.9 -500.0M-519.6 -950.0L1991.9 500.0M-476.3 975.0L2035.2 -475.0M-476.3 -975.0L2035.2 475.0M-433.0 1000.0L2078.5 -450.0M-433.0 -1000.0L2078.5 450.0M-389.7 1025.0L2121.8 -425.0M-389.7 -1025.0L2121.8 425.0M-346.4 1050.0L2165.1 -400.0M-346.4 -1050.0L2165.1 400.0M-303.1 1075.0L2208.4 -375.0M-303.1 -1075.0L2208.4 375.0M-259.8 1100.0L2251.7 -350.0M-259.8 -1100.0L2251.7 350.0M-216.5 1125.0L2295.0 -325.0M-216.5 -1125.0L2295.0 325.0M-173.2 1150.0L2338.3 -300.0M-173.2 -1150.0L2338.3 300.0M-129.9 1175.0L2381.6 -275.0M-129.9 -1175.0L2381.6 275.0M-86.6 1200.0L2424.9 -250.0M-86.6 -1200.0L2424.9 250.0M-43.3 1225.0L2468.2 -225.0M-43.3 -1225.0L2468.2 225.0M0.0 1250.0L2511.5 -200.0M0.0 -1250.0L2511.5 200.0M43.3 1275.0L2554.8 -175.0M43.3 -1275.0L2554.8 175.0M86.6 1300.0L2598.1 -150.0M86.6 -1300.0L2598.1 150.0M129.9 1325.0L2641.4 -125.0M129.9 -1325.0L2641.4 125.0M173.2 1350.0L2684.7 -100.0M173.2 -1350.0L2684.7 100.0M216.5 1375.0L2728.0 -75.0M216.5 -1375.0L2728.0 75.0M259.8 1400.0L2771.3 -50.0M259.8 -1400.0L2771.3 50.0M303.1 1425.0L2814.6 -25.0M303.1 -1425.0L2814.6 25.0M346.4 1450.0L2857.9 0.0M346.4 -1450.0L2857.9 0.0"/><path class="grid major" d="M-2165.1 0.0L433.0 -1500.0M-2165.1 0.0L433.0 1500.0M-1948.6 125.0L649.5 -1375.0M-1948.6 -125.0L649.5 1375.0M-1732.1 250.0L866.0 -1250.0M-1732.1 -250.0L866.0 1250.0M-1515.5 375.0L1082.5 -1125.0M-1515.5 -375.0L1082.5 1125.0M-1299.0 500.0L1299.0 -1000.0M-1299.0 -500.0L1299.0 1000.0M-1082.5 625.0L1515.5 -875.0M-1082.5 -625.0L1515.5 875.0M-866.0 750.0L1732.1 -750.0M-866.0 -750.0L1732.1 750.0M-649.5 875.0L1948.6 -625.0M-649.5 -875.0L1948.6 625.0M-433.0 1000.0L2165.1 -500.0M-433.0 -1000.0L2165.1 500.0M-216.5 1125.0L2381.6 -375.0M-216.5 -1125.0L2381.6 375.0M0.0 1250.0L2598.1 -250.0M0.0 -1250.0L2598.1 250.0M216.5 1375.0L2814.6 -125.0M216.5 -1375.0L2814.6 125.0M433.0 1500.0L3031.1 0.0M433.0 -1500.0L3031.1 0.0"/><polygon class="shadow" points="-30.3,2.5 372.4,235.0 532.6,142.5 129.9,-90.0"/><g class="part ply"><polygon class="ff" points="129.9,-75.0 476.3,125.0 476.3,-375.0 129.9,-575.0"/><polygon class="fs" points="476.3,125.0 478.9,123.5 478.9,-376.5 476.3,-375.0"/><polygon class="ft" points="129.9,-575.0 476.3,-375.0 478.9,-376.5 132.5,-576.5"/></g><g class="part "><polygon class="ff" points="0.0,0.0 7.8,4.5 7.8,-495.5 0.0,-500.0"/><polygon class="fs" points="7.8,4.5 137.7,-70.5 137.7,-570.5 7.8,-495.5"/><polygon class="ft" points="0.0,-500.0 7.8,-495.5 137.7,-570.5 129.9,-575.0"/></g><g class="part "><polygon class="ff" points="7.8,4.5 338.6,195.5 338.6,186.5 7.8,-4.5"/><polygon class="fs" points="338.6,195.5 468.5,120.5 468.5,111.5 338.6,186.5"/><polygon class="ft" points="7.8,-4.5 338.6,186.5 468.5,111.5 137.7,-79.5"/></g><g class="part "><polygon class="ff" points="16.5,-164.0 347.3,27.0 347.3,18.0 16.5,-173.0"/><polygon class="fs" points="347.3,27.0 468.5,-43.0 468.5,-52.0 347.3,18.0"/><polygon class="ft" points="16.5,-173.0 347.3,18.0 468.5,-52.0 137.7,-243.0"/></g><g class="part sel"><polygon class="ff" points="16.5,-327.5 347.3,-136.5 347.3,-145.5 16.5,-336.5"/><polygon class="fs" points="347.3,-136.5 468.5,-206.5 468.5,-215.5 347.3,-145.5"/><polygon class="ft" points="16.5,-336.5 347.3,-145.5 468.5,-215.5 137.7,-406.5"/></g><g class="part "><polygon class="ff" points="7.8,-486.5 338.6,-295.5 338.6,-304.5 7.8,-495.5"/><polygon class="fs" points="338.6,-295.5 468.5,-370.5 468.5,-379.5 338.6,-304.5"/><polygon class="ft" points="7.8,-495.5 338.6,-304.5 468.5,-379.5 137.7,-570.5"/></g><g class="part "><polygon class="ff" points="338.6,195.5 346.4,200.0 346.4,-300.0 338.6,-304.5"/><polygon class="fs" points="346.4,200.0 476.3,125.0 476.3,-375.0 346.4,-300.0"/><polygon class="ft" points="338.6,-304.5 346.4,-300.0 476.3,-375.0 468.5,-379.5"/></g></svg>
+      <span class="note cap">3D view · drag to orbit · click a board</span>
+      <div class="block">
+        <div class="wide"><span class="cap">Project</span><b>Small bookshelf</b></div>
+        <div><span class="cap">Boards</span><b>7</b></div>
+        <div><span class="cap">Volume</span><b>0.0316 m³</b></div>
+        <div><span class="cap">Surface</span><b>4.84 m²</b></div>
+        <div><span class="cap">Overall</span><b>800 × 306 × 1000</b></div>
+        <div><span class="cap">Units</span><b>mm</b></div>
+        <div><span class="cap">Selected</span><b>5 · Upper shelf</b></div>
+        <div class="sum"><b>7 boards · 0.0316 m³ · 4.84 m²</b></div>
+      </div>
+    </div>
+  </section>
+  <section class="sched">
+    <div class="sec-h"><h2>Parts</h2><button class="primary">Add part</button></div>
+    <ol class="rows">
+      <li class="row"><span class="no">1</span><span class="nm"><i style="--c:#d8b27c"></i>Left side</span><span class="dim">1000 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row"><span class="no">2</span><span class="nm"><i style="--c:#d8b27c"></i>Right side</span><span class="dim">1000 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row"><span class="no">3</span><span class="nm"><i style="--c:#d8b27c"></i>Top</span><span class="dim">764 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row"><span class="no">4</span><span class="nm"><i style="--c:#d8b27c"></i>Bottom</span><span class="dim">764 × 300 × 18</span><span class="q">×1</span></li>
+      <li class="row sel"><span class="no">5</span><span class="nm"><i style="--c:#d8b27c"></i>Upper shelf</span><span class="dim">764 × 280 × 18</span><span class="q">×1</span></li>
+      <li class="edit">
+        <label><span class="cap">Name</span><input value="Upper shelf"></label>
+        <div class="six">
+          <label><span class="cap">Length</span><input value="764"></label>
+          <label><span class="cap">Width</span><input value="280"></label>
+          <label><span class="cap">Thick</span><input value="18"></label>
+          <label><span class="cap">X</span><input value="18"></label>
+          <label><span class="cap">Y</span><input value="20"></label>
+          <label><span class="cap">Z</span><input value="654"></label>
+        </div>
+        <div class="three">
+          <label><span class="cap">Length along</span><span class="seg"><b class="on">X</b><b>Y</b><b>Z</b></span></label>
+          <label class="wd"><span class="cap">Wood</span><select><option>Oak</option></select></label>
+          <label><span class="cap">Qty</span><input value="1"></label>
+        </div>
+        <div class="acts"><button>Duplicate</button><button>Delete</button></div>
+      </li>
+      <li class="row"><span class="no">6</span><span class="nm"><i style="--c:#d8b27c"></i>Lower shelf</span><span class="dim">764 × 280 × 18</span><span class="q">×1</span></li>
+      <li class="row"><span class="no">7</span><span class="nm"><i style="--c:#e9dab6"></i>Back panel</span><span class="dim">1000 × 800 × 6</span><span class="q">×1</span></li>
+    </ol>
+    <div class="sec-h cutlist"><h2>Cut list</h2><span class="cap">Identical parts grouped</span></div>
+    <div class="cut-row"><span class="cq">2×</span><span class="cm"><span class="cd">1000 × 300 × 18 · Oak</span><span class="cn">Left side, Right side</span></span><span class="cv">0.0108 m³</span><span class="ca">1.29 m²</span></div>
+    <div class="cut-row"><span class="cq">2×</span><span class="cm"><span class="cd">764 × 300 × 18 · Oak</span><span class="cn">Top, Bottom</span></span><span class="cv">0.0083 m³</span><span class="ca">0.99 m²</span></div>
+    <div class="cut-row"><span class="cq">2×</span><span class="cm"><span class="cd">764 × 280 × 18 · Oak</span><span class="cn">Upper shelf, Lower shelf</span></span><span class="cv">0.0077 m³</span><span class="ca">0.93 m²</span></div>
+    <div class="cut-row"><span class="cq">1×</span><span class="cm"><span class="cd">1000 × 800 × 6 · Birch ply</span><span class="cn">Back panel</span></span><span class="cv">0.0048 m³</span><span class="ca">1.62 m²</span></div>
+    <div class="cut-row total"><span class="cq">7</span><span class="cm"><span class="cn">boards in total</span></span><span class="cv">0.0316 m³</span><span class="ca">4.84 m²</span></div>
+  </section>
+</div>
+</body>
+</html>

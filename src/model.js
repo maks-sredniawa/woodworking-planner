@@ -1,0 +1,205 @@
+export const FORMAT = 'woodworking-planner';
+export const FORMAT_VERSION = 1;
+export const MAX_SIZE_MM = 10000;
+
+export const SPECIES = {
+  pine: { label: 'Pine', color: '#d9b77e', density: 510 },
+  spruce: { label: 'Spruce', color: '#e6cc98', density: 450 },
+  oak: { label: 'Oak', color: '#b98a54', density: 720 },
+  beech: { label: 'Beech', color: '#d6a77a', density: 720 },
+  walnut: { label: 'Walnut', color: '#6e4b33', density: 640 },
+  birchPlywood: { label: 'Birch plywood', color: '#e3c99f', density: 680 },
+  mdf: { label: 'MDF', color: '#a88b6c', density: 750 },
+};
+
+export const ORIENTATIONS = {
+  xzy: 'Lying flat, length left–right',
+  zxy: 'Lying flat, length front–back',
+  yzx: 'Standing, facing the side',
+  yxz: 'Standing, facing the front',
+  xyz: 'On edge, length left–right',
+  zyx: 'On edge, length front–back',
+};
+
+const DIMENSIONS = ['length', 'width', 'thickness'];
+const POSITION = ['x', 'y', 'z'];
+
+export function extents(part) {
+  const [lengthAxis, widthAxis, thicknessAxis] = part.orientation;
+  return {
+    [lengthAxis]: part.length,
+    [widthAxis]: part.width,
+    [thicknessAxis]: part.thickness,
+  };
+}
+
+export function bounds(part) {
+  const size = extents(part);
+  return {
+    min: { x: part.x, y: part.y, z: part.z },
+    max: { x: part.x + size.x, y: part.y + size.y, z: part.z + size.z },
+  };
+}
+
+export function projectBounds(parts) {
+  if (parts.length === 0) return null;
+  const all = parts.map(bounds);
+  const pick = (side, fn) => Object.fromEntries(POSITION.map((axis) => [axis, fn(...all.map((b) => b[side][axis]))]));
+  return { min: pick('min', Math.min), max: pick('max', Math.max) };
+}
+
+export function overlaps(parts) {
+  const boxes = parts.map(bounds);
+  const pairs = [];
+  for (let i = 0; i < parts.length; i++) {
+    for (let j = i + 1; j < parts.length; j++) {
+      const a = boxes[i];
+      const b = boxes[j];
+      if (POSITION.every((axis) => a.min[axis] < b.max[axis] && b.min[axis] < a.max[axis])) {
+        pairs.push([parts[i].id, parts[j].id]);
+      }
+    }
+  }
+  return pairs;
+}
+
+export function cutList(parts) {
+  const groups = new Map();
+  for (const part of parts) {
+    const key = [part.species, part.length, part.width, part.thickness].join('|');
+    const group = groups.get(key) ?? {
+      species: part.species,
+      length: part.length,
+      width: part.width,
+      thickness: part.thickness,
+      count: 0,
+      names: [],
+    };
+    group.count += 1;
+    if (!group.names.includes(part.name)) group.names.push(part.name);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort(
+    (a, b) => a.species.localeCompare(b.species) || b.thickness - a.thickness || b.length - a.length || b.width - a.width,
+  );
+}
+
+export function totals(parts) {
+  let volume = 0;
+  let area = 0;
+  let weight = 0;
+  for (const part of parts) {
+    const partVolume = (part.length * part.width * part.thickness) / 1e9;
+    volume += partVolume;
+    area += (part.length * part.width) / 1e6;
+    weight += partVolume * SPECIES[part.species].density;
+  }
+  return { count: parts.length, volume, area, weight };
+}
+
+let lastId = 0;
+export function newId() {
+  lastId += 1;
+  return `p${Date.now().toString(36)}${lastId.toString(36)}`;
+}
+
+export function makePart(fields = {}) {
+  return {
+    id: newId(),
+    name: 'Board',
+    length: 600,
+    width: 200,
+    thickness: 18,
+    orientation: 'xzy',
+    species: 'pine',
+    x: 0,
+    y: 0,
+    z: 0,
+    ...fields,
+  };
+}
+
+export function updatePart(part, field, raw) {
+  if (DIMENSIONS.includes(field)) {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0 || value > MAX_SIZE_MM) return null;
+    return { ...part, [field]: roundMm(value) };
+  }
+  if (POSITION.includes(field)) {
+    const value = Number(raw);
+    if (raw === '' || !Number.isFinite(value) || Math.abs(value) > MAX_SIZE_MM) return null;
+    return { ...part, [field]: roundMm(value) };
+  }
+  if (field === 'orientation') return raw in ORIENTATIONS ? { ...part, orientation: raw } : null;
+  if (field === 'species') return raw in SPECIES ? { ...part, species: raw } : null;
+  if (field === 'name') return { ...part, name: String(raw).slice(0, 80) };
+  return null;
+}
+
+export function duplicatePart(part) {
+  const size = extents(part);
+  const step = part.orientation[2];
+  return { ...part, id: newId(), [step]: part[step] + size[step] + 20 };
+}
+
+function roundMm(value) {
+  return Math.round(value * 10) / 10;
+}
+
+export function serialize(project) {
+  return JSON.stringify(
+    {
+      format: FORMAT,
+      version: FORMAT_VERSION,
+      name: project.name,
+      parts: project.parts.map(({ id, ...rest }) => rest),
+    },
+    null,
+    2,
+  );
+}
+
+export function parseProject(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('This file is not a project: it is not valid JSON.');
+  }
+  if (data?.format !== FORMAT) throw new Error('This file is not a Woodworking planner project.');
+  if (data.version > FORMAT_VERSION) throw new Error('This project was saved by a newer version of the app.');
+  if (!Array.isArray(data.parts)) throw new Error('This project has no list of parts.');
+  const parts = data.parts.map((raw, index) => {
+    let part = makePart();
+    for (const field of ['name', ...DIMENSIONS, ...POSITION, 'orientation', 'species']) {
+      if (raw?.[field] === undefined) continue;
+      part = updatePart(part, field, raw[field]);
+      if (!part) throw new Error(`Part ${index + 1} has an invalid ${field}.`);
+    }
+    return part;
+  });
+  return { name: typeof data.name === 'string' && data.name.trim() ? data.name.slice(0, 80) : 'Untitled project', parts };
+}
+
+export function starterProject() {
+  const sheet = 18;
+  const depth = 244;
+  const width = 800;
+  const height = 1000;
+  const inner = width - 2 * sheet;
+  const gap = (height - 4 * sheet) / 3;
+  const shelf = (name, y) =>
+    makePart({ name, length: inner, width: depth, thickness: sheet, orientation: 'xzy', x: sheet, y: roundMm(y), z: 6 });
+  return {
+    name: 'Small bookshelf',
+    parts: [
+      makePart({ name: 'Back panel', length: height, width, thickness: 6, orientation: 'yxz', species: 'birchPlywood' }),
+      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, orientation: 'yzx', z: 6 }),
+      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, orientation: 'yzx', x: width - sheet, z: 6 }),
+      shelf('Bottom', 0),
+      shelf('Shelf', sheet + gap),
+      shelf('Shelf', 2 * (sheet + gap)),
+      shelf('Top', height - sheet),
+    ],
+  };
+}
