@@ -451,19 +451,25 @@ const SHAPE_FIELDS = {
   triangle: ['length', 'width', 'thickness'],
 };
 
-const PREVIEW = { width: 280, height: 112, inset: 12 };
+// The checkbox's outer corner in sketch units at the widest stretch .corner-pick's max-width allows.
+const PREVIEW = { width: 256, height: 88, box: { x: 12.8, y: 16 }, gap: 3 };
+
+function sketchCut(cutLength, cutWidth) {
+  const { box, gap } = PREVIEW;
+  const fit = (box.x / cutLength + box.y / cutWidth) - gap * Math.hypot(1 / cutLength, 1 / cutWidth);
+  const scale = Math.min(1, fit);
+  return { cutLength: cutLength * scale, cutWidth: cutWidth * scale };
+}
 
 function cornerPreview(part) {
-  const width = PREVIEW.width - 2 * PREVIEW.inset;
-  const height = PREVIEW.height - 2 * PREVIEW.inset;
+  const { width, height } = PREVIEW;
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
   const sketch = {
     ...part,
     length: width,
     width: height,
     cornerRadius: clamp((part.cornerRadius / Math.min(part.length, part.width)) * height, 16, height / 2),
-    cutLength: clamp((part.cutLength / part.length) * width, 18, width / 2),
-    cutWidth: clamp((part.cutWidth / part.width) * height, 18, height / 2),
+    ...sketchCut(clamp((part.cutLength / part.length) * width, 18, width / 2), clamp((part.cutWidth / part.width) * height, 18, height / 2)),
   };
   return outlinePath(sketch, { width, height, smallest: 0 });
 }
@@ -483,14 +489,17 @@ function renderShapeFields(part) {
   $('corner-pick').hidden = part.corners === 'square';
   $('radius-field').hidden = part.corners !== 'rounded';
   $('cut-fields').hidden = part.corners !== 'cut';
-  $('corner-shape').setAttribute('viewBox', `${-PREVIEW.inset} ${-PREVIEW.inset} ${PREVIEW.width} ${PREVIEW.height}`);
+  $('corner-shape').setAttribute('viewBox', `0 0 ${PREVIEW.width} ${PREVIEW.height}`);
   $('corner-shape').querySelector('path').setAttribute('d', cornerPreview(part));
 }
+
+const CUT_LABELS = [...document.querySelectorAll('.cut-list thead th')].map((th) => th.textContent);
 
 function renderCutList() {
   $('cut-rows').replaceChildren(
     ...cutList(project.parts).map((row) => {
       const tr = document.createElement('tr');
+      tr.setAttribute('role', 'row');
       const volume = (row.count * row.volume) / 1e9;
       const face = (row.count * row.area) / 1e6;
       const cells = [
@@ -501,7 +510,12 @@ function renderCutList() {
         [`${volume.toFixed(4)} m³`, 'num'],
         [`${face.toFixed(2)} m²`, 'num'],
       ];
-      for (const [text, className] of cells) tr.append(element('td', className, text));
+      cells.forEach(([text, className], i) => {
+        const td = element('td', className, text);
+        td.setAttribute('role', 'cell');
+        td.dataset.label = CUT_LABELS[i];
+        tr.append(td);
+      });
       const note = shapeNote(row.piece);
       if (note) tr.children[1].append(element('span', 'shape-note', note));
       return tr;
@@ -744,6 +758,15 @@ function showTab(name) {
   for (const tab of document.querySelectorAll('.tabs [data-tab]')) tab.setAttribute('aria-pressed', String(tab.dataset.tab === name));
 }
 for (const tab of document.querySelectorAll('.tabs [data-tab]')) tab.addEventListener('click', () => showTab(tab.dataset.tab));
+
+document.addEventListener('focusin', (event) => {
+  if (!event.target.closest('.parts, .inspector, .cut') || !document.querySelector('.add-bar').getBoundingClientRect().height) return;
+  const page = getComputedStyle(document.documentElement);
+  const box = event.target.getBoundingClientRect();
+  if (box.top < parseFloat(page.scrollPaddingTop) || box.bottom > innerHeight - parseFloat(page.scrollPaddingBottom)) {
+    event.target.scrollIntoView({ block: 'nearest' });
+  }
+});
 
 for (const button of document.querySelectorAll('.view-tools [data-view]')) {
   button.addEventListener('click', () => {
