@@ -463,10 +463,10 @@ function freeX(piece, parts, x, nextX) {
 
 export function duplicatePart(part, parts = [part]) {
   const copy = { ...part, id: newId(), locked: false, y: 0 };
-  const width = extents(part).x;
+  const span = extents(part).x;
   const x =
-    freeX(copy, parts, part.x + width + BESIDE_GAP_MM, (blocker) => blocker.max.x + BESIDE_GAP_MM) ??
-    freeX(copy, parts, part.x - width - BESIDE_GAP_MM, (blocker) => blocker.min.x - width - BESIDE_GAP_MM);
+    freeX(copy, parts, part.x + span + BESIDE_GAP_MM, (blocker) => blocker.max.x + BESIDE_GAP_MM) ??
+    freeX(copy, parts, part.x - span - BESIDE_GAP_MM, (blocker) => blocker.min.x - span - BESIDE_GAP_MM);
   return x === undefined ? part : { ...copy, x: roundMm(x) };
 }
 
