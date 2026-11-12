@@ -118,14 +118,14 @@
       <fieldset>
         <legend>Size (mm)</legend>
         <div class="trio" id="sizes">
-          <div class="field" data-field="length"><label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="length-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="width"><label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="width-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="thickness"><label>Thickness <input name="thickness" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="thickness-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="diameter"><label>Diameter <input name="diameter" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="diameter-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="dowelDiameter"><label>Diameter <input name="dowelDiameter" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="dowelDiameter-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="outerRadius"><label>Outer radius <input name="outerRadius" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="outerRadius-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="bandWidth"><label>Band width <input name="bandWidth" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="bandWidth-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="sweep"><label>Sweep (°) <input name="sweep" data-geometry class="num" type="number" min="1" max="360" step="any" inputmode="decimal"></label><p id="sweep-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="length"><label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="length-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="width"><label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="width-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="thickness"><label>Thickness <input name="thickness" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="thickness-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="diameter"><label>Diameter <input name="diameter" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="diameter-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="dowelDiameter"><label>Diameter <input name="dowelDiameter" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="dowelDiameter-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="outerRadius"><label>Outer radius <input name="outerRadius" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="outerRadius-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="bandWidth"><label>Band width <input name="bandWidth" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="bandWidth-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="sweep"><label>Sweep (°) <input name="sweep" data-geometry class="num" type="number" min="1" max="360" step="any" inputmode="decimal"></label><p id="sweep-error" class="field-error" aria-live="polite"></p></div>
         </div>
         <p id="arc-inner" class="help" hidden></p>
         <p id="cut-from" class="cut-from"></p>
@@ -144,18 +144,18 @@
           <label class="corner bl"><input type="checkbox" name="cornerBottomLeft" data-geometry><span>Bottom left</span></label>
           <label class="corner br"><input type="checkbox" name="cornerBottomRight" data-geometry><span>Bottom right</span></label>
         </div>
-        <div class="field" id="radius-field" data-field="cornerRadius"><label>Radius (mm) <input name="cornerRadius" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cornerRadius-error" class="field-error" hidden></p></div>
+        <div class="field" id="radius-field" data-field="cornerRadius"><label>Radius (mm) <input name="cornerRadius" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cornerRadius-error" class="field-error" aria-live="polite"></p></div>
         <div class="duo" id="cut-fields">
-          <div class="field" data-field="cutLength"><label>Cut along length (mm) <input name="cutLength" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cutLength-error" class="field-error" hidden></p></div>
-          <div class="field" data-field="cutWidth"><label>Cut along width (mm) <input name="cutWidth" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cutWidth-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="cutLength"><label>Cut along length (mm) <input name="cutLength" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cutLength-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field" data-field="cutWidth"><label>Cut along width (mm) <input name="cutWidth" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cutWidth-error" class="field-error" aria-live="polite"></p></div>
         </div>
       </fieldset>
       <fieldset>
         <legend>Left, bottom, back corner (mm)</legend>
         <div class="trio">
-          <div class="field"><label>From left <input name="x" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="x-error" class="field-error" hidden></p></div>
-          <div class="field"><label>From floor <input name="y" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="y-error" class="field-error" hidden></p></div>
-          <div class="field"><label>From back <input name="z" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="z-error" class="field-error" hidden></p></div>
+          <div class="field"><label>From left <input name="x" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="x-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field"><label>From floor <input name="y" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="y-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field"><label>From back <input name="z" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="z-error" class="field-error" aria-live="polite"></p></div>
         </div>
         <p class="help">Or drag the board in the 3D view. Floor or Height above the view picks which way it goes; hold Shift mid-drag to switch and let go to switch back. With Snap on it sits flush against other boards or on a 10 mm grid; hold Alt to do the opposite. Turn, Tip and Roll rotate it 90° (keys R, T, L while the 3D view, its buttons or the parts list has focus). Arrow keys nudge it 10 mm (Shift: 1 mm); Alt+↑ and Alt+↓ move it back and forth.</p>
       </fieldset>

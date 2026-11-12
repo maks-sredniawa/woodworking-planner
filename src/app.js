@@ -567,8 +567,7 @@ function sideError(part, side, value) {
 function showFieldError(input, message) {
   const note = $(`${input.name}-error`);
   if (!note) return;
-  note.textContent = message ?? '';
-  note.hidden = !message;
+  if (note.textContent !== (message ?? '')) note.textContent = message ?? '';
   if (message) {
     input.setAttribute('aria-invalid', 'true');
     input.setAttribute('aria-describedby', note.id);
