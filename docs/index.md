@@ -23,14 +23,17 @@ anything.
 
 ## What it does
 
-- **Boards in 3D.** Each part is a rectangular board with its length, width, thickness (in
-  millimetres) and wood. Add, copy, delete and edit them, and see them with wood colour and grain.
-- **Place them by hand.** Drag a board along the floor or up and down, snap it flush against other
-  boards, nudge it with the arrow keys, or turn it 90° at a time.
-- **Lock what's finished.** A locked board can't be moved, turned, resized or deleted by mistake.
-- **Catch mistakes.** Boards that overlap are flagged in the list.
-- **Cut list.** Identical boards of the same wood are grouped, with the board count, volume, face
-  area, approximate weight and the overall size.
+- **Parts in 3D.** Each part has its size in millimetres and its wood, and you see it with wood
+  colour and grain. Add, copy, delete and edit them.
+- **More than boards.** A part can be a board, a round disc, a dowel, a curved arc or a triangle,
+  and a board can have rounded or cut corners.
+- **Place them by hand.** Drag a part along the floor or up and down, snap it flush against other
+  parts, nudge it with the arrow keys, or turn it 90° at a time so it can face any way.
+- **Lock what's finished.** A locked part can't be moved, turned, resized or deleted by mistake.
+- **Catch mistakes.** Parts that overlap are flagged in the list.
+- **Cut list.** Identical parts of the same wood are grouped, each with the board size to cut it
+  from (dowels as rod), and totals for count, volume, face area, approximate weight and the overall
+  size.
 - **Undo and redo** with Ctrl+Z and Ctrl+Shift+Z.
 - **Your project stays yours.** It saves itself in the browser, and you can save and open it as a
   `.woodplan.json` file.
@@ -38,20 +41,12 @@ anything.
 
 It opens with an example bookshelf to look around in.
 
-## Coming next
-
-Shapes beyond rectangular boards:
-
-- round discs and dowels,
-- curved arc pieces,
-- triangles, for angled cuts,
-- boards with rounded or cut corners.
-
 ## Known limitations
 
 - Millimetres only, for now.
-- Every part is a rectangular board for now: no angled cuts or round parts until the shapes above
-  arrive, and no joints (dados, tenons).
+- No joints yet (dados, tenons).
+- Overlaps and snapping use each part's bounding box, so round or angled parts can show as
+  overlapping when only their boxes touch.
 - No cutting plan that fits parts onto standard boards or plywood sheets.
 
 ## Help and feedback
