@@ -24,7 +24,7 @@ For anyone building furniture or other projects from boards and sheet goods: lay
 - Workbench layout: parts on the left, the 3D view with the cut list under it in the middle, the selected board on the right. On a phone the 3D view stays on top with Parts, Edit and Cut list tabs below.
 - Parts that overlap are flagged in the list. Overlaps and snapping use each part's box (the rectangular blank around it), not its true outline, so a disc in the corner of another part's box counts as touching it.
 - Cut list: identical parts of the same wood and shape are grouped. A shaped part lists the rectangular blank to cut it from, with its shape named under it (for example `Disc ⌀400` or `2 corners cut 50 × 80`); a dowel lists the rod, `⌀30 × 450`. Totals give the part count, volume, face area and approximate weight from the true shape, plus the overall size.
-- Undo and redo (Ctrl+Z, Ctrl+Shift+Z). Rapid typing in one field counts as one step.
+- Undo and redo (Ctrl+Z, Ctrl+Shift+Z). Rapid typing in one field counts as one step; each tick, choice or list pick is a step of its own.
 - Autosaves in the browser. Save and open a project as a `.woodplan.json` file. Files are format version 2; version 1 files and autosaves still open, every part as a board with square corners lying exactly as it did.
 - Opens with an example bookshelf; New starts an empty project and Example brings the bookshelf back.
 
