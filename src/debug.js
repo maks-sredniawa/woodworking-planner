@@ -1,4 +1,5 @@
 const REFRESH_MS = 1000;
+const SHORTEST_SAMPLE_S = 0.2;
 const SOFTWARE_GPU = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 
 export function createDebugPanel(panel, view) {
@@ -26,6 +27,13 @@ export function createDebugPanel(panel, view) {
     const spentInApp = appMs;
     appMs = 0;
     const software = SOFTWARE_GPU.test(stats.gpu);
+    if (stats.seconds < SHORTEST_SAMPLE_S) {
+      const summary = document.createElement('div');
+      summary.className = 'summary';
+      summary.textContent = 'Measuring…';
+      panel.replaceChildren(summary, line('Graphics', stats.gpu, software), line('Frames', 'measuring…'));
+      return;
+    }
     const perFrame = (ms, frames) => (frames ? `${(ms / frames).toFixed(2)} ms/frame` : 'idle');
     const memory = performance.memory?.usedJSHeapSize;
     const fps = (stats.frames / stats.seconds).toFixed(0);
