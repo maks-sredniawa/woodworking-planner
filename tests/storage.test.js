@@ -43,3 +43,17 @@ test('an unreadable save is reported and kept, not dropped', () => {
   assert.equal(store.get(KEY), text);
   assert.equal(store.get(UNREADABLE_KEY), text);
 });
+
+test('an unreadable save says whether its copy was kept', () => {
+  const text = '{"format":"woodworking-planner","version":99,"parts":[]}';
+  fakeStorage({ [KEY]: text });
+  assert.equal(loadSaved().kept, true);
+  const store = fakeStorage({ [KEY]: text });
+  globalThis.localStorage.setItem = () => {
+    throw new Error('full');
+  };
+  const loaded = loadSaved();
+  assert.equal(loaded.kept, false);
+  assert.match(loaded.error, /newer version/);
+  assert.equal(store.get(KEY), text);
+});
