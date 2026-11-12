@@ -104,8 +104,35 @@ test('a duplicate gets a new id and sits beside the original, not inside it', ()
   const part = makePart({ pose: legacyPose('yzx'), thickness: 18 });
   const copy = duplicatePart(part);
   assert.notEqual(copy.id, part.id);
-  assert.equal(copy.x, 38);
+  assert.equal(copy.x, 68);
   assert.deepEqual(overlaps([part, copy]), []);
+});
+
+test('a duplicate goes on the floor beside the original, past any part already there', () => {
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 300, z: 6 });
+  const copy = duplicatePart(shelf, [shelf]);
+  assert.deepEqual([copy.x, copy.y, copy.z], [832, 0, 6]);
+  assert.deepEqual(extents(copy), extents(shelf));
+
+  const neighbour = makePart({ length: 300, x: 900, z: 0 });
+  const past = duplicatePart(shelf, [shelf, neighbour]);
+  assert.equal(past.x, 1250);
+  assert.deepEqual(overlaps([shelf, neighbour, past]), []);
+
+  const project = starterProject().parts;
+  for (const part of project) {
+    const each = duplicatePart(part, project);
+    assert.equal(each.y, 0, `${part.name} copy on the floor`);
+    assert.deepEqual(overlaps([...project, each]), [], `${part.name} copy overlaps nothing`);
+  }
+});
+
+test('a duplicate with no free room on the right goes on the left', () => {
+  const wall = makePart({ length: 1000, x: MAX_SIZE_MM - 1000 });
+  const part = makePart({ x: MAX_SIZE_MM - 1600 - 50 });
+  const copy = duplicatePart(part, [part, wall]);
+  assert.equal(copy.x, part.x - 650);
+  assert.deepEqual(overlaps([part, wall, copy]), []);
 });
 
 test('a saved project loads back the same', () => {
@@ -187,6 +214,42 @@ test('tipping a board that lies on the floor keeps it on the floor, not through 
   const tipped = rotatePart(shelf, 'x');
   assert.equal(tipped.pose, legacyPose('xyz'));
   assert.equal(tipped.y, 0);
+});
+
+test('tipping or rolling twice leaves a piece on the floor resting on it', () => {
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), y: 0 });
+  for (const axis of ['x', 'z']) {
+    const twice = rotatePart(rotatePart(shelf, axis), axis);
+    assert.equal(twice.y, 0, `two turns about ${axis}`);
+  }
+});
+
+test('every turn keeps the underside where it was and the footprint centred, so a resting piece stays resting', () => {
+  const footprintCentre = (part) => {
+    const size = extents(part);
+    return [part.x + size.x / 2, part.z + size.z / 2];
+  };
+  for (const shape of Object.keys(SHAPES)) {
+    for (const pose of POSES) {
+      for (const axis of ['x', 'y', 'z']) {
+        for (const y of [0, 18]) {
+          const piece = { ...makeShape(shape), pose, x: 100, y, z: 100 };
+          const turned = rotatePart(piece, axis);
+          assert.equal(turned.y, y, `${shape} ${pose} about ${axis} from y ${y}`);
+          footprintCentre(turned).forEach((centre, i) => assert.ok(Math.abs(centre - footprintCentre(piece)[i]) <= 0.05 + 1e-9, `${shape} ${pose} about ${axis}`));
+        }
+      }
+    }
+  }
+  const base = makePart({ length: 600, width: 400, thickness: 18 });
+  const onTop = makePart({ length: 300, width: 100, thickness: 18, x: 150, y: 18, z: 150 });
+  for (const axis of ['x', 'z']) {
+    let piece = onTop;
+    for (let i = 0; i < 4; i++) {
+      piece = rotatePart(piece, axis);
+      assert.equal(bounds(piece).min.y, bounds(base).max.y, `still on the base after ${i + 1} turns about ${axis}`);
+    }
+  }
 });
 
 test('a locked board refuses moves, rotations and size changes but keeps its name and wood editable', () => {
@@ -284,8 +347,8 @@ test('a board placed beside the project goes right, then left, then to the origi
 });
 
 test('a duplicate that has no room on either side is refused', () => {
-  const slab = makePart({ thickness: MAX_SIZE_MM, pose: legacyPose('xyz'), z: 0 });
-  assert.equal(duplicatePart(slab), slab);
+  const slab = makePart({ length: MAX_SIZE_MM, x: 0 });
+  assert.equal(duplicatePart(slab, [slab]), slab);
 });
 
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-6, `${message ?? ''} ${actual} ≠ ${expected}`);
