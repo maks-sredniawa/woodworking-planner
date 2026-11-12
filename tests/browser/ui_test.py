@@ -433,6 +433,20 @@ try:
             })()''')
             assert covered is None, f'a focused row is hidden: {covered}'
 
+        phone.click('#add-more-phone')
+        expect(phone.locator('#add-menu-phone')).to_be_visible()
+        menu = phone.locator('#add-menu-phone').bounding_box()
+        bar = phone.locator('#add-more-phone').bounding_box()
+        assert menu['y'] + menu['height'] <= bar['y'], f'the phone menu does not open upward: {menu} {bar}'
+        phone.click('#add-menu-phone [data-add-shape=dowel]')
+        expect(phone.locator('.tabs [data-tab=edit]')).to_have_attribute('aria-pressed', 'true')
+        expect(phone.locator('#view-sel')).to_contain_text('⌀30 × 450 dowel')
+        expect(phone.locator('#cut-from')).to_have_text('Cut from ⌀30 × 450 dowel rod')
+        phone.click('.tabs [data-tab=cut]')
+        expect(phone.locator('#cut-rows')).to_contain_text('Dowel rod')
+        assert phone.evaluate('document.documentElement.scrollWidth') <= 360, 'horizontal scroll with a dowel'
+        phone.keyboard.press('Control+z')
+
         status = phone.evaluate('getComputedStyle(document.getElementById("save-state")).display')
         assert status != 'none', 'the save status is removed on phones'
         phone.evaluate('() => { Storage.prototype.setItem = () => { throw new Error("full") }; }')
@@ -464,14 +478,123 @@ try:
                 return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
             }})()''')
             assert reachable, f'at 320 × 256 the end of the {tab} panel cannot be scrolled into view'
+        zoomed.click('#add-more-phone')
+        last_item = zoomed.locator('#add-menu-phone [data-add-shape=triangle]')
+        last_item.scroll_into_view_if_needed()
+        box = last_item.bounding_box()
+        assert box and box['y'] >= 0 and box['y'] + box['height'] <= 256, f'at 320 × 256 the last shape in the menu is cut off: {box}'
+        zoomed.keyboard.press('Escape')
         zoomed.screenshot(path=str(HERE / 'zoom-400.png'), full_page=True)
         zoomed.close()
+
+        shaped = browser.new_page(viewport={'width': 1280, 'height': 900})
+        shaped.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        shaped.on('pageerror', lambda e: errors.append(str(e)))
+        shaped.goto(URL)
+        expect(shaped.locator('#parts li')).to_have_count(7)
+        active = lambda: shaped.evaluate('[document.activeElement.name, document.activeElement.value || document.activeElement.id]')
+        shape_of = lambda n: shaped.evaluate(f'woodworkingPlanner.project.parts[{n}].shape')
+
+        shaped.locator('#parts li').nth(4).locator('.row-main').click()
+        expect(shaped.locator('#editor input[name=shape][value=board]')).to_be_checked()
+        shaped.focus('#editor input[name=shape][value=board]')
+        shaped.keyboard.press('ArrowRight')
+        assert shape_of(4) == 'disc', shape_of(4)
+        assert active() == ['shape', 'disc'], f'switching shape with an arrow key lost focus: {active()}'
+        ring = shaped.evaluate('getComputedStyle(document.activeElement.closest(".choice")).outlineStyle')
+        assert ring == 'solid', f'the focused shape has no visible focus ring: {ring}'
+        expect(shaped.locator('#editor [name=diameter]')).to_be_visible()
+        expect(shaped.locator('#editor [name=length]')).to_be_hidden()
+        expect(shaped.locator('#corners-box')).to_be_hidden()
+        expect(shaped.locator('#cut-from')).to_have_text('Cut from 400 × 400 × 18')
+        shaped.keyboard.press('ArrowLeft')
+        assert shape_of(4) == 'board' and active() == ['shape', 'board'], active()
+        expect(shaped.locator('#editor [name=length]')).to_have_value('764')
+        assert shaped.evaluate('[...document.querySelectorAll("#sizes .field:not([hidden])")].map((f) => f.dataset.field).join()') == 'length,width,thickness'
+        shaped.wait_for_timeout(1300)
+        shaped.keyboard.press('ArrowRight')
+        shaped.keyboard.press('Control+z')
+        assert shape_of(4) == 'board' and active() == ['shape', 'board'], f'Ctrl+Z on a shape radio: {shape_of(4)} {active()}'
+
+        shaped.click('#add-more')
+        expect(shaped.locator('#add-more')).to_have_attribute('aria-expanded', 'true')
+        assert active()[1] == '' and shaped.evaluate('document.activeElement.dataset.addShape') == 'disc', 'the menu did not focus its first item'
+        shaped.keyboard.press('ArrowUp')
+        assert shaped.evaluate('document.activeElement.dataset.addShape') == 'triangle', 'ArrowUp should wrap to the last item'
+        shaped.keyboard.press('Escape')
+        expect(shaped.locator('#add-menu')).to_be_hidden()
+        assert active()[1] == 'add-more', f'Escape did not return focus to the menu button: {active()}'
+        expect(shaped.locator('#editor')).to_be_visible()
+        shaped.keyboard.press('ArrowDown')
+        expect(shaped.locator('#add-menu')).to_be_visible()
+        shaped.keyboard.press('Enter')
+        expect(shaped.locator('#parts li')).to_have_count(8)
+        assert active()[1] == 'add-more', f'adding from the menu lost focus: {active()}'
+        expect(shaped.locator('.row.sel .nm')).to_have_text('Disc')
+        expect(shaped.locator('.row.sel .dim')).to_have_text('⌀400 × 18')
+        expect(shaped.locator('.row.sel svg.sil')).to_have_attribute('aria-hidden', 'true')
+        expect(shaped.locator('#cut-rows')).to_contain_text('400 × 400 × 18')
+        expect(shaped.locator('#cut-rows .shape-note')).to_have_text(['Disc ⌀400'])
+        expect(shaped.locator('#totals')).to_contain_text('8 pieces')
+        expect(shaped.locator('#viewport canvas')).to_have_attribute('aria-label', re.compile(r'8 pieces \(7 boards, 1 disc\)'))
+        disc = shaped.evaluate('woodworkingPlanner.project.parts.at(-1)')
+        assert disc['x'] >= 850 and disc['shape'] == 'disc', disc
+
+        shaped.click('#add')
+        expect(shaped.locator('#parts li')).to_have_count(9)
+        expect(shaped.locator('#corner-pick')).to_be_hidden()
+        shaped.click('#corners-box .choice:has-text("Rounded")')
+        expect(shaped.locator('#corner-pick')).to_be_visible()
+        expect(shaped.get_by_label('Bottom left')).to_be_checked()
+        shaped.get_by_label('Bottom left').uncheck()
+        shaped.get_by_label('Bottom right').uncheck()
+        assert active() == ['cornerBottomRight', 'on'], f'ticking a corner lost focus: {active()}'
+        expect(shaped.locator('.row.sel .dim')).to_have_text('600 × 200 × 18 · R20 ×2')
+        expect(shaped.locator('#cut-rows')).to_contain_text('R20 ×2 corners (same side)')
+        expect(shaped.locator('#cut-rows')).to_contain_text('600 × 200 × 18')
+        shaped.fill('#editor [name=cornerRadius]', '150')
+        expect(shaped.locator('#cornerRadius-error')).to_have_text('Enter a radius above 0, up to 100 mm (half the width).')
+        expect(shaped.locator('#editor [name=cornerRadius]')).to_have_attribute('aria-describedby', 'cornerRadius-error')
+        shaped.fill('#editor [name=cornerRadius]', '30')
+        expect(shaped.locator('#cornerRadius-error')).to_be_hidden()
+        shaped.fill('#editor [name=width]', '40')
+        expect(shaped.locator('#width-error')).to_contain_text('at least 60 mm')
+        shaped.fill('#editor [name=width]', '200')
+        shaped.click('#corners-box .choice:has-text("Cut")')
+        expect(shaped.locator('#editor [name=cutLength]')).to_be_visible()
+        expect(shaped.locator('.row.sel .dim')).to_have_text('600 × 200 × 18 · cut 50 × 50 ×2')
+        shaped.click('#corners-box .choice:has-text("Rounded")')
+        shaped.wait_for_timeout(1300)
+
+        shaped.click('#lock')
+        for name in ['shape', 'corners', 'cornerTopLeft', 'cornerRadius']:
+            expect(shaped.locator(f'#editor [name={name}]').first).to_be_disabled()
+        shaped.click('#lock')
+
+        shaped.click('.shape-pick .choice:has-text("Arc")')
+        expect(shaped.locator('#arc-inner')).to_contain_text('Inner radius 340 mm')
+        shaped.fill('#editor [name=bandWidth]', '500')
+        expect(shaped.locator('#bandWidth-error')).to_contain_text('less than the outer radius')
+        shaped.fill('#editor [name=sweep]', '400')
+        expect(shaped.locator('#sweep-error')).to_contain_text('1° to 360°')
+        shaped.click('#undo')
+        expect(shaped.locator('#editor input[name=shape][value=board]')).to_be_checked()
+        expect(shaped.locator('.row.sel .dim')).to_have_text('600 × 200 × 18 · R30 ×2')
+
+        shaped.reload()
+        expect(shaped.locator('#parts li')).to_have_count(9)
+        expect(shaped.locator('#parts li').last.locator('.dim')).to_have_text('600 × 200 × 18 · R30 ×2')
+        shaped.wait_for_timeout(500)
+        shaped.screenshot(path=str(HERE / 'shapes-1280.png'))
+        shaped.evaluate('localStorage.clear()')
+        shaped.close()
 
         dark = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='dark')
         dark.goto(URL)
         dark.wait_for_timeout(600)
         panel = dark.evaluate('getComputedStyle(document.querySelector(".bar")).backgroundColor')
-        for field in ['#project-name']:
+        dark.locator('#parts li').first.locator('.row-main').click()
+        for field in ['#project-name', '#editor .shapes', '#editor [name=length]']:
             edge = dark.evaluate(f'getComputedStyle(document.querySelector("{field}")).borderTopColor')
             assert contrast(edge, panel) >= 3, f'dark {field} border {edge} is {contrast(edge, panel):.2f}:1'
         dark.screenshot(path=str(HERE / 'dark-1280.png'))

@@ -10,8 +10,10 @@ For anyone building furniture or other projects from boards and sheet goods: lay
 
 ## First version
 
-- A project is a name and a list of parts. Every part is a rectangular board: length, width and thickness in millimetres, the position of its left, bottom, back corner, how it lies (six orientations), and its wood.
-- Add, duplicate, delete and edit boards. Clicking a board in the 3D view picks it in the list and the other way round.
+- A project is a name and a list of parts. Each part has a shape, its sizes in millimetres, the position of its left, bottom, back corner, how it lies (six orientations), and its wood.
+- Five shapes: Board (length, width, thickness), Disc (diameter, thickness), Dowel (diameter, length), Arc (a ring segment: outer radius, band width, sweep in degrees, thickness) and Triangle (right-angled: length and width are the two legs, plus thickness). Switching shape keeps length, width and thickness, so switching back loses nothing.
+- A board's corners can be square, rounded or cut: pick which of the four corners, then one radius, or for a cut how far it runs along the length and along the width. One treatment per board.
+- Add, duplicate, delete and edit parts. Add board is one click; the ▾ beside it adds a disc, dowel, arc or triangle. Clicking a part in the 3D view picks it in the list and the other way round. The list shows each part's outline in its wood colour.
 - Move a board by dragging it in the 3D view once it is picked. Floor or Height in the toolbar picks whether it slides along the floor or goes up and down; holding Shift switches mid-drag and letting go switches back, so one drag can slide, lift and slide again. With Snap on (remembered per browser) it sits flush against other boards or on a 10 mm grid; holding Alt does the opposite, also mid-drag. Arrow keys nudge it 10 mm, Shift+arrow 1 mm, Alt+↑/↓ back and forth. A whole drag is one undo step.
 - Lock a board in place (edit panel or its row in the list): a locked board can't be dragged, nudged, rotated, resized or deleted, and a drag that starts on it turns the view instead. Its name and wood can still change, the lock is saved with the project, and a copy of it starts unlocked.
 - Turn, Tip and Roll rotate the picked board 90° around its centre (keys R, T, L), and a board on the floor stays on it. The Lies list still sets any of the six ways directly.
@@ -20,10 +22,10 @@ For anyone building furniture or other projects from boards and sheet goods: lay
 - Debug (top bar) shows the graphics card in use, frames per second, GPU time per frame where the browser allows measuring it, and the app's CPU time. A web page cannot read the whole computer's GPU or CPU load, so these are the app's own share.
 - 3D view with wood colours and grain along the length, shadows, a 100 mm floor grid, orbit, zoom and pan, Iso, Front, Side and Top cameras, and Fit.
 - Workbench layout: parts on the left, the 3D view with the cut list under it in the middle, the selected board on the right. On a phone the 3D view stays on top with Parts, Edit and Cut list tabs below.
-- Boards that overlap are flagged in the list.
-- Cut list: identical boards of the same wood are grouped; totals give board count, volume, face area and approximate weight, plus the overall size.
+- Parts that overlap are flagged in the list. Overlaps and snapping use each part's box (the rectangular blank around it), not its true outline, so a disc in the corner of another part's box counts as touching it.
+- Cut list: identical parts of the same wood and shape are grouped. A shaped part lists the rectangular blank to cut it from, with its shape named under it (for example `Disc ⌀400` or `2 corners cut 50 × 80`); a dowel lists the rod, `⌀30 × 450`. Totals give the part count, volume, face area and approximate weight from the true shape, plus the overall size.
 - Undo and redo (Ctrl+Z, Ctrl+Shift+Z). Rapid typing in one field counts as one step.
-- Autosaves in the browser. Save and open a project as a `.woodplan.json` file.
+- Autosaves in the browser. Save and open a project as a `.woodplan.json` file. Files are format version 2; version 1 files and autosaves still open, every part as a board with square corners.
 - Opens with an example bookshelf; New starts an empty project and Example brings the bookshelf back.
 
 ## Run it
@@ -49,7 +51,7 @@ uv run --with playwright python tests/browser/ui_test.py
 - Units: millimetres only, or inches and fractions as well?
 - Joinery: should parts know about joints (dados, tenons, dowels) so lengths and the cut list account for them?
 - Sheet goods: a cutting plan that nests parts onto standard boards or plywood sheets, with saw kerf?
-- Shapes beyond rectangular boards (rounds, angled cuts)?
+- Shapes: overlaps and snapping by the true outline instead of the box? Free polygons, or curves drawn by hand?
 - Hosting: a page on maksforge.com, installable for offline use.
 
 ## Contributing
