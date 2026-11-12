@@ -613,6 +613,8 @@ try:
         expect(shaped.locator('#editor [name=pose] option:checked')).to_have_text('Lying flat, length left–right, flipped end over end')
         shaped.wait_for_timeout(400)
         assert canvas.screenshot() != before, 'two Rolls did not change how the triangle is drawn'
+        triangle_y = shaped.evaluate('woodworkingPlanner.project.parts.at(-1).y')
+        assert triangle_y == 0, f'two Rolls lifted the triangle off the floor to y {triangle_y}'
         shaped.click('[data-rotate=z]')
         shaped.click('[data-rotate=z]')
         assert triangle_pose() == start_pose, f'four Rolls should bring the triangle back: {triangle_pose()}'

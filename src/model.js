@@ -579,7 +579,6 @@ export function rotatePart(part, axis) {
   const before = extents(part);
   const turned = { ...part, pose };
   const after = extents(turned);
-  for (const dim of POSITION) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
-  if (part.y >= 0 && turned.y < 0) turned.y = 0;
+  for (const dim of ['x', 'z']) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
   return fitsLimits(turned) ? turned : part;
 }
