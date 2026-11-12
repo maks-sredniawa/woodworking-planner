@@ -450,7 +450,15 @@ const SHAPE_FIELDS = {
   triangle: ['length', 'width', 'thickness'],
 };
 
-const PREVIEW = { width: 256, height: 88 };
+// The checkbox's outer corner in sketch units at the widest stretch .corner-pick's max-width allows.
+const PREVIEW = { width: 256, height: 88, box: { x: 12.8, y: 16 }, gap: 3 };
+
+function sketchCut(cutLength, cutWidth) {
+  const { box, gap } = PREVIEW;
+  const fit = (box.x / cutLength + box.y / cutWidth) - gap * Math.hypot(1 / cutLength, 1 / cutWidth);
+  const scale = Math.min(1, fit);
+  return { cutLength: cutLength * scale, cutWidth: cutWidth * scale };
+}
 
 function cornerPreview(part) {
   const { width, height } = PREVIEW;
@@ -460,8 +468,7 @@ function cornerPreview(part) {
     length: width,
     width: height,
     cornerRadius: clamp((part.cornerRadius / Math.min(part.length, part.width)) * height, 16, height / 2),
-    cutLength: clamp((part.cutLength / part.length) * width, 18, width / 2),
-    cutWidth: clamp((part.cutWidth / part.width) * height, 18, height / 2),
+    ...sketchCut(clamp((part.cutLength / part.length) * width, 18, width / 2), clamp((part.cutWidth / part.width) * height, 18, height / 2)),
   };
   return outlinePath(sketch, { width, height, smallest: 0 });
 }
