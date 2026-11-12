@@ -571,23 +571,30 @@ function sideError(part, side, value) {
 
 const fieldError = (part, input) => FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.';
 
-function recheckFocusedField(changed) {
-  const pending = document.activeElement;
-  if (pending === changed || pending?.getAttribute('aria-invalid') !== 'true' || !$('editor').contains(pending)) return;
-  const part = selectedPart();
-  if (!part) return;
-  if (!usable(pending)) {
-    pending.value = String(part[pending.name]);
-    showFieldError(pending, null);
-    return;
+function pendingFields(changed) {
+  return [...$('editor').querySelectorAll('[aria-invalid="true"]')]
+    .filter((field) => field !== changed)
+    .map((field) => ({ field, typed: field.value }));
+}
+
+function recheckPendingFields(pending) {
+  const stillInvalid = [];
+  for (const { field, typed } of pending) {
+    const part = selectedPart();
+    if (!part) return;
+    if (!usable(field)) {
+      field.value = String(part[field.name]);
+      showFieldError(field, null);
+      continue;
+    }
+    const next = updatePart(part, field.name, typed);
+    if (next) replacePart(next, field.name);
+    else stillInvalid.push({ field, typed });
   }
-  const next = updatePart(part, pending.name, pending.value);
-  if (!next) {
-    showFieldError(pending, fieldError(part, pending));
-    return;
+  for (const { field, typed } of stillInvalid) {
+    field.value = typed;
+    showFieldError(field, fieldError(selectedPart(), field));
   }
-  showFieldError(pending, null);
-  replacePart(next, pending.name);
 }
 
 function showFieldError(input, message) {
@@ -654,14 +661,18 @@ $('editor').addEventListener('input', (event) => {
   if (input.type === 'radio' && !input.checked) return;
   const typed = input.tagName === 'INPUT' && input.type !== 'radio' && input.type !== 'checkbox';
   const next = updatePart(part, input.name, input.type === 'checkbox' ? input.checked : input.value);
-  if (!next) {
-    if (typed) showFieldError(input, fieldError(part, input));
-    else renderEditor();
+  if (!next && typed) {
+    showFieldError(input, fieldError(part, input));
     return;
   }
-  showFieldError(input, null);
-  replacePart(next, typed ? input.name : null);
-  recheckFocusedField(input);
+  const pending = pendingFields(input);
+  if (next) {
+    showFieldError(input, null);
+    replacePart(next, typed ? input.name : null);
+  } else {
+    renderEditor();
+  }
+  recheckPendingFields(pending);
 });
 $('editor').addEventListener('submit', (event) => event.preventDefault());
 
