@@ -45,8 +45,8 @@ It opens with an example bookshelf to look around in.
 
 - Millimetres only, for now.
 - No joints yet (dados, tenons).
-- Overlaps and snapping use each part's bounding box, so round or angled parts can show as
-  overlapping when only their boxes touch.
+- Overlaps and snapping use each part's bounding box, so round or angled parts can be flagged as
+  overlapping when their boxes overlap even though the parts themselves don't touch.
 - No cutting plan that fits parts onto standard boards or plywood sheets.
 
 ## Help and feedback
