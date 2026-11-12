@@ -274,16 +274,16 @@ export function projectBounds(parts) {
   return { min: pick('min', Math.min), max: pick('max', Math.max) };
 }
 
+function crosses(a, b) {
+  return POSITION.every((axis) => a.min[axis] < b.max[axis] && b.min[axis] < a.max[axis]);
+}
+
 export function overlaps(parts) {
   const boxes = parts.map(bounds);
   const pairs = [];
   for (let i = 0; i < parts.length; i++) {
     for (let j = i + 1; j < parts.length; j++) {
-      const a = boxes[i];
-      const b = boxes[j];
-      if (POSITION.every((axis) => a.min[axis] < b.max[axis] && b.min[axis] < a.max[axis])) {
-        pairs.push([parts[i].id, parts[j].id]);
-      }
+      if (crosses(boxes[i], boxes[j])) pairs.push([parts[i].id, parts[j].id]);
     }
   }
   return pairs;
@@ -451,11 +451,23 @@ export function updatePart(part, field, raw) {
   return shapeProblem(next) ? null : next;
 }
 
-export function duplicatePart(part) {
-  const size = extents(part);
-  const step = poseAxes(part.pose).thickness[1];
-  const spot = [part[step] + size[step] + 20, part[step] - size[step] - 20].find(inReach);
-  return spot === undefined ? part : { ...part, id: newId(), locked: false, [step]: spot };
+function freeX(piece, parts, x, nextX) {
+  while (inReach(x)) {
+    const box = bounds({ ...piece, x });
+    const blocker = parts.map(bounds).find((other) => crosses(box, other));
+    if (!blocker) return x;
+    x = nextX(blocker);
+  }
+  return undefined;
+}
+
+export function duplicatePart(part, parts = [part]) {
+  const copy = { ...part, id: newId(), locked: false, y: 0 };
+  const span = extents(part).x;
+  const x =
+    freeX(copy, parts, part.x + span + BESIDE_GAP_MM, (blocker) => blocker.max.x + BESIDE_GAP_MM) ??
+    freeX(copy, parts, part.x - span - BESIDE_GAP_MM, (blocker) => blocker.min.x - span - BESIDE_GAP_MM);
+  return x === undefined ? part : { ...copy, x: roundMm(x) };
 }
 
 function roundMm(value) {
@@ -579,7 +591,6 @@ export function rotatePart(part, axis) {
   const before = extents(part);
   const turned = { ...part, pose };
   const after = extents(turned);
-  for (const dim of POSITION) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
-  if (part.y >= 0 && turned.y < 0) turned.y = 0;
+  for (const dim of ['x', 'z']) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
   return fitsLimits(turned) ? turned : part;
 }

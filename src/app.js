@@ -217,7 +217,7 @@ function addPart(shape = 'board') {
 function duplicateSelected() {
   const part = selectedPart();
   if (!part) return;
-  const copy = duplicatePart(part);
+  const copy = duplicatePart(part, project.parts);
   if (copy === part) return;
   const index = project.parts.indexOf(part);
   commit({ ...project, parts: [...project.parts.slice(0, index + 1), copy, ...project.parts.slice(index + 1)] });
