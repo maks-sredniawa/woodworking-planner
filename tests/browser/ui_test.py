@@ -319,6 +319,9 @@ try:
         page.keyboard.press('Tab')
         page.keyboard.press('Enter')
         assert count() == 8 and focused() == f'main:{part_id(3)}', f'after Duplicate focus went to {focused()}'
+        copied = page.evaluate('(() => { const p = woodworkingPlanner.project.parts[3]; return [p.x, p.y, p.z] })()')
+        assert copied == [850, 0, 6], f'the copy should stand on the floor beside the side panel: {copied}'
+        expect(page.locator('.warn')).to_have_count(0)
         page.keyboard.press('Tab')
         page.keyboard.press('Tab')
         page.keyboard.press('Tab')
@@ -726,6 +729,8 @@ try:
         shaped.click('[data-rotate=z]')
         shaped.click('[data-rotate=z]')
         assert triangle_pose() != start_pose, f'two Rolls left the triangle as it was: {triangle_pose()}'
+        triangle_y = shaped.evaluate('woodworkingPlanner.project.parts.at(-1).y')
+        assert triangle_y == 0, f'two Rolls lifted the triangle off the floor to y {triangle_y}'
         expect(shaped.locator('#editor [name=pose] option:checked')).to_have_text('Lying flat, length left–right, flipped end over end')
         shaped.wait_for_timeout(400)
         assert canvas.screenshot() != before, 'two Rolls did not change how the triangle is drawn'
