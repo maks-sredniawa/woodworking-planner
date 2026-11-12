@@ -16,6 +16,14 @@ URL = f'http://127.0.0.1:{PORT}/index.html'
 server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT), '--bind', '127.0.0.1'], cwd=ROOT,
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 errors = []
+CORNERS_OUTSIDE = '''(() => {
+    const path = document.querySelector("#corner-shape path"), toShape = path.getScreenCTM().inverse();
+    return [...document.querySelectorAll("#corner-pick input")].filter((box) => {
+        const r = box.getBoundingClientRect();
+        return ![[r.left, r.top], [r.right, r.top], [r.left, r.bottom], [r.right, r.bottom]]
+            .every(([x, y]) => path.isPointInFill(new DOMPoint(x, y).matrixTransform(toShape)));
+    }).map((box) => box.name);
+})()'''
 try:
     with sync_playwright() as p:
         browser = p.chromium.launch(channel='chrome', headless=True, args=['--enable-unsafe-swiftshader'])
@@ -468,6 +476,84 @@ try:
         assert size and size['width'] > 50 and size['height'] > 8, f'the save failure is not shown on phones: {size}'
         phone.close()
 
+        for width in (360, 320):
+            for scheme in ('light', 'dark'):
+                narrow = browser.new_page(viewport={'width': width, 'height': 640}, color_scheme=scheme)
+                narrow.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+                narrow.on('pageerror', lambda e: errors.append(str(e)))
+                narrow.goto(URL)
+                expect(narrow.locator('#parts li')).to_have_count(7)
+                narrow.click('.tabs [data-tab=cut]')
+                fit = narrow.evaluate('''(() => {
+                    const wrap = document.querySelector(".table-wrap");
+                    return [wrap.scrollWidth, wrap.clientWidth, document.documentElement.scrollWidth];
+                })()''')
+                assert fit[0] <= fit[1] and fit[2] <= width, f'at {width} px the cut list scrolls sideways: {fit}'
+                overlaps = narrow.evaluate('''[...document.querySelectorAll("#cut-rows tr")].flatMap((tr) => {
+                    const boxes = [...tr.children].map((td) => td.getBoundingClientRect());
+                    return boxes.flatMap((a, i) => boxes.slice(i + 1).filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom).map(() => tr.textContent));
+                })''')
+                assert not overlaps, f'at {width} px cut-list cells overlap: {overlaps}'
+                cut_list = narrow.get_by_role('table')
+                expect(cut_list.get_by_role('columnheader')).to_have_count(6)
+                expect(cut_list.get_by_role('row')).to_have_count(4)
+                expect(cut_list.get_by_role('cell', name='0.0048 m³', exact=True)).to_have_count(1)
+                expect(cut_list.get_by_role('cell', name='Bottom, Shelf, Top', exact=True)).to_have_count(1)
+                if scheme == 'light':
+                    narrow.screenshot(path=str(HERE / f'cut-{width}.png'), full_page=True)
+
+                narrow.click('.tabs [data-tab=parts]')
+                narrow.locator('#parts li').nth(4).locator('.row-main').click()
+                narrow.click('.tabs [data-tab=edit]')
+                narrow.click('#corners-box .choice:has-text("Rounded")')
+                for radius in ['20', '122']:
+                    narrow.fill('#editor [name=cornerRadius]', radius)
+                    outside = narrow.evaluate(CORNERS_OUTSIDE)
+                    assert not outside, f'at {width} px with radius {radius} these corner boxes leave the outline: {outside}'
+                narrow.locator('#corner-pick').screenshot(path=str(HERE / f'corners-{width}-{scheme}.png'))
+
+                def clear_of_bars(selector='document.activeElement'):
+                    return narrow.evaluate(f'''(() => {{
+                        const el = {selector}, r = el.getBoundingClientRect();
+                        const bottoms = [".add-bar", "#save-state.failed"].map((s) => document.querySelector(s)?.getBoundingClientRect().top ?? Infinity);
+                        const top = document.querySelector(".tabs").getBoundingClientRect().bottom;
+                        return r.top - 3 >= top && r.bottom + 3 <= Math.min(...bottoms) ? null : `${{el.name || el.id}} at ${{r.top}}–${{r.bottom}}`;
+                    }})()''')
+
+                for failing in [False, True]:
+                    if failing:
+                        narrow.evaluate('() => { Storage.prototype.setItem = () => { throw new Error("full") }; }')
+                        narrow.fill('#editor [name=name]', 'Shelf 2')
+                        expect(narrow.locator('#save-state')).to_have_text('Could not save in this browser')
+                    narrow.evaluate('window.scrollTo(0, 0)')
+                    narrow.focus('#editor [name=name]')
+                    while narrow.evaluate('!!document.activeElement.closest("#editor")'):
+                        covered = clear_of_bars()
+                        assert covered is None, f'at {width} px a focused field sits under a bar: {covered}'
+                        narrow.keyboard.press('Tab')
+                    narrow.evaluate('''(() => {
+                        const field = document.querySelector("#editor [name=x]");
+                        const cover = document.querySelector("#save-state.failed") ?? document.querySelector(".add-bar");
+                        scrollBy(0, field.getBoundingClientRect().top - cover.getBoundingClientRect().top + 12);
+                    })()''')
+                    field = narrow.locator('#editor [name=x]').bounding_box()
+                    narrow.mouse.click(field['x'] + field['width'] / 2, field['y'] + 6)
+                    expect(narrow.locator('#editor [name=x]')).to_be_focused()
+                    covered = clear_of_bars()
+                    assert covered is None, f'at {width} px a tapped field stays under the Add bar: {covered}'
+                    narrow.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
+                    covered = clear_of_bars('document.getElementById("delete")')
+                    assert covered is None, f'at {width} px the last field cannot scroll clear of the Add bar: {covered}'
+
+                status = narrow.locator('#save-state').bounding_box()
+                bar = narrow.locator('.add-bar').bounding_box()
+                assert status['y'] >= 0 and status['y'] + status['height'] <= bar['y'] + 0.5 and status['width'] > 200, \
+                    f'at {width} px the failed save is not shown just above the Add bar: {status} {bar}'
+                expect(narrow.locator('#save-state')).to_have_attribute('role', 'status')
+                if scheme == 'light':
+                    narrow.screenshot(path=str(HERE / f'failed-{width}.png'))
+                narrow.close()
+
         zoomed = browser.new_page(viewport={'width': 320, 'height': 256})
         zoomed.on('pageerror', lambda e: errors.append(str(e)))
         zoomed.goto(URL)
@@ -558,6 +644,8 @@ try:
         shaped.click('#corners-box .choice:has-text("Rounded")')
         expect(shaped.locator('#corner-pick')).to_be_visible()
         expect(shaped.get_by_label('Bottom left')).to_be_checked()
+        outside = shaped.evaluate(CORNERS_OUTSIDE)
+        assert not outside, f'these corner boxes leave the outline: {outside}'
         shaped.get_by_label('Bottom left').uncheck()
         shaped.get_by_label('Bottom right').uncheck()
         assert active() == ['cornerBottomRight', 'on'], f'ticking a corner lost focus: {active()}'

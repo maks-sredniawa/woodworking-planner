@@ -90,11 +90,11 @@
       <span id="overall" class="overall"></span>
     </div>
     <div class="table-wrap">
-      <table class="cut-list">
-        <thead>
-          <tr><th class="num">Qty</th><th>Cut from (mm)</th><th>Parts</th><th>Wood</th><th class="num">Volume</th><th class="num">Face</th></tr>
+      <table class="cut-list" role="table">
+        <thead role="rowgroup">
+          <tr role="row"><th class="num" role="columnheader">Qty</th><th role="columnheader">Cut from (mm)</th><th role="columnheader">Parts</th><th role="columnheader">Wood</th><th class="num" role="columnheader">Volume</th><th class="num" role="columnheader">Face</th></tr>
         </thead>
-        <tbody id="cut-rows"></tbody>
+        <tbody id="cut-rows" role="rowgroup"></tbody>
       </table>
     </div>
     <p id="totals" class="totals"></p>
