@@ -41,8 +41,70 @@ export const ORIENTATIONS = {
   zyx: 'On edge, length front–back',
 };
 
+const AXES = ['x', 'y', 'z'];
+const SIGNED_AXES = AXES.flatMap((axis) => [`+${axis}`, `-${axis}`]);
+const sign = (signed) => (signed[0] === '-' ? -1 : 1);
+const negate = (signed) => `${signed[0] === '-' ? '+' : '-'}${signed[1]}`;
+const isCyclic = (a, b) => (AXES.indexOf(b) - AXES.indexOf(a) + 3) % 3 === 1;
+
+export function poseAxes(pose) {
+  return { length: pose.slice(0, 2), width: pose.slice(2, 4), thickness: pose.slice(4, 6) };
+}
+
+function handedness(first, second, third) {
+  const axes = [first[1], second[1], third[1]];
+  const even = isCyclic(axes[0], axes[1]) && isCyclic(axes[1], axes[2]);
+  return sign(first) * sign(second) * sign(third) * (even ? 1 : -1);
+}
+
+export const POSES = SIGNED_AXES.flatMap((length) =>
+  SIGNED_AXES.flatMap((width) =>
+    SIGNED_AXES.filter(
+      (thickness) =>
+        new Set([length[1], width[1], thickness[1]]).size === 3 && handedness(length, width, thickness) === 1,
+    ).map((thickness) => length + width + thickness),
+  ),
+);
+
+export function legacyPose(orientation) {
+  const [length, width, thickness] = [...orientation].map((axis) => `+${axis}`);
+  return length + (handedness(length, width, thickness) === 1 ? width : negate(width)) + thickness;
+}
+
+export const LIES = Object.fromEntries(Object.entries(ORIENTATIONS).map(([orientation, label]) => [legacyPose(orientation), label]));
+
+function liesLike(pose) {
+  const axes = (each) => Object.values(poseAxes(each)).map((signed) => signed[1]).join('');
+  return Object.keys(LIES).find((canonical) => axes(canonical) === axes(pose));
+}
+
+const HALF_TURNS = { thickness: 'spun half a turn', length: 'rolled over', width: 'flipped end over end' };
+
+export function describePose(pose) {
+  const canonical = liesLike(pose);
+  if (canonical === pose) return LIES[pose];
+  const kept = Object.keys(HALF_TURNS).find((side) => poseAxes(pose)[side] === poseAxes(canonical)[side]);
+  return `${LIES[canonical]}, ${HALF_TURNS[kept]}`;
+}
+
+function vector(signed) {
+  return AXES.map((axis) => (axis === signed[1] ? sign(signed) : 0));
+}
+
+// The scene lays each outline flat with rotateX(-90°), which sends the outline's width along local −Z.
+export function sceneBasis(pose) {
+  const { length, width, thickness } = poseAxes(pose);
+  return [vector(length), vector(thickness), vector(negate(width))];
+}
+
+function turnAxis(signed, axis) {
+  if (signed[1] === axis) return signed;
+  const third = AXES.find((other) => other !== axis && other !== signed[1]);
+  return `${sign(signed) * (isCyclic(axis, signed[1]) ? 1 : -1) > 0 ? '+' : '-'}${third}`;
+}
+
 const SIZES = ['length', 'width', 'thickness', 'diameter', 'dowelDiameter', 'outerRadius', 'bandWidth', 'cornerRadius', 'cutLength', 'cutWidth'];
-const POSITION = ['x', 'y', 'z'];
+const POSITION = AXES;
 const SIZE_LIMITS = { outerRadius: MAX_RADIUS_MM };
 const ARC_STEP_DEG = 4;
 
@@ -182,7 +244,8 @@ export function pieceVolume(part) {
 }
 
 export function extents(part) {
-  const [lengthAxis, widthAxis, thicknessAxis] = part.orientation;
+  const { length, width, thickness } = poseAxes(part.pose);
+  const [lengthAxis, widthAxis, thicknessAxis] = [length[1], width[1], thickness[1]];
   const size = blank(part);
   return {
     [lengthAxis]: size.length,
@@ -293,7 +356,7 @@ export function makePart(fields = {}) {
     outerRadius: 400,
     bandWidth: 60,
     sweep: 90,
-    orientation: 'xzy',
+    pose: '+x-z+y',
     species: 'pine',
     locked: false,
     x: 0,
@@ -316,7 +379,7 @@ export function makeShape(shape = 'board') {
 }
 
 const SWITCHES = ['shape', 'corners', ...Object.keys(CORNERS)];
-const GEOMETRY = [...SIZES, 'sweep', ...SWITCHES, ...POSITION, 'orientation'];
+const GEOMETRY = [...SIZES, 'sweep', ...SWITCHES, ...POSITION, 'pose'];
 const inReach = (value) => Number.isFinite(value) && Math.abs(value) <= MAX_SIZE_MM;
 const fitsLimits = (part) => POSITION.every((axis) => inReach(part[axis]));
 const BESIDE_GAP_MM = 50;
@@ -345,7 +408,8 @@ function fieldValue(field, raw) {
     return raw !== '' && value >= MIN_SWEEP_DEG && value <= MAX_SWEEP_DEG ? value : NOT_ALLOWED;
   }
   if (field === 'locked' || field in CORNERS) return typeof raw === 'boolean' ? raw : NOT_ALLOWED;
-  const choices = { orientation: ORIENTATIONS, species: SPECIES, shape: SHAPES, corners: CORNER_STYLES }[field];
+  if (field === 'pose') return POSES.includes(raw) ? raw : NOT_ALLOWED;
+  const choices = { species: SPECIES, shape: SHAPES, corners: CORNER_STYLES }[field];
   if (choices) return Object.hasOwn(choices, raw) ? raw : NOT_ALLOWED;
   if (field === 'name') return String(raw).slice(0, 80);
   return NOT_ALLOWED;
@@ -384,7 +448,7 @@ export function updatePart(part, field, raw) {
 
 export function duplicatePart(part) {
   const size = extents(part);
-  const step = part.orientation[2];
+  const step = poseAxes(part.pose).thickness[1];
   const spot = [part[step] + size[step] + 20, part[step] - size[step] - 20].find(inReach);
   return spot === undefined ? part : { ...part, id: newId(), locked: false, [step]: spot };
 }
@@ -418,6 +482,10 @@ export function parseProject(text) {
   if (!Array.isArray(data.parts)) throw new Error('This project has no list of parts.');
   const parts = data.parts.map((raw, index) => {
     const part = makePart();
+    if (raw?.orientation !== undefined) {
+      if (!Object.hasOwn(ORIENTATIONS, raw.orientation)) throw new Error(`Part ${index + 1} has an invalid orientation.`);
+      part.pose = legacyPose(raw.orientation);
+    }
     for (const field of ['name', ...GEOMETRY, 'species', 'locked']) {
       if (raw?.[field] === undefined) continue;
       const value = fieldValue(field, raw[field]);
@@ -439,13 +507,13 @@ export function starterProject() {
   const inner = width - 2 * sheet;
   const gap = (height - 4 * sheet) / 3;
   const shelf = (name, y) =>
-    makePart({ name, length: inner, width: depth, thickness: sheet, orientation: 'xzy', x: sheet, y: roundMm(y), z: 6 });
+    makePart({ name, length: inner, width: depth, thickness: sheet, pose: legacyPose('xzy'), x: sheet, y: roundMm(y), z: 6 });
   return {
     name: 'Small bookshelf',
     parts: [
-      makePart({ name: 'Back panel', length: height, width, thickness: 6, orientation: 'yxz', species: 'birchPlywood' }),
-      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, orientation: 'yzx', z: 6 }),
-      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, orientation: 'yzx', x: width - sheet, z: 6 }),
+      makePart({ name: 'Back panel', length: height, width, thickness: 6, pose: legacyPose('yxz'), species: 'birchPlywood' }),
+      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, pose: legacyPose('yzx'), z: 6 }),
+      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, pose: legacyPose('yzx'), x: width - sheet, z: 6 }),
       shelf('Bottom', 0),
       shelf('Shelf', sheet + gap),
       shelf('Shelf', 2 * (sheet + gap)),
@@ -501,10 +569,10 @@ export function movePart(part, position) {
 
 export function rotatePart(part, axis) {
   if (part.locked) return part;
-  const [a, b] = POSITION.filter((other) => other !== axis);
-  const orientation = [...part.orientation].map((letter) => (letter === a ? b : letter === b ? a : letter)).join('');
+  const { length, width, thickness } = poseAxes(part.pose);
+  const pose = [length, width, thickness].map((signed) => turnAxis(signed, axis)).join('');
   const before = extents(part);
-  const turned = { ...part, orientation };
+  const turned = { ...part, pose };
   const after = extents(turned);
   for (const dim of POSITION) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
   if (part.y >= 0 && turned.y < 0) turned.y = 0;

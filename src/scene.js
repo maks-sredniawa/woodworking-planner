@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
-import { SPECIES, blank, cornersActive, extents, outline, projectBounds } from './model.js';
+import { SPECIES, blank, cornersActive, extents, outline, projectBounds, sceneBasis } from './model.js';
 
 const AXIS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 const CLICK_SLOP_PX = 5;
@@ -145,12 +145,8 @@ export function createScene(container, { onSelect, onDrag }) {
     mesh.userData.partId = part.id;
     mesh.userData.locked = part.locked;
 
-    const [lengthAxis, widthAxis, thicknessAxis] = part.orientation;
-    const basisX = AXIS[lengthAxis].clone();
-    const basisY = AXIS[thicknessAxis].clone();
-    const basisZ = AXIS[widthAxis].clone();
-    if (new THREE.Matrix4().makeBasis(basisX, basisY, basisZ).determinant() < 0) basisZ.negate();
-    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(basisX, basisY, basisZ));
+    const basis = sceneBasis(part.pose).map((column) => new THREE.Vector3(...column));
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(...basis));
 
     placeMesh(mesh, part);
 

@@ -171,7 +171,7 @@ try:
         expect(page.locator('#lock')).to_have_attribute('aria-pressed', 'true')
         expect(page.locator('.row.sel')).to_contain_text('Locked')
         expect(page.locator('#editor [name=x]')).to_be_disabled()
-        expect(page.locator('#editor [name=orientation]')).to_be_disabled()
+        expect(page.locator('#editor [name=pose]')).to_be_disabled()
         expect(page.locator('#delete')).to_be_disabled()
         expect(page.locator('[data-rotate=y]')).to_be_disabled()
         page.mouse.move(cx, cy)
@@ -225,20 +225,29 @@ try:
 
         expect(page.locator('[data-rotate=y]')).to_be_disabled()
         page.locator('#parts li').nth(4).locator('.row-main').click()
-        shelf = lambda: page.evaluate('(() => { const p = woodworkingPlanner.project.parts[4]; return [p.orientation, p.y] })()')
+        shelf = lambda: page.evaluate('(() => { const p = woodworkingPlanner.project.parts[4]; return [p.pose, p.y] })()')
+        lies = page.locator('#editor [name=pose]')
         page.click('[data-rotate=y]')
-        assert shelf()[0] == 'zxy', shelf()
-        expect(page.locator('#editor [name=orientation]')).to_have_value('zxy')
+        assert shelf()[0] == '-z-x+y', shelf()
+        expect(lies).to_have_value('-z-x+y')
+        expect(lies.locator('option:checked')).to_have_text('Lying flat, length front–back, spun half a turn')
+        expect(lies.locator('option')).to_have_count(7)
         page.keyboard.press('r')
-        assert shelf()[0] == 'xzy', shelf()
+        assert shelf()[0] == '-x+z+y', f'two turns should face the board the other way: {shelf()}'
         page.click('[data-rotate=x]')
-        assert shelf()[0] == 'xyz', shelf()
+        assert shelf()[0] == '-x-y+z', shelf()
         page.wait_for_timeout(300)
         page.screenshot(path=str(HERE / 'tipped-1280.png'))
         page.keyboard.press('Control+z')
-        assert shelf()[0] == 'xzy', f'one undo should take back only the Tip: {shelf()}'
+        assert shelf()[0] == '-x+z+y', f'one undo should take back only the Tip: {shelf()}'
         page.keyboard.press('Control+z')
-        assert shelf()[0] == 'zxy', f'each rotation is its own undo step: {shelf()}'
+        assert shelf()[0] == '-z-x+y', f'each rotation is its own undo step: {shelf()}'
+        lies.select_option('+z+x+y')
+        assert shelf()[0] == '+z+x+y', shelf()
+        expect(lies.locator('option')).to_have_count(6)
+        expect(lies.locator('option:checked')).to_have_text('Lying flat, length front–back')
+        page.keyboard.press('Control+z')
+        assert shelf()[0] == '-z-x+y', shelf()
 
         assert page.evaluate('document.querySelector(".bar").getBoundingClientRect().height') < 60, 'top bar wrapped onto two rows'
         page.click('#potato-toggle')
@@ -322,13 +331,13 @@ try:
         page.keyboard.press('Control+z')
 
         page.locator('#parts li').nth(3).locator('.row-main').click()
-        for field in ['#field-species', '#field-orientation']:
+        for field in ['#field-species', '#field-pose']:
             page.focus(field)
             page.keyboard.press('Delete')
             page.keyboard.press('Backspace')
         assert count() == 7, 'Delete or Backspace in a Wood or Lies list deleted the board'
 
-        shelf_turn = lambda: page.evaluate('woodworkingPlanner.project.parts[3].orientation')
+        shelf_turn = lambda: page.evaluate('woodworkingPlanner.project.parts[3].pose')
         page.focus('#editor [name=name]')
         page.keyboard.press('Escape')
         page.locator('#parts li').nth(3).locator('.row-main').click()
@@ -338,15 +347,15 @@ try:
         page.keyboard.press('t')
         page.evaluate('document.activeElement.blur()')
         page.keyboard.press('l')
-        assert shelf_turn() == 'xzy', f'R, T or L acted outside the 3D view and parts list: {shelf_turn()}'
+        assert shelf_turn() == '+x-z+y', f'R, T or L acted outside the 3D view and parts list: {shelf_turn()}'
         box = page.locator('#viewport canvas').bounding_box()
         page.mouse.click(box['x'] + 30, box['y'] + box['height'] - 30)
         page.locator('#parts li').nth(3).locator('.row-main').click()
         page.keyboard.press('r')
-        assert shelf_turn() == 'zxy', f'R on the parts list did not turn the board: {shelf_turn()}'
+        assert shelf_turn() == '-z-x+y', f'R on the parts list did not turn the board: {shelf_turn()}'
         page.focus('#viewport canvas')
         page.keyboard.press('r')
-        assert shelf_turn() == 'xzy', f'R in the 3D view did not turn the board: {shelf_turn()}'
+        assert shelf_turn() == '-x+z+y', f'R in the 3D view did not turn the board: {shelf_turn()}'
         page.keyboard.press('Control+z')
         page.keyboard.press('Control+z')
 
@@ -586,6 +595,24 @@ try:
         expect(shaped.locator('#parts li').last.locator('.dim')).to_have_text('600 × 200 × 18 · R30 ×2')
         shaped.wait_for_timeout(500)
         shaped.screenshot(path=str(HERE / 'shapes-1280.png'))
+
+        shaped.click('#add-more')
+        shaped.click('#add-menu [data-add-shape=triangle]')
+        expect(shaped.locator('.row.sel .nm')).to_have_text('Triangle')
+        triangle_pose = lambda: shaped.evaluate('woodworkingPlanner.project.parts.at(-1).pose')
+        start_pose = triangle_pose()
+        canvas = shaped.locator('#viewport canvas')
+        shaped.wait_for_timeout(400)
+        before = canvas.screenshot()
+        shaped.click('[data-rotate=z]')
+        shaped.click('[data-rotate=z]')
+        assert triangle_pose() != start_pose, f'two Rolls left the triangle as it was: {triangle_pose()}'
+        expect(shaped.locator('#editor [name=pose] option:checked')).to_have_text('Lying flat, length left–right, flipped end over end')
+        shaped.wait_for_timeout(400)
+        assert canvas.screenshot() != before, 'two Rolls did not change how the triangle is drawn'
+        shaped.click('[data-rotate=z]')
+        shaped.click('[data-rotate=z]')
+        assert triangle_pose() == start_pose, f'four Rolls should bring the triangle back: {triangle_pose()}'
         shaped.evaluate('localStorage.clear()')
         shaped.close()
 
