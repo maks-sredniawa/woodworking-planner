@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
-import { SPECIES, extents, projectBounds } from './model.js';
+import { SPECIES, blank, cornersActive, extents, outline, projectBounds } from './model.js';
 
 const AXIS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 const CLICK_SLOP_PX = 5;
+const GRAIN_MM = { along: 900, across: 220 };
+const CURVED_EDGE_DEG = 10;
+const DOWEL_SEGMENTS = 48;
 const VIEWS = {
   iso: new THREE.Vector3(0.62, 0.45, 0.85),
   front: new THREE.Vector3(0, 0.02, 1),
@@ -88,16 +91,54 @@ export function createScene(container, { onSelect, onDrag }) {
     return texture;
   }
 
-  function woodMaterial(part) {
+  function woodMaterial(part, repeat) {
     const map = grainTexture(part.species).clone();
     map.needsUpdate = true;
-    map.repeat.set(part.length / 900, Math.max(part.width, part.thickness) / 220);
+    map.repeat.set(...repeat);
     return new THREE.MeshStandardMaterial({ map, roughness: 0.75, metalness: 0 });
   }
 
+  function dowelGeometry(part) {
+    const geometry = new THREE.CylinderGeometry(part.dowelDiameter / 2, part.dowelDiameter / 2, part.length, DOWEL_SEGMENTS);
+    const { position, normal, uv } = geometry.attributes;
+    const around = Math.PI * part.dowelDiameter;
+    for (let i = 0; i < uv.count; i++) {
+      const onSide = Math.abs(normal.getY(i)) < 0.5;
+      if (onSide) uv.setXY(i, position.getY(i), uv.getX(i) * around);
+      else uv.setXY(i, position.getX(i), position.getZ(i));
+    }
+    return geometry.rotateZ(Math.PI / 2);
+  }
+
+  function outlineGeometry(part) {
+    const { points, holes } = outline(part);
+    const toVectors = (list) => list.map(([u, v]) => new THREE.Vector2(u, v));
+    const shape = new THREE.Shape(toVectors(points));
+    shape.holes = holes.map((hole) => new THREE.Path(toVectors(hole)));
+    const { thickness } = blank(part);
+    return new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 1 })
+      .translate(0, 0, -thickness / 2)
+      .rotateX(-Math.PI / 2);
+  }
+
+  function pieceGeometry(part) {
+    if (part.shape === 'board' && !cornersActive(part)) {
+      return {
+        geometry: new THREE.BoxGeometry(part.length, part.thickness, part.width),
+        repeat: [part.length / GRAIN_MM.along, Math.max(part.width, part.thickness) / GRAIN_MM.across],
+        edgeAngle: 1,
+      };
+    }
+    return {
+      geometry: part.shape === 'dowel' ? dowelGeometry(part) : outlineGeometry(part),
+      repeat: [1 / GRAIN_MM.along, 1 / GRAIN_MM.across],
+      edgeAngle: CURVED_EDGE_DEG,
+    };
+  }
+
   function boardMesh(part) {
-    const geometry = new THREE.BoxGeometry(part.length, part.thickness, part.width);
-    const material = potato ? new THREE.MeshLambertMaterial({ color: SPECIES[part.species].color }) : woodMaterial(part);
+    const { geometry, repeat, edgeAngle } = pieceGeometry(part);
+    const material = potato ? new THREE.MeshLambertMaterial({ color: SPECIES[part.species].color }) : woodMaterial(part, repeat);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = !potato;
     mesh.receiveShadow = !potato;
@@ -114,7 +155,7 @@ export function createScene(container, { onSelect, onDrag }) {
     placeMesh(mesh, part);
 
     const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geometry),
+      new THREE.EdgesGeometry(geometry, edgeAngle),
       new THREE.LineBasicMaterial({ color: 0x3b2a1a, transparent: true, opacity: 0.55 }),
     );
     edges.raycast = () => {};
