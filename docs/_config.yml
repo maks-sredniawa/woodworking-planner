@@ -6,3 +6,4 @@ description: A web app to plan a woodworking project and see it in 3D before you
 maksforge:
   icon: /assets/icons/woodworking-planner.webp
   status: building
+  kind: Web app
