@@ -60,10 +60,16 @@ export function loadSaved() {
   try {
     return { project: parseProject(text), error: null };
   } catch (error) {
-    try {
-      localStorage.setItem(UNREADABLE_KEY, text);
-    } catch {}
-    return { project: null, error: error.message };
+    return { project: null, error: error.message, kept: keepUnreadable(text) };
+  }
+}
+
+function keepUnreadable(text) {
+  try {
+    localStorage.setItem(UNREADABLE_KEY, text);
+    return true;
+  } catch {
+    return false;
   }
 }
 
