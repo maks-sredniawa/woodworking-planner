@@ -51,7 +51,9 @@ It opens with an example bookshelf to look around in.
 
 ## Help and feedback
 
-Found a bug or missing something? [Open an issue](https://github.com/maks-sredniawa/woodworking-planner/issues).
+Found a bug or missing something? Email
+**[woodworking.support@maksforge.com](mailto:woodworking.support@maksforge.com)**, or
+[open an issue](https://github.com/maks-sredniawa/woodworking-planner/issues).
 
 ## Free, with an optional tip
 
