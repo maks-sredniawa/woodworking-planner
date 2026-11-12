@@ -741,15 +741,13 @@ try:
         shaped.fill('#editor [name=width]', '40')
         expect(shaped.locator('#width-error')).to_contain_text('at least 60 mm')
         width = shaped.locator('#editor [name=width]')
-        shaped.evaluate('''(() => {
-            const radius = document.querySelector("#editor [name=cornerRadius]");
-            radius.value = "25";
-            radius.dispatchEvent(new Event("input", { bubbles: true }));
-        })()''')
-        expect(width).to_be_focused()
+        shaped.fill('#editor [name=cornerRadius]', '25')
+        expect(shaped.locator('#editor [name=cornerRadius]')).to_be_focused()
         expect(width).to_have_value('40')
+        expect(width).to_have_attribute('aria-invalid', 'true')
         expect(shaped.locator('#width-error')).to_have_text('Enter at least 50 mm: twice the corner radius.')
-        shaped.evaluate('document.querySelector("#editor [name=corners][value=square]").click()')
+        shaped.click('#corners-box .choice:has-text("Square")')
+        expect(width).to_have_value('40')
         expect(shaped.locator('#width-error')).to_be_hidden()
         expect(width).not_to_have_attribute('aria-invalid', 'true')
         assert shaped.evaluate('woodworkingPlanner.project.parts.at(-1).width') == 40, 'the width the error was about was not applied once it fitted'
