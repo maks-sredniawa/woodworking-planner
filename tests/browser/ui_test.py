@@ -1,3 +1,4 @@
+import re
 import socket
 import subprocess
 import sys
@@ -275,9 +276,204 @@ try:
         print(debug_text)
         page.close()
 
+        page = browser.new_page(viewport={'width': 1280, 'height': 900})
+        page.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.goto(URL)
+        expect(page.locator('#parts li')).to_have_count(7)
+        focused = lambda: page.evaluate('document.activeElement.dataset.focus || document.activeElement.id || document.activeElement.tagName')
+        part_id = lambda n: page.evaluate(f'woodworkingPlanner.project.parts[{n}].id')
+        count = lambda: page.evaluate('woodworkingPlanner.project.parts.length')
+
+        expect(page.locator('#viewport canvas')).to_have_attribute('role', 'img')
+        expect(page.locator('#viewport canvas')).to_have_attribute('aria-label', re.compile(r'7 boards, 800 wide × 1,000 high × 250 deep'))
+        assert page.get_attribute('.view', 'aria-label') is None, 'the label belongs on the canvas, not the role-less div'
+
+        page.locator('#parts li').nth(2).locator('.row-main').focus()
+        page.keyboard.press('Enter')
+        assert focused() == f'main:{part_id(2)}', f'Enter on a row dropped focus to {focused()}'
+        page.keyboard.press('Tab')
+        assert focused() == f'lock:{part_id(2)}', focused()
+        page.keyboard.press('Enter')
+        assert focused() == f'lock:{part_id(2)}', f'Lock dropped focus to {focused()}'
+        page.keyboard.press('Enter')
+        page.keyboard.press('Tab')
+        page.keyboard.press('Enter')
+        assert count() == 8 and focused() == f'main:{part_id(3)}', f'after Duplicate focus went to {focused()}'
+        page.keyboard.press('Tab')
+        page.keyboard.press('Tab')
+        page.keyboard.press('Tab')
+        assert focused() == f'delete:{part_id(3)}', focused()
+        page.keyboard.press('Enter')
+        assert count() == 7 and focused() == f'main:{part_id(3)}', f'after Delete focus went to {focused()}'
+        page.keyboard.press('Enter')
+        page.keyboard.press('Tab')
+        page.keyboard.press('Escape')
+        assert focused() == f'main:{part_id(3)}', f'Escape on a row button dropped focus to {focused()}'
+
+        page.locator('#parts li').nth(3).locator('.row-main').click()
+        page.click('#editor [name=name]')
+        page.keyboard.press('Escape')
+        expect(page.locator('#editor')).to_be_hidden()
+        assert focused() == f'main:{part_id(3)}', f'Escape in the editor dropped focus to {focused()}'
+        page.locator('#parts li').nth(3).locator('.row-main').click()
+        page.click('#delete')
+        assert count() == 6 and focused() == f'main:{part_id(3)}', f'the editor Delete dropped focus to {focused()}'
+        page.keyboard.press('Control+z')
+
+        page.locator('#parts li').nth(3).locator('.row-main').click()
+        for field in ['#field-species', '#field-orientation']:
+            page.focus(field)
+            page.keyboard.press('Delete')
+            page.keyboard.press('Backspace')
+        assert count() == 7, 'Delete or Backspace in a Wood or Lies list deleted the board'
+
+        shelf_turn = lambda: page.evaluate('woodworkingPlanner.project.parts[3].orientation')
+        page.focus('#editor [name=name]')
+        page.keyboard.press('Escape')
+        page.locator('#parts li').nth(3).locator('.row-main').click()
+        page.focus('#lock')
+        page.keyboard.press('r')
+        page.focus('#field-species')
+        page.keyboard.press('t')
+        page.evaluate('document.activeElement.blur()')
+        page.keyboard.press('l')
+        assert shelf_turn() == 'xzy', f'R, T or L acted outside the 3D view and parts list: {shelf_turn()}'
+        box = page.locator('#viewport canvas').bounding_box()
+        page.mouse.click(box['x'] + 30, box['y'] + box['height'] - 30)
+        page.locator('#parts li').nth(3).locator('.row-main').click()
+        page.keyboard.press('r')
+        assert shelf_turn() == 'zxy', f'R on the parts list did not turn the board: {shelf_turn()}'
+        page.focus('#viewport canvas')
+        page.keyboard.press('r')
+        assert shelf_turn() == 'xzy', f'R in the 3D view did not turn the board: {shelf_turn()}'
+        page.keyboard.press('Control+z')
+        page.keyboard.press('Control+z')
+
+        page.click('#lock')
+        page.focus('#viewport canvas')
+        page.keyboard.press('r')
+        page.keyboard.press('Control+z')
+        expect(page.locator('#lock')).to_have_attribute('aria-pressed', 'false')
+        expect(page.locator('#redo')).to_be_enabled()
+
+        page.fill('#editor [name=length]', '-3')
+        expect(page.locator('#length-error')).to_be_visible()
+        expect(page.locator('#length-error')).to_contain_text('above 0')
+        expect(page.locator('#editor [name=length]')).to_have_attribute('aria-describedby', 'length-error')
+        page.fill('#editor [name=x]', '20000')
+        expect(page.locator('#x-error')).to_contain_text('10,000')
+        page.fill('#editor [name=length]', '700')
+        expect(page.locator('#length-error')).to_be_hidden()
+        assert page.get_attribute('#editor [name=length]', 'aria-describedby') is None
+        page.keyboard.press('Control+z')
+
+        page.focus('#parts li >> nth=0 >> .row-main')
+        page.keyboard.press('Shift+Tab')
+        page.focus('#snap')
+        ring = page.evaluate('(() => { const s = getComputedStyle(document.getElementById("snap")); return [s.outlineStyle, s.outlineOffset] })()')
+        assert ring == ['solid', '-2px'], f'the Snap focus ring is drawn outside its clipped group: {ring}'
+
+        def contrast(a, b):
+            def lum(rgb):
+                vals = [int(v) / 255 for v in re.findall(r'\d+', rgb)[:3]]
+                vals = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in vals]
+                return 0.2126 * vals[0] + 0.7152 * vals[1] + 0.0722 * vals[2]
+            hi, lo = sorted([lum(a), lum(b)], reverse=True)
+            return (hi + 0.05) / (lo + 0.05)
+        panel = page.evaluate('getComputedStyle(document.querySelector(".bar")).backgroundColor')
+        for field in ['#project-name', '#editor [name=length]', '#field-species']:
+            edge = page.evaluate(f'getComputedStyle(document.querySelector("{field}")).borderTopColor')
+            assert contrast(edge, panel) >= 3, f'{field} border {edge} is {contrast(edge, panel):.2f}:1 on {panel}'
+
+        page.click('#debug-toggle')
+        expect(page.locator('#debug')).to_contain_text('Graphics')
+        assert 'NaN' not in page.inner_text('#debug'), page.inner_text('#debug')
+        page.wait_for_timeout(1200)
+        assert 'NaN' not in page.inner_text('#debug'), page.inner_text('#debug')
+        page.click('#debug-toggle')
+
+        unreadable = '{"format":"woodworking-planner","version":1,"parts":[{"length":600,"x":10050}]}'
+        page.evaluate(f'localStorage.setItem("woodworking-planner:project", {unreadable!r})')
+        page.reload()
+        expect(page.locator('#file-error')).to_be_visible()
+        expect(page.locator('#file-error')).to_contain_text('could not be opened')
+        expect(page.locator('#file-error')).to_contain_text('Part 1 has an invalid x')
+        stored = page.evaluate('[localStorage.getItem("woodworking-planner:project"), localStorage.getItem("woodworking-planner:unreadable-project")]')
+        assert stored == [unreadable, unreadable], f'the unreadable save was overwritten: {stored}'
+        page.click('#add')
+        assert page.evaluate('localStorage.getItem("woodworking-planner:unreadable-project")') == unreadable
+        page.evaluate('localStorage.clear()')
+        page.close()
+
+        phone = browser.new_page(viewport={'width': 360, 'height': 800})
+        phone.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        phone.on('pageerror', lambda e: errors.append(str(e)))
+        phone.goto(URL)
+        expect(phone.locator('#parts li')).to_have_count(7)
+        order = phone.evaluate('''[".view", ".tabs", ".parts", ".cut", ".inspector"].map((s) => document.querySelector(s))
+            .every((node, i, all) => i === 0 || all[i - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)''')
+        assert order, 'the DOM does not follow the phone order: view, tabs, panels'
+
+        phone.focus('#menu-toggle')
+        phone.keyboard.press('Enter')
+        expect(phone.locator('#starter')).to_be_visible()
+        phone.focus('#starter')
+        phone.keyboard.press('Enter')
+        expect(phone.locator('#starter')).to_be_hidden()
+        assert phone.evaluate('document.activeElement.id') == 'menu-toggle', 'closing the menu from inside lost focus'
+
+        phone.focus('.tabs [data-tab=parts]')
+        for n in range(7):
+            phone.keyboard.press('Tab')
+            covered = phone.evaluate('''(() => {
+                const el = document.activeElement, r = el.getBoundingClientRect();
+                const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                return el.contains(hit) ? null : `${el.dataset.focus} under ${hit?.className}`;
+            })()''')
+            assert covered is None, f'a focused row is hidden: {covered}'
+
+        status = phone.evaluate('getComputedStyle(document.getElementById("save-state")).display')
+        assert status != 'none', 'the save status is removed on phones'
+        phone.evaluate('() => { Storage.prototype.setItem = () => { throw new Error("full") }; }')
+        phone.click('#add-phone')
+        expect(phone.locator('#save-state')).to_have_text('Could not save in this browser')
+        size = phone.locator('#save-state').bounding_box()
+        assert size and size['width'] > 50 and size['height'] > 8, f'the save failure is not shown on phones: {size}'
+        phone.close()
+
+        zoomed = browser.new_page(viewport={'width': 320, 'height': 256})
+        zoomed.on('pageerror', lambda e: errors.append(str(e)))
+        zoomed.goto(URL)
+        expect(zoomed.locator('#parts li')).to_have_count(7)
+        inside = zoomed.evaluate('''(() => {
+            const view = document.querySelector(".view").getBoundingClientRect();
+            return [".view-tools", ".move-tools"].every((s) => {
+                const r = document.querySelector(s).getBoundingClientRect();
+                return r.top >= view.top && r.bottom <= view.bottom;
+            });
+        })()''')
+        assert inside, 'at 320 × 256 the camera or move tools sit outside the 3D view'
+        zoomed.locator('#parts li').last.locator('.row-main').click()
+        for tab, last in [('parts', '#parts li:last-child .row-main'), ('edit', '#delete'), ('cut', '#totals')]:
+            zoomed.click(f'.tabs [data-tab={tab}]')
+            reachable = zoomed.evaluate(f'''(() => {{
+                const el = document.querySelector("{last}");
+                el.scrollIntoView({{ block: "center" }});
+                const r = el.getBoundingClientRect();
+                return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+            }})()''')
+            assert reachable, f'at 320 × 256 the end of the {tab} panel cannot be scrolled into view'
+        zoomed.screenshot(path=str(HERE / 'zoom-400.png'), full_page=True)
+        zoomed.close()
+
         dark = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='dark')
         dark.goto(URL)
         dark.wait_for_timeout(600)
+        panel = dark.evaluate('getComputedStyle(document.querySelector(".bar")).backgroundColor')
+        for field in ['#project-name']:
+            edge = dark.evaluate(f'getComputedStyle(document.querySelector("{field}")).borderTopColor')
+            assert contrast(edge, panel) >= 3, f'dark {field} border {edge} is {contrast(edge, panel):.2f}:1'
         dark.screenshot(path=str(HERE / 'dark-1280.png'))
         browser.close()
 finally:

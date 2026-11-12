@@ -121,6 +121,17 @@ export function makePart(fields = {}) {
 }
 
 const GEOMETRY = [...DIMENSIONS, ...POSITION, 'orientation'];
+const inReach = (value) => Number.isFinite(value) && Math.abs(value) <= MAX_SIZE_MM;
+const fitsLimits = (part) => POSITION.every((axis) => inReach(part[axis]));
+const BESIDE_GAP_MM = 50;
+
+export function newPartBeside(parts) {
+  const fresh = makePart();
+  const box = projectBounds(parts);
+  if (!box) return fresh;
+  const x = [box.max.x + BESIDE_GAP_MM, box.min.x - BESIDE_GAP_MM - fresh.length, 0].find(inReach);
+  return { ...fresh, x };
+}
 
 export function updatePart(part, field, raw) {
   if (field === 'locked') return typeof raw === 'boolean' ? { ...part, locked: raw } : null;
@@ -132,7 +143,7 @@ export function updatePart(part, field, raw) {
   }
   if (POSITION.includes(field)) {
     const value = Number(raw);
-    if (raw === '' || !Number.isFinite(value) || Math.abs(value) > MAX_SIZE_MM) return null;
+    if (raw === '' || !inReach(value)) return null;
     return { ...part, [field]: roundMm(value) };
   }
   if (field === 'orientation') return raw in ORIENTATIONS ? { ...part, orientation: raw } : null;
@@ -144,7 +155,8 @@ export function updatePart(part, field, raw) {
 export function duplicatePart(part) {
   const size = extents(part);
   const step = part.orientation[2];
-  return { ...part, id: newId(), locked: false, [step]: part[step] + size[step] + 20 };
+  const spot = [part[step] + size[step] + 20, part[step] - size[step] - 20].find(inReach);
+  return spot === undefined ? part : { ...part, id: newId(), locked: false, [step]: spot };
 }
 
 function roundMm(value) {
@@ -248,7 +260,7 @@ export function movePart(part, position) {
   for (const axis of POSITION) {
     if (!(axis in position)) continue;
     const value = roundMm(position[axis]);
-    if (!Number.isFinite(value) || Math.abs(value) > MAX_SIZE_MM) return part;
+    if (!inReach(value)) return part;
     next[axis] = value;
   }
   return next;
@@ -263,5 +275,5 @@ export function rotatePart(part, axis) {
   const after = extents(turned);
   for (const dim of POSITION) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
   if (part.y >= 0 && turned.y < 0) turned.y = 0;
-  return turned;
+  return fitsLimits(turned) ? turned : part;
 }

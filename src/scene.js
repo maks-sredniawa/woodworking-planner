@@ -426,6 +426,7 @@ export function createScene(container, { onSelect, onDrag }) {
   });
 
   return {
+    canvas,
     setParts,
     moveBoard,
     setSelected,

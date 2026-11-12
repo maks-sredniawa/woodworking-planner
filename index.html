@@ -32,6 +32,40 @@
 </header>
 
 <main id="main" data-tab="parts">
+  <div class="view">
+    <div id="viewport" class="viewport"></div>
+    <div class="view-tools" role="group" aria-label="Camera">
+      <button type="button" data-view="iso" aria-pressed="true">Iso</button>
+      <button type="button" data-view="front" aria-pressed="false">Front</button>
+      <button type="button" data-view="side" aria-pressed="false">Side</button>
+      <button type="button" data-view="top" aria-pressed="false">Top</button>
+      <button type="button" id="fit">Fit</button>
+    </div>
+    <div class="move-tools">
+      <div class="tool-group" role="group" aria-label="Dragging moves the board">
+        <button type="button" id="mode-floor" data-mode="floor" aria-pressed="true" title="Dragging slides the board along the floor (hold Shift to lift instead)">Floor</button>
+        <button type="button" id="mode-height" data-mode="height" aria-pressed="false" title="Dragging lifts or lowers the board (hold Shift to slide instead)">Height</button>
+      </div>
+      <div class="tool-group" role="group" aria-label="Rotate 90°">
+        <button type="button" data-rotate="y" title="Turn 90° flat, around the vertical (R)">Turn</button>
+        <button type="button" data-rotate="x" title="Tip 90° forward (T)">Tip</button>
+        <button type="button" data-rotate="z" title="Roll 90° sideways (L)">Roll</button>
+      </div>
+      <div class="tool-group">
+        <button type="button" id="snap" aria-pressed="true" title="Snap to other boards and a 10 mm grid while dragging (hold Alt for the opposite)">Snap</button>
+      </div>
+    </div>
+    <div id="view-sel" class="view-sel" hidden></div>
+    <div id="debug" class="debug" role="status" aria-live="off" hidden></div>
+    <div class="view-hint">Drag to turn · scroll to zoom · right-drag to pan · click a board to pick it, then drag it to move it</div>
+  </div>
+
+  <nav class="tabs" aria-label="Panels">
+    <button type="button" data-tab="parts" aria-pressed="true">Parts</button>
+    <button type="button" data-tab="edit" aria-pressed="false">Edit</button>
+    <button type="button" data-tab="cut" aria-pressed="false">Cut list</button>
+  </nav>
+
   <section class="parts" aria-labelledby="parts-title">
     <div class="pane-h">
       <h2 id="parts-title">Parts <span id="part-count" class="count"></span></h2>
@@ -41,49 +75,20 @@
     <p id="parts-empty" class="empty" hidden>No boards yet. Add one to start.</p>
   </section>
 
-  <section class="stage">
-    <div class="view" aria-label="3D view">
-      <div id="viewport" class="viewport"></div>
-      <div class="view-tools" role="group" aria-label="Camera">
-        <button type="button" data-view="iso" aria-pressed="true">Iso</button>
-        <button type="button" data-view="front" aria-pressed="false">Front</button>
-        <button type="button" data-view="side" aria-pressed="false">Side</button>
-        <button type="button" data-view="top" aria-pressed="false">Top</button>
-        <button type="button" id="fit">Fit</button>
-      </div>
-      <div class="move-tools">
-        <div class="tool-group" role="group" aria-label="Dragging moves the board">
-          <button type="button" id="mode-floor" data-mode="floor" aria-pressed="true" title="Dragging slides the board along the floor (hold Shift to lift instead)">Floor</button>
-          <button type="button" id="mode-height" data-mode="height" aria-pressed="false" title="Dragging lifts or lowers the board (hold Shift to slide instead)">Height</button>
-        </div>
-        <div class="tool-group" role="group" aria-label="Rotate 90°">
-          <button type="button" data-rotate="y" title="Turn 90° flat, around the vertical (R)">Turn</button>
-          <button type="button" data-rotate="x" title="Tip 90° forward (T)">Tip</button>
-          <button type="button" data-rotate="z" title="Roll 90° sideways (L)">Roll</button>
-        </div>
-        <div class="tool-group">
-          <button type="button" id="snap" aria-pressed="true" title="Snap to other boards and a 10 mm grid while dragging (hold Alt for the opposite)">Snap</button>
-        </div>
-      </div>
-      <div id="view-sel" class="view-sel" hidden></div>
-      <div id="debug" class="debug" role="status" aria-live="off" hidden></div>
-      <div class="view-hint">Drag to turn · scroll to zoom · right-drag to pan · click a board to pick it, then drag it to move it</div>
+  <section class="cut" aria-labelledby="cut-title">
+    <div class="pane-h">
+      <h2 id="cut-title">Cut list</h2>
+      <span id="overall" class="overall"></span>
     </div>
-    <section class="cut" aria-labelledby="cut-title">
-      <div class="pane-h">
-        <h2 id="cut-title">Cut list</h2>
-        <span id="overall" class="overall"></span>
-      </div>
-      <div class="table-wrap">
-        <table class="cut-list">
-          <thead>
-            <tr><th class="num">Qty</th><th>Size (mm)</th><th>Parts</th><th>Wood</th><th class="num">Volume</th><th class="num">Face</th></tr>
-          </thead>
-          <tbody id="cut-rows"></tbody>
-        </table>
-      </div>
-      <p id="totals" class="totals"></p>
-    </section>
+    <div class="table-wrap">
+      <table class="cut-list">
+        <thead>
+          <tr><th class="num">Qty</th><th>Size (mm)</th><th>Parts</th><th>Wood</th><th class="num">Volume</th><th class="num">Face</th></tr>
+        </thead>
+        <tbody id="cut-rows"></tbody>
+      </table>
+    </div>
+    <p id="totals" class="totals"></p>
   </section>
 
   <aside class="inspector" aria-labelledby="editor-title">
@@ -94,19 +99,19 @@
       <fieldset>
         <legend>Size (mm)</legend>
         <div class="trio">
-          <label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
-          <label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
-          <label>Thickness <input name="thickness" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label>
+          <div class="field"><label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="length-error" class="field-error" hidden></p></div>
+          <div class="field"><label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="width-error" class="field-error" hidden></p></div>
+          <div class="field"><label>Thickness <input name="thickness" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="thickness-error" class="field-error" hidden></p></div>
         </div>
       </fieldset>
       <fieldset>
         <legend>Left, bottom, back corner (mm)</legend>
         <div class="trio">
-          <label>From left <input name="x" data-geometry class="num" type="number" step="any" inputmode="decimal"></label>
-          <label>From floor <input name="y" data-geometry class="num" type="number" step="any" inputmode="decimal"></label>
-          <label>From back <input name="z" data-geometry class="num" type="number" step="any" inputmode="decimal"></label>
+          <div class="field"><label>From left <input name="x" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="x-error" class="field-error" hidden></p></div>
+          <div class="field"><label>From floor <input name="y" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="y-error" class="field-error" hidden></p></div>
+          <div class="field"><label>From back <input name="z" data-geometry class="num" type="number" step="any" inputmode="decimal"></label><p id="z-error" class="field-error" hidden></p></div>
         </div>
-        <p class="help">Or drag the board in the 3D view. Floor or Height above the view picks which way it goes; hold Shift mid-drag to switch and let go to switch back. With Snap on it sits flush against other boards or on a 10 mm grid; hold Alt to do the opposite. Turn, Tip and Roll rotate it 90° (keys R, T, L). Arrow keys nudge it 10 mm (Shift: 1 mm); Alt+↑ and Alt+↓ move it back and forth.</p>
+        <p class="help">Or drag the board in the 3D view. Floor or Height above the view picks which way it goes; hold Shift mid-drag to switch and let go to switch back. With Snap on it sits flush against other boards or on a 10 mm grid; hold Alt to do the opposite. Turn, Tip and Roll rotate it 90° (keys R, T, L while the 3D view, its buttons or the parts list has focus). Arrow keys nudge it 10 mm (Shift: 1 mm); Alt+↑ and Alt+↓ move it back and forth.</p>
       </fieldset>
       <label>Lies <select name="orientation" id="field-orientation" data-geometry></select></label>
       <label>Wood
@@ -120,12 +125,6 @@
       </div>
     </form>
   </aside>
-
-  <nav class="tabs" aria-label="Panels">
-    <button type="button" data-tab="parts" aria-pressed="true">Parts</button>
-    <button type="button" data-tab="edit" aria-pressed="false">Edit</button>
-    <button type="button" data-tab="cut" aria-pressed="false">Cut list</button>
-  </nav>
 </main>
 <div class="add-bar"><button type="button" id="add-phone" class="primary">Add board</button></div>
 <script type="module" src="src/app.js"></script>
