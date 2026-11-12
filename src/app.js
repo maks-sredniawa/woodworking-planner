@@ -165,7 +165,8 @@ const select = keepingFocus((id) => {
   if (id) $(`part-${id}`)?.scrollIntoView({ block: 'nearest' });
 });
 
-const usable = (node) => Boolean(node?.isConnected && !node.disabled && node.checkVisibility());
+const visible = (node) => (node.checkVisibility ? node.checkVisibility() : node.getClientRects().length > 0);
+const usable = (node) => Boolean(node?.isConnected && !node.disabled && visible(node));
 let focusGuards = 0;
 
 function keepingFocus(action) {
@@ -203,8 +204,8 @@ function selectedPart() {
   return project.parts.find((part) => part.id === selectedId) ?? null;
 }
 
-function replacePart(next, field) {
-  commit({ ...project, parts: project.parts.map((part) => (part.id === next.id ? next : part)) }, `${next.id}:${field}`);
+function replacePart(next, mergeKey = null) {
+  commit({ ...project, parts: project.parts.map((part) => (part.id === next.id ? next : part)) }, mergeKey && `${next.id}:${mergeKey}`);
 }
 
 function addPart(shape = 'board') {
@@ -389,7 +390,7 @@ function describeView() {
   const size = box ? `, ${mm(box.max.x - box.min.x)} wide × ${mm(box.max.y - box.min.y)} high × ${mm(box.max.z - box.min.z)} deep (mm)` : '';
   const part = selectedPart();
   const picked = part ? `. Picked: ${part.name || 'Unnamed'}, ${sizeText(part)}` : '';
-  view.canvas.setAttribute('aria-label', `3D view of ${project.name}: ${count}${size}${picked}`);
+  view.canvas.setAttribute('aria-label', `${project.name}: ${count}${size}${picked}`);
 }
 
 function renderEditor() {
@@ -408,7 +409,7 @@ function renderEditor() {
       input.checked = Boolean(part[input.name]);
       continue;
     }
-    if (document.activeElement === input && input.dataset.partId === part.id) continue;
+    if (input.tagName === 'INPUT' && document.activeElement === input && input.dataset.partId === part.id) continue;
     input.value = String(part[input.name]);
     input.dataset.partId = part.id;
     showFieldError(input, null);
@@ -582,6 +583,27 @@ function sideError(part, side, value) {
   return SIZE_ERROR;
 }
 
+const fieldError = (part, input) => FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.';
+
+function recheckFocusedField(changed) {
+  const pending = document.activeElement;
+  if (pending === changed || pending?.getAttribute('aria-invalid') !== 'true' || !$('editor').contains(pending)) return;
+  const part = selectedPart();
+  if (!part) return;
+  if (!usable(pending)) {
+    pending.value = String(part[pending.name]);
+    showFieldError(pending, null);
+    return;
+  }
+  const next = updatePart(part, pending.name, pending.value);
+  if (!next) {
+    showFieldError(pending, fieldError(part, pending));
+    return;
+  }
+  showFieldError(pending, null);
+  replacePart(next, pending.name);
+}
+
 function showFieldError(input, message) {
   const note = $(`${input.name}-error`);
   if (!note) return;
@@ -644,15 +666,16 @@ $('editor').addEventListener('input', (event) => {
   const part = selectedPart();
   if (!part || !input.name) return;
   if (input.type === 'radio' && !input.checked) return;
-  const choice = input.type === 'radio' || input.type === 'checkbox';
+  const typed = input.tagName === 'INPUT' && input.type !== 'radio' && input.type !== 'checkbox';
   const next = updatePart(part, input.name, input.type === 'checkbox' ? input.checked : input.value);
   if (!next) {
-    if (choice) renderEditor();
-    else showFieldError(input, FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.');
+    if (typed) showFieldError(input, fieldError(part, input));
+    else renderEditor();
     return;
   }
   showFieldError(input, null);
-  replacePart(next, input.name);
+  replacePart(next, typed ? input.name : null);
+  recheckFocusedField(input);
 });
 $('editor').addEventListener('submit', (event) => event.preventDefault());
 
@@ -857,16 +880,20 @@ darkQuery.addEventListener('change', applyTheme);
 applyTheme();
 
 view.canvas.tabIndex = 0;
-view.canvas.setAttribute('role', 'img');
+view.canvas.setAttribute('role', 'application');
+view.canvas.setAttribute('aria-roledescription', '3D view');
 render();
 setPotato(loadPotato());
-if (saved.error) showUnreadableSave(saved.error);
+if (saved.error) showUnreadableSave(saved.error, saved.kept);
 else persist();
 
-function showUnreadableSave(reason) {
+function showUnreadableSave(reason, kept) {
+  const copy = kept
+    ? 'A copy of it is kept in this browser, and the example bookshelf is shown instead.'
+    : 'A copy of it could not be kept in this browser, so it may be replaced when you change the project. The example bookshelf is shown instead.';
   $('save-state').textContent = 'Saved project could not be opened';
   $('save-state').classList.add('failed');
-  $('file-error').textContent = `The project saved in this browser could not be opened. ${reason} A copy of it is kept in this browser, and the example bookshelf is shown instead.`;
+  $('file-error').textContent = `The project saved in this browser could not be opened. ${reason} ${copy}`;
   $('file-error').hidden = false;
 }
 window.woodworkingPlanner = { get project() { return project; }, select, framesDrawn: () => view.framesDrawn() };

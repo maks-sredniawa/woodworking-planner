@@ -118,11 +118,15 @@ try:
         page.mouse.click(cx, cy)
         expect(page.locator('.row.sel .nm')).to_have_text('Back panel')
         start = part()
+        label = lambda: page.get_attribute('#viewport canvas', 'aria-label')
+        resting = label()
 
         page.mouse.move(cx, cy)
         page.mouse.down()
         page.mouse.move(cx + 160, cy + 10, steps=10)
+        assert label() == resting, 'the 3D view label was rewritten mid-drag'
         page.mouse.up()
+        assert label() != resting, f'the 3D view label did not catch up when the drag ended: {label()}'
         moved = part()
         assert moved['x'] > start['x'] + 50 and moved['y'] == start['y'], f'drag did not move along the floor: {moved}'
         assert moved['x'] % 10 == 0 or moved['x'] in (18, 800), f'drag did not snap: {moved}'
@@ -258,6 +262,18 @@ try:
         expect(lies.locator('option:checked')).to_have_text('Lying flat, length front–back')
         page.keyboard.press('Control+z')
         assert shelf()[0] == '-z-x+y', shelf()
+        page.focus('#field-pose')
+        page.keyboard.press('Control+Shift+z')
+        assert shelf()[0] == '+z+x+y', shelf()
+        expect(lies).to_be_focused()
+        expect(lies).to_have_value('+z+x+y')
+        expect(lies.locator('option')).to_have_count(6)
+        expect(lies.locator('option:checked')).to_have_text('Lying flat, length front–back')
+        page.keyboard.press('Control+z')
+        assert shelf()[0] == '-z-x+y', shelf()
+        expect(lies).to_be_focused()
+        expect(lies).to_have_value('-z-x+y')
+        expect(lies.locator('option:checked')).to_have_text('Lying flat, length front–back, spun half a turn')
 
         assert page.evaluate('document.querySelector(".bar").getBoundingClientRect().height') < 60, 'top bar wrapped onto two rows'
         page.click('#potato-toggle')
@@ -304,7 +320,8 @@ try:
         part_id = lambda n: page.evaluate(f'woodworkingPlanner.project.parts[{n}].id')
         count = lambda: page.evaluate('woodworkingPlanner.project.parts.length')
 
-        expect(page.locator('#viewport canvas')).to_have_attribute('role', 'img')
+        expect(page.locator('#viewport canvas')).to_have_attribute('role', 'application')
+        expect(page.locator('#viewport canvas')).to_have_attribute('aria-roledescription', '3D view')
         expect(page.locator('#viewport canvas')).to_have_attribute('aria-label', re.compile(r'7 boards, 800 wide × 1,000 high × 250 deep'))
         assert page.get_attribute('.view', 'aria-label') is None, 'the label belongs on the canvas, not the role-less div'
 
@@ -422,12 +439,43 @@ try:
         expect(page.locator('#file-error')).to_be_visible()
         expect(page.locator('#file-error')).to_contain_text('could not be opened')
         expect(page.locator('#file-error')).to_contain_text('Part 1 has an invalid x')
+        expect(page.locator('#file-error')).to_contain_text('A copy of it is kept in this browser')
         stored = page.evaluate('[localStorage.getItem("woodworking-planner:project"), localStorage.getItem("woodworking-planner:unreadable-project")]')
         assert stored == [unreadable, unreadable], f'the unreadable save was overwritten: {stored}'
         page.click('#add')
         assert page.evaluate('localStorage.getItem("woodworking-planner:unreadable-project")') == unreadable
         page.evaluate('localStorage.clear()')
         page.close()
+
+        full = browser.new_page(viewport={'width': 1280, 'height': 900})
+        full.on('pageerror', lambda e: errors.append(str(e)))
+        full.add_init_script(f'''localStorage.setItem("woodworking-planner:project", {unreadable!r});
+            const setItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function (key, value) {{
+                if (key === "woodworking-planner:unreadable-project") throw new Error("full");
+                return setItem.call(this, key, value);
+            }};''')
+        full.goto(URL)
+        expect(full.locator('#file-error')).to_contain_text('could not be opened')
+        expect(full.locator('#file-error')).to_contain_text('A copy of it could not be kept in this browser')
+        expect(full.locator('#file-error')).not_to_contain_text('A copy of it is kept')
+        full.close()
+
+        old = browser.new_page(viewport={'width': 1280, 'height': 900})
+        old.on('pageerror', lambda e: errors.append(str(e)))
+        old.add_init_script('delete Element.prototype.checkVisibility')
+        old.goto(URL)
+        expect(old.locator('#parts li')).to_have_count(7)
+        assert old.evaluate('typeof Element.prototype.checkVisibility') == 'undefined'
+        old_errors = len(errors)
+        old.locator('#parts li').nth(2).locator('.row-main').click()
+        old.focus('.row.sel [data-focus^="delete:"]')
+        old.keyboard.press('Enter')
+        expect(old.locator('#parts li')).to_have_count(6)
+        third = old.evaluate('woodworkingPlanner.project.parts[2].id')
+        assert old.evaluate('document.activeElement.dataset.focus') == f'main:{third}', 'focus was not restored without checkVisibility'
+        assert len(errors) == old_errors, f'focus restore without checkVisibility threw: {errors[old_errors:]}'
+        old.close()
 
         phone = browser.new_page(viewport={'width': 360, 'height': 800})
         phone.on('console', lambda m: m.type == 'error' and errors.append(m.text))
@@ -677,6 +725,14 @@ try:
         expect(shaped.locator('.row.sel .dim')).to_have_text('600 × 200 × 18 · R20 ×2')
         expect(shaped.locator('#cut-rows')).to_contain_text('R20 ×2 corners (same side)')
         expect(shaped.locator('#cut-rows')).to_contain_text('600 × 200 × 18')
+        shaped.get_by_label('Bottom right').check()
+        shaped.keyboard.press('Control+z')
+        expect(shaped.get_by_label('Bottom right')).not_to_be_checked()
+        shaped.keyboard.press('Control+z')
+        expect(shaped.get_by_label('Bottom right')).to_be_checked()
+        expect(shaped.get_by_label('Bottom left')).not_to_be_checked()
+        shaped.keyboard.press('Control+Shift+z')
+        expect(shaped.get_by_label('Bottom right')).not_to_be_checked()
         shaped.fill('#editor [name=cornerRadius]', '150')
         expect(shaped.locator('#cornerRadius-error')).to_have_text('Enter a radius above 0, up to 100 mm (half the width).')
         expect(shaped.locator('#editor [name=cornerRadius]')).to_have_attribute('aria-describedby', 'cornerRadius-error')
@@ -684,7 +740,25 @@ try:
         expect(shaped.locator('#cornerRadius-error')).to_be_hidden()
         shaped.fill('#editor [name=width]', '40')
         expect(shaped.locator('#width-error')).to_contain_text('at least 60 mm')
-        shaped.fill('#editor [name=width]', '200')
+        width = shaped.locator('#editor [name=width]')
+        shaped.evaluate('''(() => {
+            const radius = document.querySelector("#editor [name=cornerRadius]");
+            radius.value = "25";
+            radius.dispatchEvent(new Event("input", { bubbles: true }));
+        })()''')
+        expect(width).to_be_focused()
+        expect(width).to_have_value('40')
+        expect(shaped.locator('#width-error')).to_have_text('Enter at least 50 mm: twice the corner radius.')
+        shaped.evaluate('document.querySelector("#editor [name=corners][value=square]").click()')
+        expect(shaped.locator('#width-error')).to_be_hidden()
+        expect(width).not_to_have_attribute('aria-invalid', 'true')
+        assert shaped.evaluate('woodworkingPlanner.project.parts.at(-1).width') == 40, 'the width the error was about was not applied once it fitted'
+        shaped.click('#undo')
+        expect(shaped.locator('#editor input[name=corners][value=square]')).to_be_checked()
+        shaped.click('#undo')
+        expect(shaped.locator('#editor input[name=corners][value=rounded]')).to_be_checked()
+        expect(width).to_have_value('200')
+        shaped.fill('#editor [name=cornerRadius]', '30')
         shaped.click('#corners-box .choice:has-text("Cut")')
         expect(shaped.locator('#editor [name=cutLength]')).to_be_visible()
         expect(shaped.locator('.row.sel .dim')).to_have_text('600 × 200 × 18 · cut 50 × 50 ×2')
