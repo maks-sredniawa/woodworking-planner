@@ -1,14 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  LIES,
   ORIENTATIONS,
+  POSES,
   SHAPES,
   blank,
   bounds,
   cutList,
   duplicatePart,
+  describePose,
   extents,
   faceArea,
+  legacyPose,
   makePart,
   makeShape,
   MAX_SIZE_MM,
@@ -20,6 +24,7 @@ import {
   parseProject,
   projectBounds,
   rotatePart,
+  sceneBasis,
   serialize,
   snapPosition,
   starterProject,
@@ -27,17 +32,19 @@ import {
   updatePart,
 } from '../src/model.js';
 
-test('every orientation maps length, width and thickness to three different axes', () => {
-  for (const orientation of Object.keys(ORIENTATIONS)) {
-    const size = extents(makePart({ length: 900, width: 300, thickness: 18, orientation }));
-    assert.deepEqual(Object.values(size).sort((a, b) => a - b), [18, 300, 900], orientation);
-    assert.equal(size[orientation[0]], 900);
-    assert.equal(size[orientation[2]], 18);
+test('there are 24 poses and each maps length, width and thickness to three different axes', () => {
+  assert.equal(POSES.length, 24);
+  assert.equal(new Set(POSES).size, 24);
+  for (const pose of POSES) {
+    const size = extents(makePart({ length: 900, width: 300, thickness: 18, pose }));
+    assert.deepEqual(Object.values(size).sort((a, b) => a - b), [18, 300, 900], pose);
+    assert.equal(size[pose[1]], 900);
+    assert.equal(size[pose[5]], 18);
   }
 });
 
 test('bounds start at the position and add the extents', () => {
-  const part = makePart({ length: 1000, width: 250, thickness: 18, orientation: 'yzx', x: 782, y: 0, z: 6 });
+  const part = makePart({ length: 1000, width: 250, thickness: 18, pose: legacyPose('yzx'), x: 782, y: 0, z: 6 });
   assert.deepEqual(bounds(part), { min: { x: 782, y: 0, z: 6 }, max: { x: 800, y: 1000, z: 256 } });
 });
 
@@ -48,9 +55,9 @@ test('the starter bookshelf has no overlapping parts and fits 800 × 1000 × 250
 });
 
 test('boards that only touch do not overlap, boards that cross do', () => {
-  const a = makePart({ length: 500, width: 100, thickness: 20, orientation: 'xzy' });
-  const touching = makePart({ length: 500, width: 100, thickness: 20, orientation: 'xzy', y: 20 });
-  const crossing = makePart({ length: 500, width: 100, thickness: 20, orientation: 'zxy', x: 200, y: 10 });
+  const a = makePart({ length: 500, width: 100, thickness: 20, pose: legacyPose('xzy') });
+  const touching = makePart({ length: 500, width: 100, thickness: 20, pose: legacyPose('xzy'), y: 20 });
+  const crossing = makePart({ length: 500, width: 100, thickness: 20, pose: legacyPose('zxy'), x: 200, y: 10 });
   assert.deepEqual(overlaps([a, touching]), []);
   assert.deepEqual(overlaps([a, touching, crossing]), [
     [a.id, crossing.id],
@@ -87,11 +94,14 @@ test('updatePart rejects sizes that are not positive or are too large and rounds
   assert.equal(updatePart(part, 'length', '612.345').length, 612.3);
   assert.equal(updatePart(part, 'x', '-40').x, -40);
   assert.equal(updatePart(part, 'species', 'unobtainium'), null);
-  assert.equal(updatePart(part, 'orientation', 'xxx'), null);
+  assert.equal(updatePart(part, 'pose', '+x+x+y'), null);
+  assert.equal(updatePart(part, 'pose', '+x+y-z'), null, 'a mirror image is not a pose');
+  assert.equal(updatePart(part, 'pose', 'xzy'), null);
+  assert.equal(updatePart(part, 'orientation', 'xzy'), null);
 });
 
 test('a duplicate gets a new id and sits beside the original, not inside it', () => {
-  const part = makePart({ orientation: 'yzx', thickness: 18 });
+  const part = makePart({ pose: legacyPose('yzx'), thickness: 18 });
   const copy = duplicatePart(part);
   assert.notEqual(copy.id, part.id);
   assert.equal(copy.x, 38);
@@ -117,10 +127,10 @@ test('loading rejects files that are not projects or hold bad parts', () => {
 });
 
 test('a dragged board snaps flush against a nearby board face', () => {
-  const side = makePart({ length: 1000, width: 244, thickness: 18, orientation: 'yzx', x: 0 });
-  const shelf = makePart({ length: 764, width: 244, thickness: 18, orientation: 'xzy' });
+  const side = makePart({ length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx'), x: 0 });
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, pose: legacyPose('xzy') });
   assert.deepEqual(snapPosition(shelf, { x: 25, z: 7 }, [side, shelf]), { x: 18, z: 0 });
-  const right = makePart({ length: 1000, width: 244, thickness: 18, orientation: 'yzx', x: 900 });
+  const right = makePart({ length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx'), x: 900 });
   assert.equal(snapPosition(shelf, { x: 130 }, [right]).x, 136);
 });
 
@@ -147,24 +157,24 @@ test('movePart changes only the given axes and refuses positions beyond the limi
 });
 
 test('turning a board swaps the two axes around the turn axis and keeps its centre', () => {
-  const shelf = makePart({ length: 764, width: 244, thickness: 18, orientation: 'xzy', x: 18, y: 300, z: 6 });
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 300, z: 6 });
   const turned = rotatePart(shelf, 'y');
-  assert.equal(turned.orientation, 'zxy');
+  assert.equal(turned.pose, '-z-x+y');
   assert.deepEqual(extents(turned), { z: 764, x: 244, y: 18 });
   const centre = (part) => {
     const size = extents(part);
     return [part.x + size.x / 2, part.y + size.y / 2, part.z + size.z / 2];
   };
   assert.deepEqual(centre(turned), centre(shelf));
-  assert.deepEqual(rotatePart(turned, 'y'), shelf);
+  assert.deepEqual(rotatePart(rotatePart(rotatePart(turned, 'y'), 'y'), 'y'), shelf);
 });
 
-test('every rotation gives a valid orientation and four turns bring the board back', () => {
-  for (const orientation of Object.keys(ORIENTATIONS)) {
+test('every rotation gives a valid pose and four turns bring the board back', () => {
+  for (const pose of POSES) {
     for (const axis of ['x', 'y', 'z']) {
-      const board = makePart({ orientation, y: 2000 });
+      const board = makePart({ pose, y: 2000 });
       const once = rotatePart(board, axis);
-      assert.ok(once.orientation in ORIENTATIONS, `${orientation} around ${axis}`);
+      assert.ok(POSES.includes(once.pose), `${pose} around ${axis}`);
       let back = board;
       for (let i = 0; i < 4; i++) back = rotatePart(back, axis);
       assert.deepEqual(back, board);
@@ -173,9 +183,9 @@ test('every rotation gives a valid orientation and four turns bring the board ba
 });
 
 test('tipping a board that lies on the floor keeps it on the floor, not through it', () => {
-  const shelf = makePart({ length: 764, width: 244, thickness: 18, orientation: 'xzy', y: 0 });
+  const shelf = makePart({ length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), y: 0 });
   const tipped = rotatePart(shelf, 'x');
-  assert.equal(tipped.orientation, 'xyz');
+  assert.equal(tipped.pose, legacyPose('xyz'));
   assert.equal(tipped.y, 0);
 });
 
@@ -185,7 +195,7 @@ test('a locked board refuses moves, rotations and size changes but keeps its nam
   assert.equal(movePart(board, { x: 90 }), board);
   assert.equal(rotatePart(board, 'y'), board);
   for (const field of ['length', 'width', 'thickness', 'x', 'y', 'z']) assert.equal(updatePart(board, field, '120'), null, field);
-  assert.equal(updatePart(board, 'orientation', 'zxy'), null);
+  assert.equal(updatePart(board, 'pose', legacyPose('zxy')), null);
   assert.equal(updatePart(board, 'name', 'Leg').name, 'Leg');
   assert.equal(updatePart(board, 'species', 'oak').species, 'oak');
   assert.equal(updatePart(board, 'locked', false).locked, false);
@@ -238,7 +248,7 @@ test('a board placed beside the project goes right, then left, then to the origi
 });
 
 test('a duplicate that has no room on either side is refused', () => {
-  const slab = makePart({ thickness: MAX_SIZE_MM, orientation: 'xyz', z: 0 });
+  const slab = makePart({ thickness: MAX_SIZE_MM, pose: legacyPose('xyz'), z: 0 });
   assert.equal(duplicatePart(slab), slab);
 });
 
@@ -256,7 +266,7 @@ test('a disc is a diameter square blank as thick as the disc, with a round face'
   const disc = makeShape('disc');
   assert.equal(disc.name, 'Disc');
   assert.deepEqual(blank(disc), { length: 400, width: 400, thickness: 18 });
-  assert.deepEqual(extents({ ...disc, orientation: 'yxz' }), { y: 400, x: 400, z: 18 });
+  assert.deepEqual(extents({ ...disc, pose: legacyPose('yxz') }), { y: 400, x: 400, z: 18 });
   close(faceArea(disc), Math.PI * 200 ** 2);
   close(pieceVolume(disc), Math.PI * 200 ** 2 * 18);
 });
@@ -264,7 +274,7 @@ test('a disc is a diameter square blank as thick as the disc, with a round face'
 test('a dowel is a round rod: its blank is length × diameter × diameter', () => {
   const dowel = makeShape('dowel');
   assert.deepEqual(blank(dowel), { length: 450, width: 30, thickness: 30 });
-  assert.deepEqual(extents({ ...dowel, orientation: 'yzx' }), { y: 450, z: 30, x: 30 });
+  assert.deepEqual(extents({ ...dowel, pose: legacyPose('yzx') }), { y: 450, z: 30, x: 30 });
   close(pieceVolume(dowel), Math.PI * 15 ** 2 * 450);
   close(faceArea(dowel), 450 * 30);
 });
@@ -429,4 +439,115 @@ test('a version 1 file loads every part as a board with square corners, and bad 
   assert.throws(() => parseProject(file({ cornerTopLeft: 1 })), /invalid cornerTopLeft/);
   assert.throws(() => parseProject(file({ outerRadius: 6000 })), /invalid outerRadius/);
   assert.throws(() => parseProject('{"format":"woodworking-planner","version":3,"parts":[]}'), /newer version/);
+});
+
+const WORLD = ['x', 'y', 'z'];
+const unit = (axis) => WORLD.map((each) => (each === axis ? 1 : 0));
+const determinant = ([a, b, c]) =>
+  a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+
+function oldSceneBasis(orientation) {
+  const [lengthAxis, widthAxis, thicknessAxis] = orientation;
+  const basis = [unit(lengthAxis), unit(thicknessAxis), unit(widthAxis)];
+  if (determinant(basis) < 0) basis[2] = basis[2].map((n) => 0 - n);
+  return basis;
+}
+
+function worldOutline(part, basis = sceneBasis(part.pose)) {
+  const size = extents(part);
+  const centre = WORLD.map((axis) => part[axis] + size[axis] / 2);
+  const [alongLength, , alongMinusWidth] = basis;
+  return outline(part).points.map(([u, v]) => centre.map((c, i) => c + alongLength[i] * u - alongMinusWidth[i] * v));
+}
+
+const rightAngle = (part) => worldOutline(part)[0];
+const fromCentre = (part, point) => {
+  const size = extents(part);
+  return WORLD.map((axis, i) => point[i] - (part[axis] + size[axis] / 2));
+};
+
+test('two Rolls turn a triangle half a turn: its right angle moves to the opposite side', () => {
+  for (const pose of [legacyPose('xzy'), legacyPose('yxz'), legacyPose('xyz')]) {
+    const triangle = { ...makeShape('triangle'), length: 300, width: 200, pose, y: 1000 };
+    const rolled = rotatePart(rotatePart(triangle, 'z'), 'z');
+    const [dx, dy, dz] = fromCentre(triangle, rightAngle(triangle));
+    assert.deepEqual(fromCentre(rolled, rightAngle(rolled)).map((n) => n + 0), [-dx, -dy, dz].map((n) => n + 0), pose);
+    assert.notDeepEqual(worldOutline(rolled), worldOutline(triangle), pose);
+  }
+  const standing = { ...makeShape('triangle'), pose: legacyPose('xyz'), y: 1000 };
+  const before = fromCentre(standing, rightAngle(standing));
+  const after = fromCentre(standing, rightAngle(rotatePart(rotatePart(standing, 'z'), 'z')));
+  assert.ok(before[1] < 0 && after[1] > 0, 'standing in the front plane, the right angle goes from the bottom to the top');
+});
+
+test('for an asymmetric piece four turns about any axis come back and two do not', () => {
+  for (const pose of POSES) {
+    for (const axis of WORLD) {
+      const triangle = { ...makeShape('triangle'), pose, y: 2000 };
+      const twice = rotatePart(rotatePart(triangle, axis), axis);
+      assert.notEqual(twice.pose, triangle.pose, `${pose} twice around ${axis}`);
+      assert.notDeepEqual(worldOutline(twice), worldOutline(triangle), `${pose} twice around ${axis}`);
+      assert.deepEqual(rotatePart(rotatePart(twice, axis), axis), triangle, `${pose} four times around ${axis}`);
+    }
+  }
+});
+
+test('the 24 poses are all reachable with Turn, Tip and Roll', () => {
+  const seen = new Set([makePart().pose]);
+  let frontier = [makePart({ y: 2000 })];
+  while (frontier.length) {
+    frontier = frontier.flatMap((part) => WORLD.map((axis) => rotatePart(part, axis))).filter((part) => !seen.has(part.pose) && seen.add(part.pose));
+  }
+  assert.equal(seen.size, 24);
+});
+
+test('every pose survives saving and loading, and only the 24 poses load', () => {
+  const file = (part) => JSON.stringify({ format: 'woodworking-planner', version: 2, parts: [part] });
+  for (const pose of POSES) {
+    const [loaded] = parseProject(serialize({ name: 'Poses', parts: [{ ...makeShape('triangle'), pose }] })).parts;
+    assert.equal(loaded.pose, pose);
+  }
+  for (const pose of ['+x+y-z', '+x+x+y', 'xzy', '+x-z+y ', 'x-z+y+', 12]) {
+    assert.throws(() => parseProject(file({ pose })), /Part 1 has an invalid pose/, String(pose));
+  }
+  assert.throws(() => parseProject(file({ orientation: 'xxy' })), /Part 1 has an invalid orientation/);
+  assert.doesNotThrow(() => parseProject(file({ pose: '-y-z+x' })));
+});
+
+test('a version 1 orientation loads as the pose that draws exactly as before', () => {
+  for (const orientation of Object.keys(ORIENTATIONS)) {
+    const text = JSON.stringify({ format: 'woodworking-planner', version: 1, parts: [{ length: 900, width: 250, thickness: 18, orientation, x: 40, y: 50, z: 60 }] });
+    const [board] = parseProject(text).parts;
+    assert.equal(board.pose, legacyPose(orientation));
+    assert.equal(board.orientation, undefined, 'the old field is not kept beside the pose');
+    assert.deepEqual(sceneBasis(board.pose), oldSceneBasis(orientation), orientation);
+    assert.equal(LIES[board.pose], ORIENTATIONS[orientation]);
+    const triangle = { ...makeShape('triangle'), length: 300, width: 200, pose: board.pose, x: 40, y: 50, z: 60 };
+    assert.deepEqual(worldOutline(triangle), worldOutline(triangle, oldSceneBasis(orientation)), orientation);
+  }
+});
+
+test('the scene basis of every pose is right-handed and spans the extents', () => {
+  for (const pose of POSES) {
+    const part = makePart({ length: 900, width: 300, thickness: 18, pose });
+    const basis = sceneBasis(pose);
+    assert.equal(determinant(basis), 1, pose);
+    const [alongLength, alongThickness, alongWidth] = basis;
+    const size = extents(part);
+    WORLD.forEach((axis, i) => {
+      const spanned = Math.abs(alongLength[i]) * 900 + Math.abs(alongThickness[i]) * 18 + Math.abs(alongWidth[i]) * 300;
+      assert.equal(spanned, size[axis], `${pose} along ${axis}`);
+    });
+  }
+});
+
+test('the Lies list keeps its six choices and names every other pose after the nearest one', () => {
+  assert.deepEqual(Object.values(LIES), Object.values(ORIENTATIONS));
+  for (const pose of Object.keys(LIES)) assert.equal(describePose(pose), LIES[pose]);
+  const flat = legacyPose('xzy');
+  const turnedRound = rotatePart(rotatePart(makePart({ pose: flat }), 'y'), 'y').pose;
+  assert.equal(describePose(turnedRound), 'Lying flat, length left–right, spun half a turn');
+  const others = POSES.filter((pose) => !LIES[pose]).map(describePose);
+  assert.equal(others.length, 18);
+  assert.equal(new Set(others).size, 18, 'every pose has its own name');
 });

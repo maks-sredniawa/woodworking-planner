@@ -1,13 +1,14 @@
 import {
   MAX_RADIUS_MM,
   MAX_SIZE_MM,
-  ORIENTATIONS,
+  LIES,
   SHAPES,
   SPECIES,
   blank,
   cornerCount,
   cornerLayout,
   cutList,
+  describePose,
   duplicatePart,
   movePart,
   newPartBeside,
@@ -396,6 +397,7 @@ function renderEditor() {
   form.hidden = !part;
   $('editor-empty').hidden = Boolean(part);
   if (!part) return;
+  showPose(part.pose);
   for (const input of form.querySelectorAll('[name]')) {
     if (input.type === 'radio') {
       input.checked = part[input.name] === input.value;
@@ -420,6 +422,20 @@ function renderEditor() {
   if (focused?.type === 'radio' && form.contains(focused) && !focused.checked) {
     form.querySelector(`[name="${focused.name}"]:checked`)?.focus();
   }
+}
+
+function showPose(pose) {
+  const select = $('field-pose');
+  const extra = select.querySelector('[data-turned]');
+  if (LIES[pose]) {
+    extra?.remove();
+    return;
+  }
+  const option = extra ?? new Option();
+  option.dataset.turned = '';
+  option.value = pose;
+  option.textContent = describePose(pose);
+  if (!extra) select.prepend(option);
 }
 
 const SHAPE_FIELDS = {
@@ -604,7 +620,7 @@ function fillSelect(select, options) {
   select.replaceChildren(...Object.entries(options).map(([value, label]) => new Option(label, value)));
 }
 fillSelect($('field-species'), Object.fromEntries(Object.entries(SPECIES).map(([key, { label }]) => [key, label])));
-fillSelect($('field-orientation'), ORIENTATIONS);
+fillSelect($('field-pose'), LIES);
 
 $('editor').addEventListener('input', (event) => {
   const input = event.target;
