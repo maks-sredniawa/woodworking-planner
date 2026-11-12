@@ -613,6 +613,15 @@ try:
         shaped.click('[data-rotate=z]')
         shaped.click('[data-rotate=z]')
         assert triangle_pose() == start_pose, f'four Rolls should bring the triangle back: {triangle_pose()}'
+
+        shaped.click('#add-more')
+        shaped.click('#add-menu [data-add-shape=arc]')
+        for name, value in [('outerRadius', '1234.5'), ('bandWidth', '234.5'), ('sweep', '123.5'), ('thickness', '45.5')]:
+            shaped.fill(f'#editor [name={name}]', value)
+        expect(shaped.locator('.row.sel .dim')).to_have_text('Arc R1,234.5 × 234.5 × 123.5° × 45.5')
+        for target in ['.row.sel .dim', '#view-sel']:
+            fits = shaped.evaluate(f'(() => {{ const e = document.querySelector("{target}"); return e.scrollWidth <= e.clientWidth && e.getBoundingClientRect().right <= e.parentElement.getBoundingClientRect().right; }})()')
+            assert fits, f'{target} cuts off a long size'
         shaped.evaluate('localStorage.clear()')
         shaped.close()
 
