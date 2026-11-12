@@ -1,11 +1,17 @@
 import {
+  MAX_RADIUS_MM,
   MAX_SIZE_MM,
   ORIENTATIONS,
+  SHAPES,
   SPECIES,
+  blank,
+  cornerCount,
+  cornerLayout,
   cutList,
   duplicatePart,
   movePart,
   newPartBeside,
+  outline,
   overlaps,
   projectBounds,
   rotatePart,
@@ -199,8 +205,8 @@ function replacePart(next, field) {
   commit({ ...project, parts: project.parts.map((part) => (part.id === next.id ? next : part)) }, `${next.id}:${field}`);
 }
 
-function addPart() {
-  const part = newPartBeside(project.parts);
+function addPart(shape = 'board') {
+  const part = newPartBeside(project.parts, shape);
   commit({ ...project, parts: [...project.parts, part] });
   select(part.id);
 }
@@ -237,7 +243,83 @@ function element(tag, className, text) {
   return node;
 }
 
-const sizeText = (part) => `${mm(part.length)} × ${mm(part.width)} × ${mm(part.thickness)}`;
+const trio = (length, width, thickness) => `${mm(length)} × ${mm(width)} × ${mm(thickness)}`;
+
+function blankText(part) {
+  const size = blank(part);
+  return part.shape === 'dowel' ? `⌀${mm(size.width)} × ${mm(size.length)}` : trio(size.length, size.width, size.thickness);
+}
+
+function sizeText(part) {
+  if (part.shape === 'disc') return `⌀${mm(part.diameter)} × ${mm(part.thickness)}`;
+  if (part.shape === 'dowel') return `⌀${mm(part.dowelDiameter)} × ${mm(part.length)} dowel`;
+  if (part.shape === 'arc') return `Arc R${mm(part.outerRadius)} × ${mm(part.bandWidth)} × ${mm(part.sweep)}° × ${mm(part.thickness)}`;
+  if (part.shape === 'triangle') return `Triangle ${trio(part.length, part.width, part.thickness)}`;
+  const plain = trio(part.length, part.width, part.thickness);
+  const count = cornerCount(part);
+  if (!count) return plain;
+  if (part.corners === 'rounded') return `${plain} · R${mm(part.cornerRadius)} ×${count}`;
+  return `${plain} · cut ${mm(part.cutLength)} × ${mm(part.cutWidth)} ×${count}`;
+}
+
+function shapeNote(part) {
+  if (part.shape === 'disc') return `Disc ⌀${mm(part.diameter)}`;
+  if (part.shape === 'dowel') return 'Dowel rod';
+  if (part.shape === 'arc') return `Arc R${mm(part.outerRadius)} × ${mm(part.bandWidth)} × ${mm(part.sweep)}°`;
+  if (part.shape === 'triangle') return `Triangle ${mm(part.length)} × ${mm(part.width)}`;
+  const count = cornerCount(part);
+  if (!count) return null;
+  const corners = count === 1 ? 'corner' : 'corners';
+  const layout = cornerLayout(part) ? ` (${cornerLayout(part)})` : '';
+  if (part.corners === 'rounded') return `R${mm(part.cornerRadius)} ×${count} ${corners}${layout}`;
+  return `${count} ${corners} cut ${mm(part.cutLength)} × ${mm(part.cutWidth)}${layout}`;
+}
+
+const SHAPE_PLURALS = { board: 'boards', disc: 'discs', dowel: 'dowels', arc: 'arcs', triangle: 'triangles' };
+const onlyBoards = (parts) => parts.every((part) => part.shape === 'board');
+
+function pieceWord(parts) {
+  const one = parts.length === 1;
+  if (onlyBoards(parts)) return one ? 'board' : 'boards';
+  return one ? 'piece' : 'pieces';
+}
+
+function countText(parts) {
+  const total = `${parts.length} ${pieceWord(parts)}`;
+  if (onlyBoards(parts)) return total;
+  const kinds = Object.keys(SHAPES)
+    .map((shape) => [shape, parts.filter((part) => part.shape === shape).length])
+    .filter(([, count]) => count)
+    .map(([shape, count]) => `${count} ${count === 1 ? SHAPES[shape].toLowerCase() : SHAPE_PLURALS[shape]}`);
+  return `${total} (${kinds.join(', ')})`;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function outlinePath(part, { width, height, smallest }) {
+  const { points, holes } = outline(part);
+  const size = blank(part);
+  const scale = Math.min(width / size.length, height / size.width);
+  const sx = Math.max(scale, (width * smallest) / size.length);
+  const sy = Math.max(scale, (height * smallest) / size.width);
+  const ring = (list) => `M${list.map(([u, v]) => `${(width / 2 + u * sx).toFixed(2)} ${(height / 2 - v * sy).toFixed(2)}`).join('L')}Z`;
+  return [points, ...holes].map(ring).join('');
+}
+
+const SILHOUETTE_PX = 14;
+
+function silhouette(part) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'sil');
+  svg.setAttribute('viewBox', `-1 -1 ${SILHOUETTE_PX + 2} ${SILHOUETTE_PX + 2}`);
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', outlinePath(part, { width: SILHOUETTE_PX, height: SILHOUETTE_PX, smallest: 0.4 }));
+  path.setAttribute('fill', SPECIES[part.species].color);
+  svg.append(path);
+  return svg;
+}
 
 function renderParts() {
   const clashing = new Set(overlaps(project.parts).flat());
@@ -252,11 +334,9 @@ function renderParts() {
       main.dataset.focus = `main:${part.id}`;
       main.setAttribute('aria-pressed', String(selected));
       main.addEventListener('click', () => select(selected ? null : part.id));
-      const swatch = element('i', 'sw');
-      swatch.style.background = SPECIES[part.species].color;
-      main.append(swatch, element('span', 'nm', part.name || 'Unnamed'), element('span', 'dim', sizeText(part)));
+      main.append(silhouette(part), element('span', 'nm', part.name || 'Unnamed'), element('span', 'dim', sizeText(part)));
       if (part.locked) main.append(element('span', 'tag', '🔒 Locked'));
-      if (clashing.has(part.id)) main.append(element('span', 'warn', 'Overlaps another board'));
+      if (clashing.has(part.id)) main.append(element('span', 'warn', 'Overlaps another piece'));
       item.append(main);
       if (selected) {
         const actions = element('div', 'row-acts');
@@ -303,10 +383,10 @@ function renderSelectionChip() {
 
 function describeView() {
   const box = projectBounds(project.parts);
-  const count = `${project.parts.length} ${project.parts.length === 1 ? 'board' : 'boards'}`;
+  const count = countText(project.parts);
   const size = box ? `, ${mm(box.max.x - box.min.x)} wide × ${mm(box.max.y - box.min.y)} high × ${mm(box.max.z - box.min.z)} deep (mm)` : '';
   const part = selectedPart();
-  const picked = part ? `. Picked: ${part.name || 'Unnamed'}` : '';
+  const picked = part ? `. Picked: ${part.name || 'Unnamed'}, ${sizeText(part)}` : '';
   view.canvas.setAttribute('aria-label', `3D view of ${project.name}: ${count}${size}${picked}`);
 }
 
@@ -317,6 +397,14 @@ function renderEditor() {
   $('editor-empty').hidden = Boolean(part);
   if (!part) return;
   for (const input of form.querySelectorAll('[name]')) {
+    if (input.type === 'radio') {
+      input.checked = part[input.name] === input.value;
+      continue;
+    }
+    if (input.type === 'checkbox') {
+      input.checked = Boolean(part[input.name]);
+      continue;
+    }
     if (document.activeElement === input && input.dataset.partId === part.id) continue;
     input.value = String(part[input.name]);
     input.dataset.partId = part.id;
@@ -327,23 +415,74 @@ function renderEditor() {
   $('lock').textContent = part.locked ? '🔒 Locked · unlock' : 'Lock in place';
   $('locked-note').hidden = !part.locked;
   $('wood-swatch').style.background = SPECIES[part.species].color;
+  renderShapeFields(part);
+  const focused = document.activeElement;
+  if (focused?.type === 'radio' && form.contains(focused) && !focused.checked) {
+    form.querySelector(`[name="${focused.name}"]:checked`)?.focus();
+  }
+}
+
+const SHAPE_FIELDS = {
+  board: ['length', 'width', 'thickness'],
+  disc: ['diameter', 'thickness'],
+  dowel: ['dowelDiameter', 'length'],
+  arc: ['outerRadius', 'bandWidth', 'sweep', 'thickness'],
+  triangle: ['length', 'width', 'thickness'],
+};
+
+const PREVIEW = { width: 280, height: 112, inset: 12 };
+
+function cornerPreview(part) {
+  const width = PREVIEW.width - 2 * PREVIEW.inset;
+  const height = PREVIEW.height - 2 * PREVIEW.inset;
+  const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+  const sketch = {
+    ...part,
+    length: width,
+    width: height,
+    cornerRadius: clamp((part.cornerRadius / Math.min(part.length, part.width)) * height, 16, height / 2),
+    cutLength: clamp((part.cutLength / part.length) * width, 18, width / 2),
+    cutWidth: clamp((part.cutWidth / part.width) * height, 18, height / 2),
+  };
+  return outlinePath(sketch, { width, height, smallest: 0 });
+}
+
+function renderShapeFields(part) {
+  const wanted = SHAPE_FIELDS[part.shape];
+  const sizes = $('sizes');
+  for (const field of sizes.children) field.hidden = !wanted.includes(field.dataset.field);
+  const shown = [...sizes.children].filter((field) => !field.hidden).map((field) => field.dataset.field);
+  if (shown.join() !== wanted.join()) {
+    for (const name of wanted) sizes.append(sizes.querySelector(`[data-field="${name}"]`));
+  }
+  $('arc-inner').hidden = part.shape !== 'arc';
+  $('arc-inner').textContent = `Inner radius ${mm(part.outerRadius - part.bandWidth)} mm (outer radius less the band width).`;
+  $('cut-from').textContent = `Cut from ${blankText(part)}${part.shape === 'dowel' ? ' dowel rod' : ''}`;
+  $('corners-box').hidden = part.shape !== 'board';
+  $('corner-pick').hidden = part.corners === 'square';
+  $('radius-field').hidden = part.corners !== 'rounded';
+  $('cut-fields').hidden = part.corners !== 'cut';
+  $('corner-shape').setAttribute('viewBox', `${-PREVIEW.inset} ${-PREVIEW.inset} ${PREVIEW.width} ${PREVIEW.height}`);
+  $('corner-shape').querySelector('path').setAttribute('d', cornerPreview(part));
 }
 
 function renderCutList() {
   $('cut-rows').replaceChildren(
     ...cutList(project.parts).map((row) => {
       const tr = document.createElement('tr');
-      const volume = (row.count * row.length * row.width * row.thickness) / 1e9;
-      const face = (row.count * row.length * row.width) / 1e6;
+      const volume = (row.count * row.volume) / 1e9;
+      const face = (row.count * row.area) / 1e6;
       const cells = [
         [`${row.count} ×`, 'num'],
-        [sizeText(row)],
+        [blankText(row.piece)],
         [row.names.join(', ')],
         [SPECIES[row.species].label],
         [`${volume.toFixed(4)} m³`, 'num'],
         [`${face.toFixed(2)} m²`, 'num'],
       ];
       for (const [text, className] of cells) tr.append(element('td', className, text));
+      const note = shapeNote(row.piece);
+      if (note) tr.children[1].append(element('span', 'shape-note', note));
       return tr;
     }),
   );
@@ -354,7 +493,7 @@ function renderCutList() {
     return span;
   };
   $('totals').replaceChildren(
-    stat(String(sum.count), sum.count === 1 ? 'board' : 'boards'),
+    stat(String(sum.count), pieceWord(project.parts)),
     stat(sum.volume.toFixed(4), 'm³ volume'),
     stat(sum.area.toFixed(2), 'm² face'),
     stat(`≈ ${sum.weight.toFixed(1)}`, 'kg'),
@@ -365,14 +504,49 @@ function renderCutList() {
     : '';
 }
 
+const SIZE_ERROR = `Enter a size above 0, up to ${mm(MAX_SIZE_MM)} mm.`;
+const POSITION_ERROR = `Enter a number from −${mm(MAX_SIZE_MM)} to ${mm(MAX_SIZE_MM)} mm.`;
+const half = (value) => mm(Math.floor((value / 2) * 10) / 10);
+
+function cornersNeed(part, side) {
+  if (!cornerCount(part)) return 0;
+  if (part.corners === 'rounded') return 2 * part.cornerRadius;
+  return 2 * (side === 'length' ? part.cutLength : part.cutWidth);
+}
+
 const FIELD_ERRORS = {
-  length: `Enter a size above 0, up to ${mm(MAX_SIZE_MM)} mm.`,
-  width: `Enter a size above 0, up to ${mm(MAX_SIZE_MM)} mm.`,
-  thickness: `Enter a size above 0, up to ${mm(MAX_SIZE_MM)} mm.`,
-  x: `Enter a number from −${mm(MAX_SIZE_MM)} to ${mm(MAX_SIZE_MM)} mm.`,
-  y: `Enter a number from −${mm(MAX_SIZE_MM)} to ${mm(MAX_SIZE_MM)} mm.`,
-  z: `Enter a number from −${mm(MAX_SIZE_MM)} to ${mm(MAX_SIZE_MM)} mm.`,
+  length: (part, value) => sideError(part, 'length', value),
+  width: (part, value) => sideError(part, 'width', value),
+  thickness: () => SIZE_ERROR,
+  diameter: () => `Enter a diameter above 0, up to ${mm(MAX_SIZE_MM)} mm.`,
+  dowelDiameter: () => `Enter a diameter above 0, up to ${mm(MAX_SIZE_MM)} mm.`,
+  outerRadius: (part, value) =>
+    value > 0 && value <= part.bandWidth
+      ? `Outer radius must be more than the band width (${mm(part.bandWidth)} mm).`
+      : `Enter an outer radius above 0, up to ${mm(MAX_RADIUS_MM)} mm.`,
+  bandWidth: (part, value) =>
+    value >= part.outerRadius
+      ? `Band width must be less than the outer radius (${mm(part.outerRadius)} mm).`
+      : `Enter a band width above 0, less than the outer radius (${mm(part.outerRadius)} mm).`,
+  sweep: () => 'Enter a sweep from 1° to 360°.',
+  cornerRadius: (part) => {
+    const side = part.width <= part.length ? 'width' : 'length';
+    return `Enter a radius above 0, up to ${half(part[side])} mm (half the ${side}).`;
+  },
+  cutLength: (part) => `Enter a cut above 0, up to ${half(part.length)} mm (half the length).`,
+  cutWidth: (part) => `Enter a cut above 0, up to ${half(part.width)} mm (half the width).`,
+  x: () => POSITION_ERROR,
+  y: () => POSITION_ERROR,
+  z: () => POSITION_ERROR,
 };
+
+function sideError(part, side, value) {
+  const need = cornersNeed(part, side);
+  if (value > 0 && value <= MAX_SIZE_MM && value < need) {
+    return `Enter at least ${mm(need)} mm: twice the corner ${part.corners === 'rounded' ? 'radius' : 'cut'}.`;
+  }
+  return SIZE_ERROR;
+}
 
 function showFieldError(input, message) {
   const note = $(`${input.name}-error`);
@@ -436,9 +610,12 @@ $('editor').addEventListener('input', (event) => {
   const input = event.target;
   const part = selectedPart();
   if (!part || !input.name) return;
-  const next = updatePart(part, input.name, input.value);
+  if (input.type === 'radio' && !input.checked) return;
+  const choice = input.type === 'radio' || input.type === 'checkbox';
+  const next = updatePart(part, input.name, input.type === 'checkbox' ? input.checked : input.value);
   if (!next) {
-    showFieldError(input, FIELD_ERRORS[input.name] ?? 'This value is not allowed.');
+    if (choice) renderEditor();
+    else showFieldError(input, FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.');
     return;
   }
   showFieldError(input, null);
@@ -451,9 +628,61 @@ $('project-name').addEventListener('change', (event) => {
   if (name !== project.name) commit({ ...project, name });
 });
 
-$('add').addEventListener('click', addPart);
+$('add').addEventListener('click', () => addPart());
 $('add-phone').addEventListener('click', () => {
   addPart();
+  showTab('edit');
+});
+
+function addMenu(toggle, menu, pick) {
+  const items = () => [...menu.querySelectorAll('[role="menuitem"]')];
+  const open = (index) => {
+    menu.hidden = false;
+    toggle.setAttribute('aria-expanded', 'true');
+    items().at(index)?.focus();
+  };
+  const close = (returnFocus) => {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+    if (returnFocus) toggle.focus();
+  };
+  toggle.addEventListener('click', () => (menu.hidden ? open(0) : close(true)));
+  toggle.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    event.stopPropagation();
+    open(event.key === 'ArrowUp' ? -1 : 0);
+  });
+  menu.addEventListener('keydown', (event) => {
+    const list = items();
+    const index = list.indexOf(document.activeElement);
+    const moves = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: list.length - 1 };
+    if (event.key in moves) {
+      event.preventDefault();
+      event.stopPropagation();
+      list[(moves[event.key] + list.length) % list.length].focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    } else if (event.key === 'Tab') {
+      close(false);
+    }
+  });
+  menu.addEventListener('click', (event) => {
+    const item = event.target.closest('[data-add-shape]');
+    if (!item) return;
+    close(true);
+    pick(item.dataset.addShape);
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!toggle.parentElement.contains(event.target)) close(false);
+  });
+}
+addMenu($('add-more'), $('add-menu'), (shape) => addPart(shape));
+addMenu($('add-more-phone'), $('add-menu-phone'), (shape) => {
+  addPart(shape);
   showTab('edit');
 });
 
@@ -550,7 +779,7 @@ const ARROWS = {
 const onBoardKeys = (target) => Boolean(target.closest('.view, #parts'));
 
 document.addEventListener('keydown', (event) => {
-  const typing = event.target.closest('input, textarea');
+  const typing = event.target.closest('textarea, input:not([type="radio"], [type="checkbox"])');
   const inField = event.target.closest('input, select, textarea');
   if (event.key in ARROWS && selectedId && !event.ctrlKey && !event.metaKey && !inField) {
     event.preventDefault();

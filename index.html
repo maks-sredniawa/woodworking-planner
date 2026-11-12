@@ -69,7 +69,16 @@
   <section class="parts" aria-labelledby="parts-title">
     <div class="pane-h">
       <h2 id="parts-title">Parts <span id="part-count" class="count"></span></h2>
-      <button type="button" id="add" class="primary">Add board</button>
+      <div class="add-split">
+        <button type="button" id="add" class="primary">Add board</button>
+        <button type="button" id="add-more" class="primary more-shapes" aria-label="Add another shape" aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu">▾</button>
+        <div id="add-menu" class="add-menu" role="menu" aria-label="Add another shape" hidden>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="disc"><span class="choice-icon" aria-hidden="true">○</span>Disc</button>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
+        </div>
+      </div>
     </div>
     <ul id="parts" class="list"></ul>
     <p id="parts-empty" class="empty" hidden>No boards yet. Add one to start.</p>
@@ -83,7 +92,7 @@
     <div class="table-wrap">
       <table class="cut-list">
         <thead>
-          <tr><th class="num">Qty</th><th>Size (mm)</th><th>Parts</th><th>Wood</th><th class="num">Volume</th><th class="num">Face</th></tr>
+          <tr><th class="num">Qty</th><th>Cut from (mm)</th><th>Parts</th><th>Wood</th><th class="num">Volume</th><th class="num">Face</th></tr>
         </thead>
         <tbody id="cut-rows"></tbody>
       </table>
@@ -92,16 +101,53 @@
   </section>
 
   <aside class="inspector" aria-labelledby="editor-title">
-    <div class="pane-h"><h2 id="editor-title">Selected board</h2></div>
-    <p id="editor-empty" class="empty">Pick a board in the list or in the 3D view to change it.</p>
+    <div class="pane-h"><h2 id="editor-title">Selected piece</h2></div>
+    <p id="editor-empty" class="empty">Pick a piece in the list or in the 3D view to change it.</p>
     <form id="editor" class="fields" hidden>
       <label>Name <input name="name" autocomplete="off"></label>
+      <fieldset class="shape-pick">
+        <legend>Shape</legend>
+        <div class="choices shapes">
+          <label class="choice"><input type="radio" name="shape" value="board" data-geometry><span class="choice-icon" aria-hidden="true">▭</span><span>Board</span></label>
+          <label class="choice"><input type="radio" name="shape" value="disc" data-geometry><span class="choice-icon" aria-hidden="true">○</span><span>Disc</span></label>
+          <label class="choice"><input type="radio" name="shape" value="dowel" data-geometry><span class="choice-icon" aria-hidden="true">━</span><span>Dowel</span></label>
+          <label class="choice"><input type="radio" name="shape" value="arc" data-geometry><span class="choice-icon" aria-hidden="true">◜</span><span>Arc</span></label>
+          <label class="choice"><input type="radio" name="shape" value="triangle" data-geometry><span class="choice-icon" aria-hidden="true">◺</span><span>Triangle</span></label>
+        </div>
+      </fieldset>
       <fieldset>
         <legend>Size (mm)</legend>
-        <div class="trio">
-          <div class="field"><label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="length-error" class="field-error" hidden></p></div>
-          <div class="field"><label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="width-error" class="field-error" hidden></p></div>
-          <div class="field"><label>Thickness <input name="thickness" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="thickness-error" class="field-error" hidden></p></div>
+        <div class="trio" id="sizes">
+          <div class="field" data-field="length"><label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="length-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="width"><label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="width-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="thickness"><label>Thickness <input name="thickness" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="thickness-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="diameter"><label>Diameter <input name="diameter" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="diameter-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="dowelDiameter"><label>Diameter <input name="dowelDiameter" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="dowelDiameter-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="outerRadius"><label>Outer radius <input name="outerRadius" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="outerRadius-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="bandWidth"><label>Band width <input name="bandWidth" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="bandWidth-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="sweep"><label>Sweep (°) <input name="sweep" data-geometry class="num" type="number" min="1" max="360" step="any" inputmode="decimal"></label><p id="sweep-error" class="field-error" hidden></p></div>
+        </div>
+        <p id="arc-inner" class="help" hidden></p>
+        <p id="cut-from" class="cut-from"></p>
+      </fieldset>
+      <fieldset id="corners-box" class="corners-box">
+        <legend>Corners</legend>
+        <div class="choices styles">
+          <label class="choice"><input type="radio" name="corners" value="square" data-geometry><span>Square</span></label>
+          <label class="choice"><input type="radio" name="corners" value="rounded" data-geometry><span>Rounded</span></label>
+          <label class="choice"><input type="radio" name="corners" value="cut" data-geometry><span>Cut</span></label>
+        </div>
+        <div id="corner-pick" class="corner-pick">
+          <svg id="corner-shape" class="corner-shape" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path></path></svg>
+          <label class="corner tl"><input type="checkbox" name="cornerTopLeft" data-geometry><span>Top left</span></label>
+          <label class="corner tr"><input type="checkbox" name="cornerTopRight" data-geometry><span>Top right</span></label>
+          <label class="corner bl"><input type="checkbox" name="cornerBottomLeft" data-geometry><span>Bottom left</span></label>
+          <label class="corner br"><input type="checkbox" name="cornerBottomRight" data-geometry><span>Bottom right</span></label>
+        </div>
+        <div class="field" id="radius-field" data-field="cornerRadius"><label>Radius (mm) <input name="cornerRadius" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cornerRadius-error" class="field-error" hidden></p></div>
+        <div class="duo" id="cut-fields">
+          <div class="field" data-field="cutLength"><label>Cut along length (mm) <input name="cutLength" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cutLength-error" class="field-error" hidden></p></div>
+          <div class="field" data-field="cutWidth"><label>Cut along width (mm) <input name="cutWidth" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="cutWidth-error" class="field-error" hidden></p></div>
         </div>
       </fieldset>
       <fieldset>
@@ -126,7 +172,18 @@
     </form>
   </aside>
 </main>
-<div class="add-bar"><button type="button" id="add-phone" class="primary">Add board</button></div>
+<div class="add-bar">
+  <div class="add-split">
+    <button type="button" id="add-phone" class="primary">Add board</button>
+    <button type="button" id="add-more-phone" class="primary more-shapes" aria-label="Add another shape" aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu-phone">▾</button>
+    <div id="add-menu-phone" class="add-menu up" role="menu" aria-label="Add another shape" hidden>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="disc"><span class="choice-icon" aria-hidden="true">○</span>Disc</button>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
+        <button type="button" role="menuitem" tabindex="-1" data-add-shape="triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
+    </div>
+  </div>
+</div>
 <script type="module" src="src/app.js"></script>
 </body>
 </html>
