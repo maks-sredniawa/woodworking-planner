@@ -1,6 +1,7 @@
 import { parseProject, serialize } from './model.js';
 
 const KEY = 'woodworking-planner:project';
+const UNREADABLE_KEY = 'woodworking-planner:unreadable-project';
 const SNAP_KEY = 'woodworking-planner:snap';
 
 export function loadSnap() {
@@ -49,11 +50,20 @@ export function saveSnap(on) {
 }
 
 export function loadSaved() {
+  let text;
   try {
-    const text = localStorage.getItem(KEY);
-    return text ? parseProject(text) : null;
+    text = localStorage.getItem(KEY);
   } catch {
-    return null;
+    return { project: null, error: null };
+  }
+  if (!text) return { project: null, error: null };
+  try {
+    return { project: parseProject(text), error: null };
+  } catch (error) {
+    try {
+      localStorage.setItem(UNREADABLE_KEY, text);
+    } catch {}
+    return { project: null, error: error.message };
   }
 }
 
@@ -66,11 +76,14 @@ export function save(project) {
   }
 }
 
+const LETTERS_WITHOUT_ACCENT_MARKS = { ł: 'l', ø: 'o', đ: 'd', ð: 'd', ħ: 'h', ŧ: 't', ı: 'i', ß: 'ss', æ: 'ae', œ: 'oe', þ: 'th' };
+
 export function fileName(project) {
   const slug = project.name
     .toLowerCase()
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\u0000-\u007f]/g, (letter) => LETTERS_WITHOUT_ACCENT_MARKS[letter] ?? letter)
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
   return `${slug || 'project'}.woodplan.json`;

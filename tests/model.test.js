@@ -7,7 +7,9 @@ import {
   duplicatePart,
   extents,
   makePart,
+  MAX_SIZE_MM,
   movePart,
+  newPartBeside,
   overlaps,
   parseProject,
   projectBounds,
@@ -193,4 +195,43 @@ test('a copy of a locked board starts unlocked, and the lock survives saving', (
   assert.equal(loaded.y, 20);
   const [old] = parseProject('{"format":"woodworking-planner","version":1,"parts":[{"length":500}]}').parts;
   assert.equal(old.locked, false);
+});
+
+const survivesSaving = (parts) => parseProject(serialize({ name: 'Limits', parts }));
+
+test('every edit keeps a project near the size limit loadable', () => {
+  const long = makePart({ length: MAX_SIZE_MM, x: 0 });
+  const added = newPartBeside([long]);
+  assert.doesNotThrow(() => survivesSaving([long, added]));
+  assert.ok(Math.abs(added.x) <= MAX_SIZE_MM, `added at x ${added.x}`);
+
+  const spread = [makePart({ x: -MAX_SIZE_MM }), makePart({ length: MAX_SIZE_MM, x: 0 })];
+  const squeezed = newPartBeside(spread);
+  assert.doesNotThrow(() => survivesSaving([...spread, squeezed]));
+
+  const high = makePart({ y: MAX_SIZE_MM - 10 });
+  const copy = duplicatePart(high);
+  assert.notEqual(copy, high);
+  assert.doesNotThrow(() => survivesSaving([high, copy]));
+  assert.deepEqual(overlaps([high, copy]), []);
+
+  const far = makePart({ length: MAX_SIZE_MM, x: 9000, z: 9900, y: 9990 });
+  for (const axis of ['x', 'y', 'z']) {
+    const turned = rotatePart(far, axis);
+    assert.doesNotThrow(() => survivesSaving([turned]), `turn around ${axis}`);
+  }
+  assert.equal(rotatePart(far, 'y'), far, 'a turn that would leave the limit leaves the board as it was');
+  assert.doesNotThrow(() => survivesSaving([movePart(far, { x: MAX_SIZE_MM + 1 })]));
+});
+
+test('a board placed beside the project goes right, then left, then to the origin', () => {
+  assert.equal(newPartBeside([]).x, 0);
+  assert.equal(newPartBeside([makePart({ length: 800 })]).x, 850);
+  assert.equal(newPartBeside([makePart({ length: MAX_SIZE_MM, x: 0 })]).x, -650);
+  assert.equal(newPartBeside([makePart({ length: MAX_SIZE_MM, x: -MAX_SIZE_MM }), makePart({ length: MAX_SIZE_MM })]).x, 0);
+});
+
+test('a duplicate that has no room on either side is refused', () => {
+  const slab = makePart({ thickness: MAX_SIZE_MM, orientation: 'xyz', z: 0 });
+  assert.equal(duplicatePart(slab), slab);
 });
