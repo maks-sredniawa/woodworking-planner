@@ -514,6 +514,14 @@ try:
                     outside = narrow.evaluate(CORNERS_OUTSIDE)
                     assert not outside, f'at {width} px with radius {radius} these corner boxes leave the outline: {outside}'
                 narrow.locator('#corner-pick').screenshot(path=str(HERE / f'corners-{width}-{scheme}.png'))
+                narrow.click('#corners-box .choice:has-text("Cut")')
+                for length, across in [('20', '20'), ('191', '61'), ('382', '122'), ('382', '20'), ('20', '122')]:
+                    narrow.fill('#editor [name=cutLength]', length)
+                    narrow.fill('#editor [name=cutWidth]', across)
+                    outside = narrow.evaluate(CORNERS_OUTSIDE)
+                    assert not outside, f'at {width} px with a {length} × {across} cut these corner boxes leave the outline: {outside}'
+                narrow.locator('#corner-pick').screenshot(path=str(HERE / f'corners-cut-{width}-{scheme}.png'))
+                narrow.click('#corners-box .choice:has-text("Rounded")')
 
                 def clear_of_bars(selector='document.activeElement'):
                     return narrow.evaluate(f'''(() => {{
@@ -587,6 +595,20 @@ try:
         zoomed.keyboard.press('Escape')
         zoomed.screenshot(path=str(HERE / 'zoom-400.png'), full_page=True)
         zoomed.close()
+
+        wide = browser.new_page(viewport={'width': 680, 'height': 900})
+        wide.on('pageerror', lambda e: errors.append(str(e)))
+        wide.goto(URL)
+        wide.click('.tabs [data-tab=parts]')
+        wide.locator('#parts li').nth(4).locator('.row-main').click()
+        wide.click('.tabs [data-tab=edit]')
+        for corners, sizes in [('Rounded', {'cornerRadius': '122'}), ('Cut', {'cutLength': '382', 'cutWidth': '122'})]:
+            wide.click(f'#corners-box .choice:has-text("{corners}")')
+            for name, value in sizes.items():
+                wide.fill(f'#editor [name={name}]', value)
+            outside = wide.evaluate(CORNERS_OUTSIDE)
+            assert not outside, f'at 680 px the widened {corners} sketch leaves these corner boxes outside: {outside}'
+        wide.close()
 
         shaped = browser.new_page(viewport={'width': 1280, 'height': 900})
         shaped.on('console', lambda m: m.type == 'error' and errors.append(m.text))
@@ -666,6 +688,12 @@ try:
         shaped.click('#corners-box .choice:has-text("Cut")')
         expect(shaped.locator('#editor [name=cutLength]')).to_be_visible()
         expect(shaped.locator('.row.sel .dim')).to_have_text('600 × 200 × 18 · cut 50 × 50 ×2')
+        shaped.fill('#editor [name=cutLength]', '300')
+        shaped.fill('#editor [name=cutWidth]', '100')
+        outside = shaped.evaluate(CORNERS_OUTSIDE)
+        assert not outside, f'with the largest cut these corner boxes leave the outline: {outside}'
+        shaped.fill('#editor [name=cutLength]', '50')
+        shaped.fill('#editor [name=cutWidth]', '50')
         shaped.click('#corners-box .choice:has-text("Rounded")')
         shaped.wait_for_timeout(1300)
 

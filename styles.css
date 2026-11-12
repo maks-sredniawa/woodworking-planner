@@ -282,7 +282,7 @@ main {
 .choice:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
 .fields .choice input:disabled { cursor: not-allowed; }
 .corners-box { display: grid; gap: 10px; }
-.corner-pick { position: relative; height: 112px; }
+.corner-pick { position: relative; height: 112px; max-width: 344px; }
 .corner-shape { position: absolute; top: 12px; left: 12px; width: calc(100% - 24px); height: calc(100% - 24px); overflow: visible; }
 .corner-shape path { fill: var(--panel-2); stroke: var(--field-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .fields label.corner { position: absolute; display: flex; align-items: center; gap: 4px; padding: 3px; color: var(--text); cursor: pointer; }
