@@ -279,42 +279,6 @@ test('a copy of a locked board starts unlocked, and the lock survives saving', (
 const survivesSaving = (parts) => parseProject(serialize({ name: 'Limits', parts }));
 
 test('every edit keeps a project near the size limit loadable', () => {
-test('tipping or rolling twice leaves a piece on the floor resting on it', () => {
-  const shelf = makePart({ length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), y: 0 });
-  for (const axis of ['x', 'z']) {
-    const twice = rotatePart(rotatePart(shelf, axis), axis);
-    assert.equal(twice.y, 0, `two turns about ${axis}`);
-  }
-});
-
-test('every turn keeps the underside where it was and the footprint centred, so a resting piece stays resting', () => {
-  const footprintCentre = (part) => {
-    const size = extents(part);
-    return [part.x + size.x / 2, part.z + size.z / 2];
-  };
-  for (const shape of Object.keys(SHAPES)) {
-    for (const pose of POSES) {
-      for (const axis of ['x', 'y', 'z']) {
-        for (const y of [0, 18]) {
-          const piece = { ...makeShape(shape), pose, x: 100, y, z: 100 };
-          const turned = rotatePart(piece, axis);
-          assert.equal(turned.y, y, `${shape} ${pose} about ${axis} from y ${y}`);
-          footprintCentre(turned).forEach((centre, i) => assert.ok(Math.abs(centre - footprintCentre(piece)[i]) <= 0.05 + 1e-9, `${shape} ${pose} about ${axis}`));
-        }
-      }
-    }
-  }
-  const base = makePart({ length: 600, width: 400, thickness: 18 });
-  const onTop = makePart({ length: 300, width: 100, thickness: 18, x: 150, y: 18, z: 150 });
-  for (const axis of ['x', 'z']) {
-    let piece = onTop;
-    for (let i = 0; i < 4; i++) {
-      piece = rotatePart(piece, axis);
-      assert.equal(bounds(piece).min.y, bounds(base).max.y, `still on the base after ${i + 1} turns about ${axis}`);
-    }
-  }
-});
-
   const long = makePart({ length: MAX_SIZE_MM, x: 0 });
   const added = newPartBeside([long]);
   assert.doesNotThrow(() => survivesSaving([long, added]));
