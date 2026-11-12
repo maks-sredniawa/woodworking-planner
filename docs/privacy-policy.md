@@ -31,6 +31,7 @@ of its own and sends nothing anywhere.
 2. **A tip, if you choose to leave one.** Buy Me a Coffee handles the payment under its own privacy
    policy.
 3. **An issue you choose to open.** It is public on GitHub, under GitHub's privacy policy.
+4. **An email you choose to send.** It reaches the support mailbox and is used only to answer you.
 
 ## Deleting your data
 
@@ -44,4 +45,4 @@ in the repository.
 
 ## Contact
 
-<https://github.com/maks-sredniawa/woodworking-planner/issues>
+**woodworking.support@maksforge.com**, or <https://github.com/maks-sredniawa/woodworking-planner/issues>
