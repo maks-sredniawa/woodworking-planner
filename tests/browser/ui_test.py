@@ -622,6 +622,9 @@ try:
         for target in ['.row.sel .dim', '#view-sel']:
             fits = shaped.evaluate(f'(() => {{ const e = document.querySelector("{target}"); return e.scrollWidth <= e.clientWidth && e.getBoundingClientRect().right <= e.parentElement.getBoundingClientRect().right; }})()')
             assert fits, f'{target} cuts off a long size'
+        shaped.add_style_tag(content='* { letter-spacing: 0.12em !important; word-spacing: 0.16em !important; line-height: 1.5 !important; }')
+        clipped = shaped.evaluate('[...document.querySelectorAll(".shape-pick .choice")].filter((c) => c.lastElementChild.getBoundingClientRect().right > c.getBoundingClientRect().right + 0.5).map((c) => c.textContent)')
+        assert not clipped, f'with WCAG text spacing these shape names overflow their cell: {clipped}'
         shaped.evaluate('localStorage.clear()')
         shaped.close()
 
