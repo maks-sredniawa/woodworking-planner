@@ -232,6 +232,7 @@ try:
         expect(lies).to_have_value('-z-x+y')
         expect(lies.locator('option:checked')).to_have_text('Lying flat, length front–back, spun half a turn')
         expect(lies.locator('option')).to_have_count(7)
+        expect(page.locator('#pose-note')).to_have_text('Spun half a turn from “Lying flat, length front–back”.')
         page.keyboard.press('r')
         assert shelf()[0] == '-x+z+y', f'two turns should face the board the other way: {shelf()}'
         page.click('[data-rotate=x]')
@@ -245,6 +246,7 @@ try:
         lies.select_option('+z+x+y')
         assert shelf()[0] == '+z+x+y', shelf()
         expect(lies.locator('option')).to_have_count(6)
+        expect(page.locator('#pose-note')).to_be_hidden()
         expect(lies.locator('option:checked')).to_have_text('Lying flat, length front–back')
         page.keyboard.press('Control+z')
         assert shelf()[0] == '-z-x+y', shelf()

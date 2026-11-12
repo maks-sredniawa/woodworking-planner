@@ -80,11 +80,16 @@ function liesLike(pose) {
 
 const HALF_TURNS = { thickness: 'spun half a turn', length: 'rolled over', width: 'flipped end over end' };
 
-export function describePose(pose) {
+export function poseHalfTurn(pose) {
   const canonical = liesLike(pose);
-  if (canonical === pose) return LIES[pose];
+  if (canonical === pose) return null;
   const kept = Object.keys(HALF_TURNS).find((side) => poseAxes(pose)[side] === poseAxes(canonical)[side]);
-  return `${LIES[canonical]}, ${HALF_TURNS[kept]}`;
+  return { lies: LIES[canonical], turn: HALF_TURNS[kept] };
+}
+
+export function describePose(pose) {
+  const half = poseHalfTurn(pose);
+  return half ? `${half.lies}, ${half.turn}` : LIES[pose];
 }
 
 function vector(signed) {

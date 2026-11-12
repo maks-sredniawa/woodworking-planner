@@ -9,6 +9,7 @@ import {
   cornerLayout,
   cutList,
   describePose,
+  poseHalfTurn,
   duplicatePart,
   movePart,
   newPartBeside,
@@ -427,10 +428,13 @@ function renderEditor() {
 function showPose(pose) {
   const select = $('field-pose');
   const extra = select.querySelector('[data-turned]');
-  if (LIES[pose]) {
+  const half = poseHalfTurn(pose);
+  $('pose-note').hidden = !half;
+  if (!half) {
     extra?.remove();
     return;
   }
+  $('pose-note').textContent = `${half.turn[0].toUpperCase()}${half.turn.slice(1)} from “${half.lies}”.`;
   const option = extra ?? new Option();
   option.dataset.turned = '';
   option.value = pose;
