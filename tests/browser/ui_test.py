@@ -368,6 +368,7 @@ try:
 
         page.fill('#editor [name=length]', '-3')
         expect(page.locator('#length-error')).to_be_visible()
+        expect(page.locator('#length-error')).to_have_attribute('aria-live', 'polite')
         expect(page.locator('#length-error')).to_contain_text('above 0')
         expect(page.locator('#editor [name=length]')).to_have_attribute('aria-describedby', 'length-error')
         page.fill('#editor [name=x]', '20000')
