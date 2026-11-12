@@ -19,6 +19,11 @@ of its own and sends nothing anywhere.
 
 - **Your project, in your browser.** The app saves the project you are working on in the browser's
   local storage, on your computer, so it is still there when you come back.
+- **A copy of a project that could not be opened, in your browser.** If the project saved in your
+  browser cannot be opened, for example because a newer version of the app saved it, the app copies it
+  under a separate key, `woodworking-planner:unreadable-project`, in the same local storage, so it is
+  not lost when you carry on. A later project that cannot be opened replaces that copy. It stays until
+  you clear the site's data.
 - **A few settings, in your browser.** Whether Snap, Potato and Debug are on.
 - **Files you save.** When you save a project, your browser downloads it as a `.woodplan.json` file
   to where it saves downloads. The app reads a file only when you open it.
@@ -35,7 +40,8 @@ of its own and sends nothing anywhere.
 
 ## Deleting your data
 
-Clear the site's data in your browser to delete the saved project and settings. Files you saved
+Clear the site's data in your browser to delete the saved project, any copy of a project that could
+not be opened, and the settings. Files you saved
 stay where you put them until you delete them.
 
 ## Changes
