@@ -12,7 +12,7 @@ describes what it keeps and where. It is short because the app does very little 
 
 ## The app collects nothing
 
-There is no account, no server, no analytics and no advertising. The app makes no network requests
+There is no account, no online server, no analytics and no advertising. The app makes no network requests
 of its own and sends nothing anywhere.
 
 ## What it keeps, and where
@@ -20,8 +20,8 @@ of its own and sends nothing anywhere.
 - **Your project, in your browser.** The app saves the project you are working on in the browser's
   local storage, on your computer, so it is still there when you come back.
 - **A few settings, in your browser.** Whether Snap, Potato and Debug are on.
-- **Files you save.** When you save a project, it is written as a `.woodplan.json` file wherever you
-  choose. The app reads a file only when you open it.
+- **Files you save.** When you save a project, your browser downloads it as a `.woodplan.json` file
+  to where it saves downloads. The app reads a file only when you open it.
 
 ## The things that happen outside the app
 

@@ -6,7 +6,9 @@ title: Woodworking planner
 # Woodworking planner
 
 **A free web app to plan a woodworking project and see it in 3D before you cut the first board.**
-Everything is worked out on your own computer: no account, no server.
+Everything is worked out on your own computer: no account and no online server.
+
+## Try it
 
 In development: not hosted yet. To try it, run it locally from the
 [source](https://github.com/maks-sredniawa/woodworking-planner): `npm start` serves it at
@@ -38,12 +40,18 @@ It opens with an example bookshelf to look around in.
 
 ## Coming next
 
-Curved and round pieces, beyond rectangular boards.
+Shapes beyond rectangular boards:
+
+- round discs and dowels,
+- curved arc pieces,
+- triangles, for angled cuts,
+- boards with rounded or cut corners.
 
 ## Known limitations
 
 - Millimetres only, for now.
-- Every part is a rectangular board: no joints (dados, tenons, dowels) and no angled cuts yet.
+- Every part is a rectangular board for now: no angled cuts or round parts until the shapes above
+  arrive, and no joints (dados, tenons).
 - No cutting plan that fits parts onto standard boards or plywood sheets.
 
 ## Help and feedback
