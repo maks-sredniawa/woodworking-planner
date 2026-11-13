@@ -3,6 +3,7 @@ import {
   bodyOf,
   bounds,
   extents,
+  isIdentity,
   movePart,
   newId,
   overlaps,
@@ -345,8 +346,6 @@ export function placements(project) {
   const mech = mechanism(project);
   return new Map(project.parts.map((part) => [part.id, mech.placement(part.id)]));
 }
-
-const isIdentity = (placement) => placement.m.every((value, i) => Math.abs(value - IDENTITY.m[i]) < 1e-9) && placement.o.every((value) => Math.abs(value) < 1e-9);
 
 const roundBox = (value) => Math.round(value * 10) / 10 + 0;
 
