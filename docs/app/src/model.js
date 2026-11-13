@@ -1,4 +1,4 @@
-import { TOUCH_MM, convexParts, prism, solid, solidsClash, sweepSpans } from './geometry.js';
+import { TOUCH_MM, convexParts, placeSolid, prism, solidsClash, sweepSpans } from './geometry.js';
 
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
@@ -246,7 +246,7 @@ function crossSection(part) {
   return { outline: shapeOutline(part, finePoints), axes: ['length', 'width', 'thickness'] };
 }
 
-const OUTLINE_FIELDS = ['shape', 'length', 'width', 'diameter', 'dowelDiameter', 'outerRadius', 'bandWidth', 'sweep', 'corners', ...Object.keys(CORNERS), 'cornerRadius', 'cutLength', 'cutWidth'];
+const OUTLINE_FIELDS = ['shape', 'length', 'width', 'thickness', 'diameter', 'dowelDiameter', 'outerRadius', 'bandWidth', 'sweep', 'corners', ...Object.keys(CORNERS), 'cornerRadius', 'cutLength', 'cutWidth'];
 const crossSections = new Map();
 
 function convexCrossSection(part) {
@@ -254,7 +254,8 @@ function convexCrossSection(part) {
   if (!crossSections.has(key)) {
     if (crossSections.size > 500) crossSections.clear();
     const { outline: shape, axes } = crossSection(part);
-    crossSections.set(key, { parts: convexParts(shape), axes });
+    const depth = blank(part)[axes[2]];
+    crossSections.set(key, { pieces: convexParts(shape).map((polygon) => prism(polygon, depth)), axes });
   }
   return crossSections.get(key);
 }
@@ -271,7 +272,7 @@ const solids = new WeakMap();
 export function solidOf(part, placement = null) {
   const still = isIdentity(placement);
   if (still && solids.has(part)) return solids.get(part);
-  const { parts, axes } = convexCrossSection(part);
+  const { pieces, axes } = convexCrossSection(part);
   const size = extents(part);
   const pose = poseAxes(part.pose);
   const [u, v, w] = axes.map((side) => vector(pose[side]));
@@ -279,7 +280,7 @@ export function solidOf(part, placement = null) {
   const frame = still
     ? { origin: centre, u, v, w }
     : { origin: placed(placement, centre), u: turned(placement, u), v: turned(placement, v), w: turned(placement, w) };
-  const result = solid(parts.map((polygon) => prism(polygon, { ...frame, depth: blank(part)[axes[2]] })));
+  const result = placeSolid(pieces, frame);
   if (still) solids.set(part, result);
   return result;
 }
@@ -588,7 +589,7 @@ function snapTargets(part, axis, value, others, placementOf, meeting) {
       continue;
     }
     if (!inPath || value < box.min[axis] - size[axis] - SNAP_REACH_MM || value > box.max[axis] + SNAP_REACH_MM) continue;
-    for (const span of sweepSpans(solidOf(part), shape, AXES.indexOf(axis))) span.forEach((travel, end) => consider(value + travel, end ? 1 : -1));
+    for (const span of sweepSpans(solidOf(part), shape, AXES.indexOf(axis), SNAP_REACH_MM)) span.forEach((travel, end) => consider(value + travel, end ? 1 : -1));
   }
   return near;
 }

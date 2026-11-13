@@ -2,9 +2,6 @@ export const TOUCH_MM = 0.05;
 const EPS = 1e-9;
 const PIECE_CORNERS = 12;
 
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const along = (origin, ...terms) => origin.map((value, i) => terms.reduce((sum, [scale, vector]) => sum + scale * vector[i], value));
 
 function unit(vector) {
   const size = Math.hypot(...vector);
@@ -86,67 +83,104 @@ export function convexParts({ points, holes = [] }) {
 }
 
 function boxOf(points) {
-  const min = [0, 1, 2].map((i) => Math.min(...points.map((point) => point[i])));
-  const max = [0, 1, 2].map((i) => Math.max(...points.map((point) => point[i])));
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const point of points) {
+    for (let i = 0; i < 3; i++) {
+      if (point[i] < min[i]) min[i] = point[i];
+      if (point[i] > max[i]) max[i] = point[i];
+    }
+  }
   return { min, max };
 }
 
-export function prism(polygon, { origin, u, v, w, depth }) {
-  const half = depth / 2;
-  const corners = polygon.flatMap(([s, t]) => {
-    const base = along(origin, [s, u], [t, v]);
-    return [along(base, [-half, w]), along(base, [half, w])];
-  });
+const W = [0, 0, 1];
+
+export function prism(polygon, depth) {
   const sides = polygon.map((point, i) => {
     const next = polygon[(i + 1) % polygon.length];
-    return [next[0] - point[0], next[1] - point[1]];
+    return [next[0] - point[0], next[1] - point[1], 0];
   });
   return {
-    corners,
-    normals: [w, ...sides.map(([ds, dt]) => unit(along([0, 0, 0], [dt, u], [-ds, v])))].filter(Boolean),
-    edges: [w, ...sides.map(([ds, dt]) => unit(along([0, 0, 0], [ds, u], [dt, v])))].filter(Boolean),
-    box: boxOf(corners),
+    polygon,
+    depth,
+    normals: [W, ...sides.map(([ds, dt]) => unit([dt, -ds, 0]))].filter(Boolean),
+    edges: [W, ...sides.map(unit)].filter(Boolean),
   };
 }
 
-export function solid(pieces) {
-  return { pieces, box: boxOf(pieces.flatMap((piece) => [piece.box.min, piece.box.max])) };
+export function placeSolid(pieces, { origin, u, v, w }) {
+  const turn = ([a, b, c]) => [a * u[0] + b * v[0] + c * w[0], a * u[1] + b * v[1] + c * w[1], a * u[2] + b * v[2] + c * w[2]];
+  const placed = pieces.map(({ polygon, depth, normals, edges }) => {
+    const middle = new Float64Array(polygon.length * 3);
+    polygon.forEach(([s, t], i) => {
+      for (let k = 0; k < 3; k++) middle[3 * i + k] = origin[k] + s * u[k] + t * v[k];
+    });
+    const half = w.map((value) => (value * depth) / 2);
+    const corners = polygon.flatMap((_, i) => {
+      const point = [middle[3 * i], middle[3 * i + 1], middle[3 * i + 2]];
+      return [point.map((value, k) => value - half[k]), point.map((value, k) => value + half[k])];
+    });
+    return { corners, middle, half, normals: normals.map(turn), edges: edges.map(turn), w, box: boxOf(corners) };
+  });
+  return { pieces: placed, box: boxOf(placed.flatMap((piece) => [piece.box.min, piece.box.max])) };
 }
 
-function reach(corners, axis) {
-  let low = Infinity;
-  let high = -Infinity;
-  for (const corner of corners) {
-    const value = dot(corner, axis);
+let low = 0;
+let high = 0;
+
+function reach(piece, x, y, z) {
+  const { middle, half } = piece;
+  low = Infinity;
+  high = -Infinity;
+  for (let i = 0; i < middle.length; i += 3) {
+    const value = middle[i] * x + middle[i + 1] * y + middle[i + 2] * z;
     if (value < low) low = value;
     if (value > high) high = value;
   }
-  return [low, high];
+  const thick = Math.abs(half[0] * x + half[1] * y + half[2] * z);
+  low -= thick;
+  high += thick;
 }
 
 const overlapOf = ([lowA, highA], [lowB, highB]) => Math.min(highA, highB) - Math.max(lowA, lowB);
 
 export function boxesCross(a, b) {
-  return [0, 1, 2].every((i) => overlapOf([a.min[i], a.max[i]], [b.min[i], b.max[i]]) > TOUCH_MM);
+  for (let i = 0; i < 3; i++) if (Math.min(a.max[i], b.max[i]) - Math.max(a.min[i], b.min[i]) <= TOUCH_MM) return false;
+  return true;
 }
 
-function* testAxes(a, b) {
-  yield* a.normals;
-  yield* b.normals;
-  for (const first of a.edges) {
-    for (const second of b.edges) {
-      const axis = unit(cross(first, second));
-      if (axis) yield axis;
+const PARALLEL = 1 - 1e-9;
+
+// Calls test(x, y, z) with each unit axis that could separate the two pieces; stops when it returns false.
+function eachAxis(a, b, test) {
+  for (const normal of a.normals) if (!test(normal[0], normal[1], normal[2])) return false;
+  for (const normal of b.normals) if (!test(normal[0], normal[1], normal[2])) return false;
+  for (const e of a.edges) {
+    for (const f of b.edges) {
+      let x = e[1] * f[2] - e[2] * f[1];
+      let y = e[2] * f[0] - e[0] * f[2];
+      let z = e[0] * f[1] - e[1] * f[0];
+      const size = Math.hypot(x, y, z);
+      if (size < 1e-6) continue;
+      x /= size;
+      y /= size;
+      z /= size;
+      if (Math.abs(x * a.w[0] + y * a.w[1] + z * a.w[2]) >= PARALLEL || Math.abs(x * b.w[0] + y * b.w[1] + z * b.w[2]) >= PARALLEL) continue;
+      if (!test(x, y, z)) return false;
     }
   }
+  return true;
 }
 
 function piecesClash(a, b) {
   if (!boxesCross(a.box, b.box)) return false;
-  for (const axis of testAxes(a, b)) {
-    if (overlapOf(reach(a.corners, axis), reach(b.corners, axis)) <= TOUCH_MM) return false;
-  }
-  return true;
+  return eachAxis(a, b, (x, y, z) => {
+    reach(a, x, y, z);
+    const [fromA, toA] = [low, high];
+    reach(b, x, y, z);
+    return Math.min(toA, high) - Math.max(fromA, low) > TOUCH_MM;
+  });
 }
 
 export function solidsClash(a, b) {
@@ -232,27 +266,28 @@ export function meetingRegion(a, b, axis, at) {
 }
 
 function pieceSweep(a, b, axis) {
-  let [low, high] = [-Infinity, Infinity];
-  for (const normal of testAxes(a, b)) {
-    const [fromA, toA] = reach(a.corners, normal);
-    const [fromB, toB] = reach(b.corners, normal);
-    const rate = normal[axis];
-    if (Math.abs(rate) < 1e-9) {
-      if (overlapOf([fromA, toA], [fromB, toB]) <= TOUCH_MM) return null;
-      continue;
-    }
-    const ends = [(fromB - toA) / rate, (toB - fromA) / rate];
-    low = Math.max(low, Math.min(...ends));
-    high = Math.min(high, Math.max(...ends));
-    if (high - low <= TOUCH_MM) return null;
-  }
-  return [low, high];
+  let [from, to] = [-Infinity, Infinity];
+  const meets = eachAxis(a, b, (x, y, z) => {
+    reach(a, x, y, z);
+    const [fromA, toA] = [low, high];
+    reach(b, x, y, z);
+    const rate = [x, y, z][axis];
+    if (Math.abs(rate) < 1e-9) return Math.min(toA, high) - Math.max(fromA, low) > TOUCH_MM;
+    const [one, two] = [(low - toA) / rate, (high - fromA) / rate];
+    from = Math.max(from, Math.min(one, two));
+    to = Math.min(to, Math.max(one, two));
+    return to - from > TOUCH_MM;
+  });
+  return meets ? [from, to] : null;
 }
 
 // The stretches of travel along the axis over which a would overlap b.
-export function sweepSpans(a, b, axis) {
+export function sweepSpans(a, b, axis, within = Infinity) {
   const across = [0, 1, 2].filter((k) => k !== axis);
-  const passes = (one, two) => across.every((k) => overlapOf([one.min[k], one.max[k]], [two.min[k], two.max[k]]) > TOUCH_MM);
+  const passes = (one, two) =>
+    across.every((k) => overlapOf([one.min[k], one.max[k]], [two.min[k], two.max[k]]) > TOUCH_MM) &&
+    two.min[axis] - one.max[axis] <= within &&
+    one.min[axis] - two.max[axis] <= within;
   if (!passes(a.box, b.box)) return [];
   const spans = [];
   for (const piece of a.pieces) {
