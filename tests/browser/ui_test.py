@@ -1009,8 +1009,25 @@ try:
         expect(door_card.locator('.joint-error')).to_be_empty()
         expect(door_card.locator('[data-jf=count]')).to_have_value('3')
         expect(door_card.locator('[data-jf=count]')).not_to_have_attribute('aria-invalid', 'true')
+        door_card.locator('input[type=number][data-jf=open]').fill('90')
+        row('Bottom').locator('.row-main').click()
+        joined.fill('#editor [name=x]', '-9982')
+        expect(joined.locator('#x-error')).to_contain_text('joined to it past')
+        assert spots('Bottom') == '[[18,0,0]]', f'a move that takes the open door past the limit moved the bottom: {spots("Bottom")}'
+        joined.fill('#editor [name=x]', '18')
+        expect(joined.locator('#x-error')).to_be_empty()
+        row('Door').locator('.row-main').click()
         door_card.locator('[data-jf-act=close]').click()
         assert hinge_open() == 0
+        door_card.locator('[data-jf=hingeType]').select_option('concealed')
+        expect(joined.locator('#hardware-rows')).to_contain_text('Concealed hinge')
+        frame_id = joined.evaluate('woodworkingPlanner.project.parts.find((p) => p.name === "Left side").id')
+        drawn = joined.evaluate('woodworkingPlanner.drawn()')
+        frame_knuckles = [piece for piece in drawn['hardware'] if piece['type'] == 'knuckle' and piece['owner'] == frame_id]
+        hinges = joined.evaluate('woodworkingPlanner.project.joints.find((j) => j.kind === "hinge").count')
+        assert len(frame_knuckles) == hinges, f'a concealed hinge draws no hinge line on the frame: {drawn["hardware"]}'
+        assert drawn['hingeLine'] == '0f766e', f'the picked door on a concealed hinge shows no accent hinge line: {drawn["hingeLine"]}'
+        door_card.locator('[data-jf=hingeType]').select_option('butt')
         row('Bottom').locator('.row-main').click()
         joined.fill('#editor [name=x]', '-9995')
         expect(joined.locator('#x-error')).to_contain_text('joined to it past')
