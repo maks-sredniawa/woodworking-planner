@@ -25,13 +25,13 @@ export const CORNERS = {
 };
 
 export const SPECIES = {
-  pine: { label: 'Pine', color: '#d9b77e', density: 510 },
-  spruce: { label: 'Spruce', color: '#e6cc98', density: 450 },
-  oak: { label: 'Oak', color: '#b98a54', density: 720 },
-  beech: { label: 'Beech', color: '#d6a77a', density: 720 },
-  walnut: { label: 'Walnut', color: '#6e4b33', density: 640 },
-  birchPlywood: { label: 'Birch plywood', color: '#e3c99f', density: 680 },
-  mdf: { label: 'MDF', color: '#a88b6c', density: 750 },
+  pine: { label: 'Pine', color: '#d9b77e', density: 510, stock: 'board', grain: true },
+  spruce: { label: 'Spruce', color: '#e6cc98', density: 450, stock: 'board', grain: true },
+  oak: { label: 'Oak', color: '#b98a54', density: 720, stock: 'board', grain: true },
+  beech: { label: 'Beech', color: '#d6a77a', density: 720, stock: 'board', grain: true },
+  walnut: { label: 'Walnut', color: '#6e4b33', density: 640, stock: 'board', grain: true },
+  birchPlywood: { label: 'Birch plywood', color: '#e3c99f', density: 680, stock: 'sheet', grain: true },
+  mdf: { label: 'MDF', color: '#a88b6c', density: 750, stock: 'sheet', grain: false },
 };
 
 export const ORIENTATIONS = {
@@ -505,8 +505,10 @@ export function cutList(parts, allowances = new Map()) {
       volume: cutVolume(part, allowance),
       count: 0,
       names: [],
+      parts: [],
     };
     group.count += 1;
+    group.parts.push(part);
     if (!group.names.includes(part.name)) group.names.push(part.name);
     groups.set(key, group);
   }
@@ -537,6 +539,7 @@ export function newId() {
 
 export function makePart(fields = {}) {
   return {
+    grain: SPECIES[fields.species ?? 'pine'].grain,
     id: newId(),
     name: 'Board',
     shape: 'board',
@@ -608,7 +611,7 @@ function fieldValue(field, raw) {
     const value = roundMm(Number(raw));
     return raw !== '' && value >= MIN_SWEEP_DEG && value <= MAX_SWEEP_DEG ? value : NOT_ALLOWED;
   }
-  if (field === 'locked' || field in CORNERS) return typeof raw === 'boolean' ? raw : NOT_ALLOWED;
+  if (field === 'locked' || field === 'grain' || field in CORNERS) return typeof raw === 'boolean' ? raw : NOT_ALLOWED;
   if (field === 'pose') return POSES.includes(raw) ? raw : NOT_ALLOWED;
   const choices = { species: SPECIES, shape: SHAPES, corners: CORNER_STYLES }[field];
   if (choices) return Object.hasOwn(choices, raw) ? raw : NOT_ALLOWED;
@@ -659,6 +662,7 @@ export function updatePart(part, field, raw) {
   if (part.shape === 'free' && (field === 'length' || field === 'width')) next = stretched(part, field, value);
   if (!next) return null;
   if (SWITCHES.includes(field)) next = fitCorners(next);
+  if (field === 'species' && SPECIES[value].grain !== SPECIES[part.species].grain) next.grain = SPECIES[value].grain;
   return shapeProblem(next) ? null : next;
 }
 
@@ -693,13 +697,14 @@ export function partFromFile(raw, index) {
     if (!Object.hasOwn(ORIENTATIONS, raw.orientation)) throw new Error(`Part ${index + 1} has an invalid orientation.`);
     part.pose = legacyPose(raw.orientation);
   }
-  for (const field of ['name', ...GEOMETRY, 'species', 'locked']) {
+  for (const field of ['name', ...GEOMETRY, 'species', 'locked', 'grain']) {
     if (raw?.[field] === undefined) continue;
     const value = fieldValue(field, raw[field]);
     if (value === NOT_ALLOWED && field === 'points' && part.shape !== 'free') continue;
     if (value === NOT_ALLOWED) throw new Error(`Part ${index + 1} has an invalid ${FILE_NAMES[field] ?? field}.`);
     part[field] = value;
   }
+  if (raw?.grain === undefined) part.grain = SPECIES[part.species].grain;
   const loaded = part.shape === 'free' ? withOutline(part, rebase(part.points ?? boardPoints({ ...part, shape: 'board' }))) : part;
   const problem = shapeProblem(loaded);
   if (problem) throw new Error(`Part ${index + 1} has an invalid ${FILE_NAMES[problem] ?? problem}.`);
