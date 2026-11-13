@@ -1183,7 +1183,7 @@ function renderButtons() {
   const locked = Boolean(selectedPart()?.locked);
   $('delete').disabled = !selectedId;
   offWithReason($('delete'), selectedId && deleteRefusal(selectedId));
-  for (const note of [$('editor-note'), $('parts-note')]) note.textContent = '';
+  for (const note of [$('editor-note'), $('parts-note')]) announce(note, '');
   const pinned = Boolean(selectedId) && assemblyPinned(selectedId);
   for (const button of document.querySelectorAll('.move-tools [data-mode]')) button.disabled = !selectedId;
   for (const button of document.querySelectorAll('.move-tools [data-rotate]')) button.disabled = !selectedId || locked || pinned;
