@@ -504,7 +504,8 @@ function unlessLockedPieceMoves(project, next) {
 
 function unlessLockedMoves(project, next) {
   const result = withJoint(project, next);
-  return lockedPieceMoved(project, result) ? { refused: 'locked' } : { project: result };
+  const piece = lockedPieceMoved(project, result);
+  return piece ? { refused: 'locked', piece } : { project: result };
 }
 
 export function changeJoint(project, jointId, field, raw) {

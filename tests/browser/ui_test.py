@@ -940,11 +940,11 @@ try:
         door_card.locator('[data-jf-act=open-full]').click()
         joined.click('#lock')
         door_card.locator('[data-jf=opensTo]').fill('30')
-        expect(door_card.locator('.joint-error')).to_contain_text('locked')
+        expect(door_card.locator('.joint-error')).to_contain_text('would swing Door, which is locked')
         expect(door_card.locator('[data-jf=opensTo]')).to_have_attribute('aria-describedby', door_card.locator('.joint-error').get_attribute('id'))
         assert hinge_open() == 180, f'lowering Opens up to swung a locked door to {hinge_open()}'
         door_card.locator('[data-jf=hingeType]').select_option('concealed')
-        expect(door_card.locator('.joint-error')).to_contain_text('locked')
+        expect(door_card.locator('.joint-error')).to_contain_text('would swing Door, which is locked')
         expect(door_card.locator('[data-jf=hingeType]')).to_have_value('butt')
         assert hinge_open() == 180, f'changing the hinge type swung a locked door to {hinge_open()}'
         locked_door = re.compile('would swing Door, which is locked')

@@ -793,7 +793,6 @@ const JOINT_ERRORS = {
   mm: 'Enter a size above 0 mm.',
   deg: 'Enter an angle from 1° to 270°.',
   open: 'Enter an angle from 0° up to how far it opens.',
-  locked: 'That would swing a locked piece. Unlock it first.',
   apart: 'These pieces no longer touch, so there are no sizes to suggest.',
 };
 
@@ -1054,8 +1053,9 @@ function showJointError(control, message) {
   note.textContent = [...new Set(messages)].join(' ');
 }
 
-function refusalMessage(reason, control) {
-  if (reason === 'locked' || reason === 'apart') return JOINT_ERRORS[reason];
+function refusalMessage({ refused: reason, piece }, control) {
+  if (reason === 'locked') return lockedMoveMessage(piece);
+  if (reason === 'apart') return JOINT_ERRORS.apart;
   if (control.dataset.jf === 'open') return JOINT_ERRORS.open;
   return JOINT_ERRORS[control.dataset.check] ?? JOINT_ERRORS.mm;
 }
@@ -1068,7 +1068,7 @@ $('joints').addEventListener('input', (event) => {
   const result = changeJoint(project, jointId, field, raw);
   const typed = control.type === 'number' || control.type === 'range';
   if (result.refused) {
-    const message = refusalMessage(result.refused, control);
+    const message = refusalMessage(result, control);
     if (typed) {
       showJointError(control, message);
       return;
@@ -1100,7 +1100,7 @@ $('joints').addEventListener('click', keepingFocus((event) => {
   if (act === 'suggest') {
     const result = suggestSizes(project, joint.id);
     if (result.refused) {
-      announce(jointNote(button), JOINT_ERRORS[result.refused]);
+      announce(jointNote(button), refusalMessage(result, button));
       return;
     }
     commit(result.project);
