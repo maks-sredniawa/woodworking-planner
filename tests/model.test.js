@@ -21,16 +21,14 @@ import {
   movePart,
   newPartBeside,
   overlaps,
-  parseProject,
   projectBounds,
   rotatePart,
   sceneBasis,
-  serialize,
   snapPosition,
-  starterProject,
   totals,
   updatePart,
 } from '../src/model.js';
+import { parseProject, serialize, starterProject } from '../src/project.js';
 
 test('there are 24 poses and each maps length, width and thickness to three different axes', () => {
   assert.equal(POSES.length, 24);
@@ -491,7 +489,7 @@ test('a version 1 file loads every part as a board with square corners, and bad 
   assert.equal(old.shape, 'board');
   assert.equal(old.corners, 'square');
   assert.deepEqual(blank(old), { length: 900, width: 250, thickness: 18 });
-  assert.match(serialize({ name: 'n', parts: [old] }), /"version": 2/);
+  assert.match(serialize({ name: 'n', parts: [old] }), /"version": 3/);
   const file = (part) => JSON.stringify({ format: 'woodworking-planner', version: 2, parts: [part] });
   assert.throws(() => parseProject(file({ shape: 'hexagon' })), /Part 1 has an invalid shape/);
   assert.throws(() => parseProject(file({ shape: 'arc', bandWidth: 500 })), /invalid bandWidth/);
@@ -501,7 +499,7 @@ test('a version 1 file loads every part as a board with square corners, and bad 
   assert.throws(() => parseProject(file({ corners: 'cut', cutWidth: 150 })), /invalid cutWidth/);
   assert.throws(() => parseProject(file({ cornerTopLeft: 1 })), /invalid cornerTopLeft/);
   assert.throws(() => parseProject(file({ outerRadius: 6000 })), /invalid outerRadius/);
-  assert.throws(() => parseProject('{"format":"woodworking-planner","version":3,"parts":[]}'), /newer version/);
+  assert.throws(() => parseProject('{"format":"woodworking-planner","version":4,"parts":[]}'), /newer version/);
 });
 
 const WORLD = ['x', 'y', 'z'];

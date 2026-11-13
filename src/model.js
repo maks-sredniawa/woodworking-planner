@@ -1,5 +1,3 @@
-export const FORMAT = 'woodworking-planner';
-export const FORMAT_VERSION = 2;
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
 export const MAX_SWEEP_DEG = 360;
@@ -102,7 +100,7 @@ export function sceneBasis(pose) {
   return [vector(length), vector(thickness), vector(negate(width))];
 }
 
-function turnAxis(signed, axis) {
+export function turnAxis(signed, axis) {
   if (signed[1] === axis) return signed;
   const third = AXES.find((other) => other !== axis && other !== signed[1]);
   return `${sign(signed) * (isCyclic(axis, signed[1]) ? 1 : -1) > 0 ? '+' : '-'}${third}`;
@@ -470,73 +468,25 @@ export function duplicatePart(part, parts = [part]) {
   return x === undefined ? part : { ...copy, x: roundMm(x) };
 }
 
-function roundMm(value) {
+export function roundMm(value) {
   return Math.round(value * 10) / 10;
 }
 
-export function serialize(project) {
-  return JSON.stringify(
-    {
-      format: FORMAT,
-      version: FORMAT_VERSION,
-      name: project.name,
-      parts: project.parts.map(({ id, ...rest }) => rest),
-    },
-    null,
-    2,
-  );
-}
-
-export function parseProject(text) {
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error('This file is not a project: it is not valid JSON.');
+export function partFromFile(raw, index) {
+  const part = makePart();
+  if (raw?.orientation !== undefined) {
+    if (!Object.hasOwn(ORIENTATIONS, raw.orientation)) throw new Error(`Part ${index + 1} has an invalid orientation.`);
+    part.pose = legacyPose(raw.orientation);
   }
-  if (data?.format !== FORMAT) throw new Error('This file is not a Woodworking planner project.');
-  if (data.version > FORMAT_VERSION) throw new Error('This project was saved by a newer version of the app.');
-  if (!Array.isArray(data.parts)) throw new Error('This project has no list of parts.');
-  const parts = data.parts.map((raw, index) => {
-    const part = makePart();
-    if (raw?.orientation !== undefined) {
-      if (!Object.hasOwn(ORIENTATIONS, raw.orientation)) throw new Error(`Part ${index + 1} has an invalid orientation.`);
-      part.pose = legacyPose(raw.orientation);
-    }
-    for (const field of ['name', ...GEOMETRY, 'species', 'locked']) {
-      if (raw?.[field] === undefined) continue;
-      const value = fieldValue(field, raw[field]);
-      if (value === NOT_ALLOWED) throw new Error(`Part ${index + 1} has an invalid ${field}.`);
-      part[field] = value;
-    }
-    const problem = shapeProblem(part);
-    if (problem) throw new Error(`Part ${index + 1} has an invalid ${problem}.`);
-    return part;
-  });
-  return { name: typeof data.name === 'string' && data.name.trim() ? data.name.slice(0, 80) : 'Untitled project', parts };
-}
-
-export function starterProject() {
-  const sheet = 18;
-  const depth = 244;
-  const width = 800;
-  const height = 1000;
-  const inner = width - 2 * sheet;
-  const gap = (height - 4 * sheet) / 3;
-  const shelf = (name, y) =>
-    makePart({ name, length: inner, width: depth, thickness: sheet, pose: legacyPose('xzy'), x: sheet, y: roundMm(y), z: 6 });
-  return {
-    name: 'Small bookshelf',
-    parts: [
-      makePart({ name: 'Back panel', length: height, width, thickness: 6, pose: legacyPose('yxz'), species: 'birchPlywood' }),
-      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, pose: legacyPose('yzx'), z: 6 }),
-      makePart({ name: 'Side', length: height, width: depth, thickness: sheet, pose: legacyPose('yzx'), x: width - sheet, z: 6 }),
-      shelf('Bottom', 0),
-      shelf('Shelf', sheet + gap),
-      shelf('Shelf', 2 * (sheet + gap)),
-      shelf('Top', height - sheet),
-    ],
-  };
+  for (const field of ['name', ...GEOMETRY, 'species', 'locked']) {
+    if (raw?.[field] === undefined) continue;
+    const value = fieldValue(field, raw[field]);
+    if (value === NOT_ALLOWED) throw new Error(`Part ${index + 1} has an invalid ${field}.`);
+    part[field] = value;
+  }
+  const problem = shapeProblem(part);
+  if (problem) throw new Error(`Part ${index + 1} has an invalid ${problem}.`);
+  return part;
 }
 
 export const SNAP_GRID_MM = 10;

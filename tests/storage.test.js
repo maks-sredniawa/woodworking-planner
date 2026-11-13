@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { serialize, starterProject } from '../src/model.js';
+import { serialize, starterProject } from '../src/project.js';
 import { fileName, loadSaved } from '../src/storage.js';
 
 const KEY = 'woodworking-planner:project';
