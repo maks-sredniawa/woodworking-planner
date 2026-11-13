@@ -1,5 +1,8 @@
+import { mm } from './format.js';
 import {
   MAX_SIZE_MM,
+  SHAPES,
+  blank,
   bounds,
   extents,
   movePart,
@@ -52,7 +55,20 @@ export const JOINT_KINDS = {
   glue: 'Glue',
   bracket: 'Angle bracket',
   hinge: 'Hinge',
+  dado: 'Dado',
+  tenon: 'Mortise and tenon',
+  dowels: 'Dowels',
 };
+
+export const JOINT_GROUPS = {
+  Fixings: ['screws', 'nails', 'glue'],
+  'Plates and brackets': ['bracket'],
+  'Cut joints': ['dado', 'tenon', 'dowels'],
+  Moving: ['hinge'],
+};
+
+const CUT_KINDS = ['dado', 'tenon', 'dowels'];
+const GOES_IN = { dado: ['length', 'width'], tenon: ['length'] };
 
 export const HINGE_TYPES = { butt: 'Butt', concealed: 'Concealed (35 mm cup)', piano: 'Piano' };
 export const EDGES = { '-x': 'Left edge', '+x': 'Right edge', '-y': 'Bottom edge', '+y': 'Top edge', '-z': 'Back edge', '+z': 'Front edge' };
@@ -148,7 +164,64 @@ const DEFAULTS = {
     };
   },
   hinge: hingeDefaults,
+  dado: ({ axis }, part, to) => ({ depth: Math.max(1, Math.round(extents(to)[axis] / 3)), glued: true }),
+  tenon: ({ axis }, part, to) => {
+    const depth = extents(to)[axis];
+    const { width, thickness: across } = blank(part);
+    return {
+      length: Math.min(depth, Math.max(5, Math.floor((2 * depth) / 3 / 5) * 5)),
+      thickness: Math.min(Math.max(6, Math.round(across / 3)), Math.floor(across * 5) / 10),
+      width: roundMm(width >= 60 ? width - 20 : width / 2),
+      through: false,
+      glued: true,
+    };
+  },
+  dowels: ({ axis, long }, part, to) => {
+    const thinner = Math.min(thickness(part), thickness(to));
+    const diameter = thinner < 15 ? 6 : thinner <= 25 ? 8 : 10;
+    const length = Math.min({ 6: 30, 8: 40, 10: 50 }[diameter], largestUpTo(DOWEL_LENGTHS, holeRoom(part, to, axis)));
+    return { count: Math.max(2, Math.floor(long / 50)), diameter, length, glued: true };
+  },
 };
+
+const DOWEL_LENGTHS = [20, 25, 30, 35, 40, 50, 60];
+const holeDepth = (piece, axis) => Math.floor((2 * extents(piece)[axis]) / 3);
+const holeRoom = (part, to, axis) => holeDepth(part, axis) + holeDepth(to, axis);
+
+const sideOf = (part, axis) => Object.entries(poseAxes(part.pose)).find(([, signed]) => signed[1] === axis)?.[0];
+
+function cutRoles(kind, part, to) {
+  const axis = contact(to, part).axis;
+  const pairs = [[part, to], [to, part]];
+  const able = pairs.filter(([piece]) => (piece.shape === 'board' ? GOES_IN[kind].includes(sideOf(piece, axis)) : sideOf(piece, axis) !== 'thickness'));
+  if (!able.length) {
+    const needs = kind === 'tenon' ? 'A tenon needs the end' : 'A dado needs the end or edge';
+    const edge = pairs.find(([piece]) => sideOf(piece, axis) === 'width');
+    const how = edge ? `${nameOf(edge[0])} meets ${nameOf(edge[1])} with its edge` : 'these lie face to face';
+    return { error: `${needs} of one piece against a face of the other, and ${how}.` };
+  }
+  const fit = able.find(([piece]) => piece.shape === 'board');
+  if (!fit) {
+    const [piece] = able[0];
+    const shape = SHAPES[piece.shape].toLowerCase();
+    const only = kind === 'tenon' ? 'Only a board can have a tenon.' : 'Only a board can sit in a dado.';
+    return { error: `${only} ${nameOf(piece)} is ${/^[aeiou]/.test(shape) ? 'an' : 'a'} ${shape}.` };
+  }
+  return { part: fit[0], to: fit[1] };
+}
+
+export function cutJoint(project, joint) {
+  if (!CUT_KINDS.includes(joint?.kind)) return null;
+  const part = findPart(project, joint.part);
+  const to = findPart(project, joint.to);
+  const touch = part && to && contact(part, to);
+  if (!touch) return null;
+  const side = sideOf(part, touch.axis);
+  if (GOES_IN[joint.kind] && !GOES_IN[joint.kind].includes(side)) return null;
+  const depth = extents(to)[touch.axis];
+  const reach = { dado: joint.depth, tenon: joint.through ? depth : joint.length, dowels: joint.length }[joint.kind];
+  return { part, to, touch, side, depth, reach };
+}
 
 export function joinedTo(project, id) {
   const seen = new Set([id]);
@@ -352,8 +425,54 @@ export function jointProblem(project, jointId) {
   if (!part || !to) return null;
   const meet = meeting(part, to);
   if (!meet) return `${nameOf(part)} no longer touches ${nameOf(to)}. Move them back together, or remove the joint.`;
+  if (CUT_KINDS.includes(joint.kind)) return cutProblem(project, joint);
   if ((joint.kind === 'screws' || joint.kind === 'nails') && joint.length > meet.through + meet.into) {
     return `Longer than both pieces together (${roundBox(meet.through + meet.into)} mm): it will come out the other side.`;
+  }
+  return null;
+}
+
+function cutProblem(project, joint) {
+  const cut = cutJoint(project, joint);
+  if (!cut) {
+    const end = joint.kind === 'tenon' ? 'end' : 'end or edge';
+    return `${nameOf(findPart(project, joint.part))} no longer meets ${nameOf(findPart(project, joint.to))} with its ${end}. Turn it back, or remove the joint.`;
+  }
+  const { part, to, depth, reach } = cut;
+  const size = blank(part);
+  if (joint.kind === 'dado') {
+    if (reach >= depth) return `The dado (${mm(reach)}) is as deep as ${nameOf(to)} is thick (${mm(depth)}). Make it shallower.`;
+    if (reach > depth / 2) return `The dado is deeper than half of ${nameOf(to)} (${mm(depth / 2)}). That weakens it.`;
+  }
+  if (joint.kind === 'tenon') {
+    if (reach > depth) return `The tenon (${mm(reach)}) is longer than ${nameOf(to)} is deep there (${mm(depth)}). Shorten it or tick Through tenon.`;
+    if (joint.thickness >= size.thickness) return `The tenon (${mm(joint.thickness)}) is as thick as ${nameOf(part)} (${mm(size.thickness)}). Make it thinner.`;
+    if (joint.width > size.width) return `The tenon (${mm(joint.width)}) is wider than ${nameOf(part)} (${mm(size.width)}). Make it narrower.`;
+    if (joint.thickness > size.thickness / 2) return `The tenon is thicker than half of ${nameOf(part)} (${mm(size.thickness / 2)}). That leaves thin shoulders.`;
+  }
+  if (joint.kind === 'dowels') {
+    const thinner = Math.min(thickness(part), thickness(to));
+    const room = holeRoom(part, to, cut.touch.axis);
+    if (joint.diameter >= thinner) return `The dowels (⌀${mm(joint.diameter)}) are as thick as the thinner piece (${mm(thinner)}). Use thinner dowels.`;
+    if (joint.length > room) return `The dowels (${mm(joint.length)}) are longer than the two holes can hold (${mm(room)}).`;
+  }
+  return null;
+}
+
+function cutLimit(project, joint, field, value) {
+  const cut = cutJoint(project, joint);
+  if (!cut) return null;
+  const { part, to, depth } = cut;
+  const size = blank(part);
+  if (joint.kind === 'dado' && field === 'depth' && value >= depth) return `Enter a depth under ${mm(depth)}, the thickness of ${nameOf(to)}.`;
+  if (joint.kind === 'tenon') {
+    if (field === 'length' && value > depth) return `Enter a length up to ${mm(depth)}, the depth of ${nameOf(to)} there, or tick Through tenon.`;
+    if (field === 'thickness' && value >= size.thickness) return `Enter a thickness under ${mm(size.thickness)}, the thickness of ${nameOf(part)}.`;
+    if (field === 'width' && value > size.width) return `Enter a width up to ${mm(size.width)}, the width of ${nameOf(part)}.`;
+  }
+  if (joint.kind === 'dowels' && field === 'diameter') {
+    const thinner = Math.min(thickness(part), thickness(to));
+    if (value >= thinner) return `Enter a diameter under ${mm(thinner)}, the thickness of the thinner piece.`;
   }
   return null;
 }
@@ -382,7 +501,9 @@ export function joinParts(project, kind, partId, toId) {
   if (kind === 'bracket' && !insideCorner(to, part)) {
     return { error: 'An angle bracket needs an inside corner where the pieces meet, and these lie face to face.' };
   }
-  const joint = { id: newId(), kind, part: partId, to: toId, ...DEFAULTS[kind](meet, part, to) };
+  const roles = GOES_IN[kind] ? cutRoles(kind, part, to) : { part, to };
+  if (roles.error) return roles;
+  const joint = { id: newId(), kind, part: roles.part.id, to: roles.to.id, ...DEFAULTS[kind](meeting(roles.part, roles.to), roles.part, roles.to) };
   return { project: { ...project, joints: [...joints, joint] }, joint };
 }
 
@@ -434,6 +555,8 @@ const degrees = (least, most) => (raw) => {
   return raw !== '' && Number.isFinite(value) && value >= least && value <= most ? value : undefined;
 };
 
+const tick = (raw) => (typeof raw === 'boolean' ? raw : undefined);
+
 export const JOINT_FIELDS = {
   screws: { count: counted(500), diameter: millimetres(20), length: millimetres(500), glued: (raw) => (typeof raw === 'boolean' ? raw : undefined) },
   nails: { count: counted(500), diameter: millimetres(20), length: millimetres(500), glued: (raw) => (typeof raw === 'boolean' ? raw : undefined) },
@@ -458,6 +581,9 @@ export const JOINT_FIELDS = {
     open: degrees(0, 270),
     edge: (raw) => (Object.hasOwn(EDGES, raw) ? raw : undefined),
   },
+  dado: { depth: millimetres(MAX_SIZE_MM), glued: tick },
+  tenon: { length: millimetres(MAX_SIZE_MM), thickness: millimetres(MAX_SIZE_MM), width: millimetres(MAX_SIZE_MM), through: tick, glued: tick },
+  dowels: { count: counted(500), diameter: millimetres(100), length: millimetres(1000), glued: tick },
 };
 
 export function jointFieldValue(kind, field, raw) {
@@ -469,7 +595,8 @@ export function suggestedSizes(project, joint) {
   const to = findPart(project, joint.to);
   const meet = part && to && meeting(part, to);
   if (!meet) return null;
-  if (joint.kind !== 'hinge') return { ...DEFAULTS[joint.kind](meet, part, to), ...('glued' in joint ? { glued: joint.glued } : {}) };
+  const kept = Object.fromEntries(['glued', 'through'].filter((field) => field in joint).map((field) => [field, joint[field]]));
+  if (joint.kind !== 'hinge') return { ...DEFAULTS[joint.kind](meet, part, to), ...kept };
   const edge = hingeEdges(project, joint).includes(joint.edge) ? joint.edge : defaultEdge(part, to, meet);
   const sizes = hingeTypeDefaults(joint.hingeType, extents(part)[hingeAxisOf(meet, edge)], Math.min(thickness(part), thickness(to)));
   return { ...sizes, open: Math.min(joint.open, sizes.opensTo) };
@@ -512,6 +639,8 @@ export function changeJoint(project, jointId, field, raw) {
   const joint = jointsOf(project).find((each) => each.id === jointId);
   const value = joint && jointFieldValue(joint.kind, field, raw);
   if (value === undefined) return { refused: 'invalid' };
+  const reason = cutLimit(project, joint, field, value);
+  if (reason) return { refused: 'invalid', reason };
   let next = { ...joint, [field]: value };
   if (field === 'open' && value > joint.opensTo) return { refused: 'limit' };
   if (field === 'edge' && !hingeEdges(project, joint).includes(value)) return { refused: 'invalid' };
@@ -647,7 +776,66 @@ export function assemblyOverlaps(project) {
   return pairs;
 }
 
-const HARDWARE_ORDER = ['Butt hinge', 'Concealed hinge', 'Piano hinge', 'Angle bracket', 'Screw', 'Nail', 'Wood glue'];
+const article = (text) => (/^(8|1[18](?!\d))/.test(text) ? 'an' : 'a');
+const listed = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
+
+function tally(keys) {
+  const counts = new Map();
+  for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
+  return [...counts];
+}
+
+function addedText(adds) {
+  return listed(
+    tally(adds).map(([key, count]) => {
+      const [kind, size] = key.split('|');
+      if (kind === 'tenon') return count === 1 ? `${article(size)} ${size} tenon` : `${count} × ${size} tenons`;
+      return count === 1 ? `${size} for a dado` : `${count} × ${size} for dados`;
+    }),
+  );
+}
+
+function cutText({ mortises, grooves, holes }) {
+  const notes = tally(mortises).map(([depth, count]) => {
+    if (depth === 'through') return count === 1 ? 'Through mortise' : `${count} through mortises`;
+    return count === 1 ? `Mortise ${depth} deep` : `${count} mortises ${depth} deep`;
+  });
+  notes.push(...tally(grooves).map(([size, count]) => (count === 1 ? `Dado ${size}` : `${count} dados ${size}`)));
+  const drilled = new Map();
+  for (const [diameter, count] of holes) drilled.set(diameter, (drilled.get(diameter) ?? 0) + count);
+  notes.push(...[...drilled].map(([diameter, count]) => (count === 1 ? `Dowel hole ⌀${diameter}` : `${count} dowel holes ⌀${diameter}`)));
+  return notes.join(' · ');
+}
+
+export function cutAllowances(project) {
+  const pieces = new Map();
+  const entry = (id) => {
+    if (!pieces.has(id)) pieces.set(id, { length: 0, width: 0, adds: { length: [], width: [] }, mortises: [], grooves: [], holes: [] });
+    return pieces.get(id);
+  };
+  for (const joint of jointsOf(project)) {
+    const cut = cutJoint(project, joint);
+    if (!cut) continue;
+    if (joint.kind === 'dowels') {
+      for (const id of [joint.part, joint.to]) entry(id).holes.push([mm(joint.diameter), joint.count]);
+      continue;
+    }
+    const into = entry(joint.part);
+    into[cut.side] += cut.reach;
+    into.adds[cut.side].push(`${joint.kind}|${mm(cut.reach)}`);
+    const housing = entry(joint.to);
+    if (joint.kind === 'tenon') housing.mortises.push(joint.through ? 'through' : mm(cut.reach));
+    else housing.grooves.push(`${mm(blank(cut.part).thickness)} × ${mm(cut.reach)}`);
+  }
+  return new Map(
+    [...pieces].map(([id, info]) => [
+      id,
+      { length: roundMm(info.length), width: roundMm(info.width), lengthItems: addedText(info.adds.length), widthItems: addedText(info.adds.width), cuts: cutText(info) },
+    ]),
+  );
+}
+
+const HARDWARE_ORDER = ['Butt hinge', 'Concealed hinge', 'Piano hinge', 'Angle bracket', 'Screw', 'Nail', 'Dowel pin', 'Wood glue'];
 
 export function hardwareList(project) {
   const rows = new Map();
@@ -673,6 +861,7 @@ export function hardwareList(project) {
     }
     if (joint.kind === 'screws') add('Screw', [joint.diameter, joint.length], joint.count, usedOn);
     if (joint.kind === 'nails') add('Nail', [joint.diameter, joint.length], joint.count, usedOn);
+    if (joint.kind === 'dowels') add('Dowel pin', [joint.diameter, joint.length], joint.count, usedOn);
     if (joint.kind === 'glue' || joint.glued) add('Wood glue', null, null, usedOn);
   }
   const bySize = (a, b) => (a.size ?? []).reduce((order, value, i) => order || value - b.size[i], 0);

@@ -295,18 +295,38 @@ function shapeKey(part) {
   return ['board', part.corners, size, cornerCount(part), cornerLayout(part)].join(':');
 }
 
-export function cutList(parts) {
+const NO_ALLOWANCE = { length: 0, width: 0, lengthItems: '', widthItems: '', cuts: '' };
+
+export function cutSize(part, allowance = NO_ALLOWANCE) {
+  const size = blank(part);
+  return { ...size, length: roundMm(size.length + allowance.length), width: roundMm(size.width + allowance.width) };
+}
+
+function addedArea(part, allowance) {
+  const size = blank(part);
+  return (size.length + allowance.length) * (size.width + allowance.width) - size.length * size.width;
+}
+
+export const cutArea = (part, allowance = NO_ALLOWANCE) => faceArea(part) + addedArea(part, allowance);
+export const cutVolume = (part, allowance = NO_ALLOWANCE) => pieceVolume(part) + addedArea(part, allowance) * blank(part).thickness;
+
+export function cutList(parts, allowances = new Map()) {
   const groups = new Map();
   for (const part of parts) {
-    const size = blank(part);
-    const key = [part.species, size.length, size.width, size.thickness, shapeKey(part)].join('|');
+    const allowance = allowances.get(part.id) ?? NO_ALLOWANCE;
+    const size = cutSize(part, allowance);
+    const notes = [allowance.lengthItems, allowance.widthItems, allowance.cuts];
+    const key = [part.species, size.length, size.width, size.thickness, shapeKey(part), ...notes].join('|');
     const group = groups.get(key) ?? {
       species: part.species,
       shape: part.shape,
       ...size,
+      lengthItems: allowance.lengthItems,
+      widthItems: allowance.widthItems,
+      cuts: allowance.cuts,
       piece: part,
-      area: faceArea(part),
-      volume: pieceVolume(part),
+      area: cutArea(part, allowance),
+      volume: cutVolume(part, allowance),
       count: 0,
       names: [],
     };
@@ -319,14 +339,15 @@ export function cutList(parts) {
   );
 }
 
-export function totals(parts) {
+export function totals(parts, allowances = new Map()) {
   let volume = 0;
   let area = 0;
   let weight = 0;
   for (const part of parts) {
-    const partVolume = pieceVolume(part) / 1e9;
+    const allowance = allowances.get(part.id) ?? NO_ALLOWANCE;
+    const partVolume = cutVolume(part, allowance) / 1e9;
     volume += partVolume;
-    area += faceArea(part) / 1e6;
+    area += cutArea(part, allowance) / 1e6;
     weight += partVolume * SPECIES[part.species].density;
   }
   return { count: parts.length, volume, area, weight };
