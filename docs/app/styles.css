@@ -120,7 +120,7 @@ main {
 }
 .parts-h { display: block; padding: 0 12px 10px 16px; }
 .parts-h h2 { min-height: 44px; display: flex; align-items: center; }
-.add-shapes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.add-shapes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
 .add-label { grid-column: 1 / -1; font-size: 12px; line-height: 16px; color: var(--muted); }
 .add-shapes button {
   display: grid;
@@ -139,6 +139,7 @@ main {
 .add-shapes button:hover { background: var(--accent-soft); border-color: var(--accent); }
 .add-shapes button:active { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .choice-icon { display: inline-block; min-width: 1.2em; font-size: 18px; line-height: 1; text-align: center; }
+.choice-icon.pentagon { width: 18px; min-width: 0; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
 .count { margin-left: 6px; padding: 1px 7px; border-radius: 10px; background: var(--panel-2); color: var(--text); letter-spacing: 0; }
 
 .list { list-style: none; margin: 0; padding: 6px; overflow: auto; }
@@ -318,6 +319,66 @@ main {
 .fields input[type="range"] { height: auto; padding: 0; border: 0; background: none; accent-color: var(--accent); }
 .joint-add { display: grid; gap: 8px; margin-top: 8px; }
 #hardware-empty { padding: 0 16px 14px; }
+.free-box { display: grid; gap: 8px; margin-bottom: 10px; }
+.free-pick { height: 112px; max-width: 344px; padding: 12px; }
+.free-preview { display: block; width: 100%; height: 100%; overflow: visible; }
+.free-preview path { stroke: var(--field-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.edit-outline { width: 100%; }
+
+.outline-dialog {
+  width: min(960px, 100vw - 48px);
+  height: min(720px, 100vh - 48px);
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  overflow: hidden;
+}
+.outline-dialog[open] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 296px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "head head" "draw side" "tools side" "foot foot";
+}
+.outline-dialog::backdrop { background: rgb(0 0 0 / 0.4); }
+.outline-head { grid-area: head; }
+.outline-draw { grid-area: draw; position: relative; min-height: 0; background: var(--panel-2); }
+.outline-svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
+.outline-svg:focus { outline: none; }
+.outline-svg:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.outline-svg .grid-major, .outline-svg .grid-minor { fill: none; stroke: var(--line); stroke-width: 1; }
+.outline-svg .grid-minor { opacity: 0.5; }
+.outline-svg .blank { fill: none; stroke: var(--field-line); stroke-width: 1; stroke-dasharray: 4 3; }
+.outline-svg text { font: 11px var(--mono); fill: var(--muted); }
+.outline-svg .shape { stroke: var(--edge); stroke-width: 1.5; stroke-linejoin: round; }
+.outline-svg .shape.bad { stroke: var(--danger); fill-opacity: 0.4; }
+.outline-svg .edge-bad { fill: none; stroke: var(--danger); stroke-width: 3; }
+.outline-svg .pt { fill: var(--panel); stroke: var(--accent); stroke-width: 2; }
+.outline-svg .pt.sel { fill: var(--accent); }
+.outline-svg .bend-handle { fill: var(--panel); stroke: var(--field-line); stroke-width: 1.5; }
+.outline-svg .bend-handle.on { stroke: var(--accent); }
+.outline-svg .stroke { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.outline-chip { position: absolute; top: 10px; left: 10px; padding: 5px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--accent); font: 12px var(--mono); pointer-events: none; }
+.outline-draw-help { position: absolute; left: 12px; right: 12px; bottom: 8px; margin: 0; pointer-events: none; }
+.outline-tools { grid-area: tools; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.outline-tools .field-error { flex-basis: 100%; margin: 0; }
+.outline-side { grid-area: side; min-height: 0; overflow: auto; align-content: start; gap: 6px; border-left: 1px solid var(--line); }
+.points-head, .points li { display: grid; grid-template-columns: 24px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
+.points-head { font-size: 11px; line-height: 1.2; color: var(--muted); padding: 0 5px; align-items: end; }
+.points { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.points li { padding: 3px 4px; border: 1px solid transparent; border-radius: 6px; }
+.points li.sel { background: var(--accent-soft); border-color: var(--accent); }
+.points input { padding: 0 6px; appearance: textfield; }
+.points input::-webkit-inner-spin-button, .points input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.points .pt-n { font: 12px var(--mono); color: var(--muted); text-align: center; }
+.points .field-error { grid-column: 2 / -1; margin: 0; }
+.outline-foot { grid-area: foot; padding: 10px 16px; border-top: 1px solid var(--line); }
+.outline-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.outline-discard p { margin: 0 auto 0 0; }
 
 .tabs, .add-bar { display: none; }
 
@@ -395,6 +456,17 @@ main {
   .add-bar .add-shapes { gap: 6px; }
   .add-bar .add-shapes button { min-height: 48px; font-size: 12px; }
   .fields label.choice { min-height: 44px; }
+  .edit-outline { height: 44px; }
+  .outline-dialog { width: 100vw; height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .outline-dialog[open] { display: flex; flex-direction: column; }
+  .outline-draw { flex: none; height: min(100vw, 45dvh); }
+  .outline-tools { padding: 8px 16px; }
+  .outline-tools .tool-group button { height: 36px; padding: 0 8px; }
+  .outline-side { flex: 1 1 auto; border-left: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+  .outline-foot { flex: none; }
+  .outline-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .outline-actions button { height: 44px; }
+  .outline-discard p { grid-column: 1 / -1; margin: 0; }
 }
 
 @media (max-width: 520px) {

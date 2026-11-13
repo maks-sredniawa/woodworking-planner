@@ -50,6 +50,7 @@ import { starterProject } from './project.js';
 import { createScene } from './scene.js';
 import { download, loadDebug, loadPotato, loadSaved, loadSnap, readFile, save, saveDebug, savePotato, saveSnap } from './storage.js';
 import { createDebugPanel } from './debug.js';
+import { createOutlineEditor } from './outline-editor.js';
 
 const HISTORY_LIMIT = 100;
 const TYPING_MERGE_MS = 1200;
@@ -361,6 +362,7 @@ function sizeText(part) {
   if (part.shape === 'dowel') return `⌀${mm(part.dowelDiameter)} × ${mm(part.length)} dowel`;
   if (part.shape === 'arc') return `Arc R${mm(part.outerRadius)} × ${mm(part.bandWidth)} × ${mm(part.sweep)}° × ${mm(part.thickness)}`;
   if (part.shape === 'triangle') return `Triangle ${trio(part.length, part.width, part.thickness)}`;
+  if (part.shape === 'free') return `Free ${trio(part.length, part.width, part.thickness)}`;
   const plain = trio(part.length, part.width, part.thickness);
   const count = cornerCount(part);
   if (!count) return plain;
@@ -373,6 +375,7 @@ function shapeNote(part) {
   if (part.shape === 'dowel') return 'Dowel rod';
   if (part.shape === 'arc') return `Arc R${mm(part.outerRadius)} × ${mm(part.bandWidth)} × ${mm(part.sweep)}°`;
   if (part.shape === 'triangle') return `Triangle ${mm(part.length)} × ${mm(part.width)}`;
+  if (part.shape === 'free') return `Free shape, ${part.points.length} points`;
   const count = cornerCount(part);
   if (!count) return null;
   const corners = count === 1 ? 'corner' : 'corners';
@@ -381,7 +384,7 @@ function shapeNote(part) {
   return `${count} ${corners} cut ${mm(part.cutLength)} × ${mm(part.cutWidth)}${layout}`;
 }
 
-const SHAPE_PLURALS = { board: 'boards', disc: 'discs', dowel: 'dowels', arc: 'arcs', triangle: 'triangles' };
+const SHAPE_PLURALS = { board: 'boards', disc: 'discs', dowel: 'dowels', arc: 'arcs', triangle: 'triangles', free: 'free shapes' };
 const onlyBoards = (parts) => parts.every((part) => part.shape === 'board');
 
 function pieceWord(parts) {
@@ -588,6 +591,7 @@ const SHAPE_FIELDS = {
   dowel: ['dowelDiameter', 'length'],
   arc: ['outerRadius', 'bandWidth', 'sweep', 'thickness'],
   triangle: ['length', 'width', 'thickness'],
+  free: ['length', 'width', 'thickness'],
 };
 
 // The checkbox's outer corner in sketch units at the widest stretch .corner-pick's max-width allows.
@@ -625,12 +629,56 @@ function renderShapeFields(part) {
   $('arc-inner').textContent = `Inner radius ${mm(part.outerRadius - part.bandWidth)} mm (outer radius less the band width).`;
   $('cut-from').textContent = `Cut from ${blankText(part)}${part.shape === 'dowel' ? ' dowel rod' : ''}`;
   $('corners-box').hidden = part.shape !== 'board';
+  $('free-box').hidden = part.shape !== 'free';
+  if (part.shape === 'free') showFreePreview(part);
   $('corner-pick').hidden = part.corners === 'square';
   $('radius-field').hidden = part.corners !== 'rounded';
   $('cut-fields').hidden = part.corners !== 'cut';
   $('corner-shape').setAttribute('viewBox', `0 0 ${PREVIEW.width} ${PREVIEW.height}`);
   $('corner-shape').querySelector('path').setAttribute('d', cornerPreview(part));
 }
+
+const outlineLockedMessage = (part) => `${part.name || 'Unnamed'} is locked. Unlock it first to change its outline.`;
+
+function showFreePreview(part) {
+  const { points } = outline(part);
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => -y);
+  const [left, top] = [Math.min(...xs), Math.min(...ys)];
+  const preview = $('free-preview');
+  preview.setAttribute('viewBox', `${left} ${top} ${Math.max(...xs) - left} ${Math.max(...ys) - top}`);
+  const path = preview.querySelector('path');
+  path.setAttribute('d', `M${points.map(([x, y]) => `${x.toFixed(1)} ${(-y).toFixed(1)}`).join('L')}Z`);
+  path.setAttribute('fill', SPECIES[part.species].color);
+  offWithReason($('edit-outline'), part.locked ? outlineLockedMessage(part) : null);
+}
+
+const outlineEditor = createOutlineEditor({
+  maxSize: MAX_SIZE_MM,
+  mm,
+  announce,
+  offWithReason,
+  snap: { get: () => snapOn, set: (on) => setSnap(on) },
+  onDone: (points) => {
+    const part = selectedPart();
+    const next = part && updatePart(part, 'points', points);
+    if (!next) return part?.locked ? outlineLockedMessage(part) : 'This outline can’t be used. Check its points.';
+    const result = replacePart(next);
+    return result.refused ? lockedMoveMessage(result.piece) : null;
+  },
+});
+
+function editOutline(returnFocus) {
+  const part = selectedPart();
+  if (!part || part.shape !== 'free') return;
+  if (part.locked) {
+    announce($('editor-note'), outlineLockedMessage(part));
+    return;
+  }
+  outlineEditor.open({ name: part.name, color: SPECIES[part.species].color, points: part.points, returnFocus });
+}
+
+$('edit-outline').addEventListener('click', () => editOutline(() => $('edit-outline')));
 
 const CUT_LABELS = [...document.querySelectorAll('.cut-list thead th')].map((th) => th.textContent);
 
@@ -717,6 +765,7 @@ const FIELD_ERRORS = {
 };
 
 function sideError(part, side, value) {
+  if (part.shape === 'free' && value > 0 && value <= MAX_SIZE_MM) return `Enter a bigger ${side}: at this one, points of the outline meet.`;
   const need = cornersNeed(part, side);
   if (value > 0 && value <= MAX_SIZE_MM && value < need) {
     return `Enter at least ${mm(need)} mm: twice the corner ${part.corners === 'rounded' ? 'radius' : 'cut'}.`;
@@ -1221,6 +1270,11 @@ $('editor').addEventListener('input', (event) => {
   if (input.type === 'radio' && !input.checked) return;
   const typed = input.tagName === 'INPUT' && input.type !== 'radio' && input.type !== 'checkbox';
   const next = updatePart(part, input.name, input.type === 'checkbox' ? input.checked : input.value);
+  if (!next && input.name === 'shape' && input.value === 'free' && !part.locked) {
+    renderEditor();
+    announce($('shape-error'), 'A full ring has a hole, and a free shape can’t. Make the sweep less than 360° first.');
+    return;
+  }
   if (!next && typed) {
     showFieldError(input, fieldError(part, input));
     return;
@@ -1274,6 +1328,10 @@ for (const shapes of document.querySelectorAll('.add-shapes')) {
     if (!button) return;
     addPart(button.dataset.addShape);
     if (onPhone) showTab('edit');
+    if (button.dataset.addShape === 'free') {
+      const id = selectedId;
+      editOutline(() => [$(`part-${id}`)?.querySelector('.row-main'), $('edit-outline'), button].find(usable));
+    }
   });
 }
 
@@ -1381,6 +1439,7 @@ const ARROWS = {
 const onBoardKeys = (target) => Boolean(target.closest('.view, #parts'));
 
 document.addEventListener('keydown', (event) => {
+  if (outlineEditor.isOpen() || event.target.closest?.('#outline-dialog')) return;
   const typing = event.target.closest('textarea, input:not([type="radio"], [type="checkbox"])');
   const inField = event.target.closest('input, select, textarea');
   if (event.key in ARROWS && selectedId && !event.ctrlKey && !event.metaKey && !inField) {
