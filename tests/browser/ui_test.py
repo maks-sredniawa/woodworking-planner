@@ -1,3 +1,4 @@
+import json
 import re
 import socket
 import subprocess
@@ -823,6 +824,163 @@ try:
         assert not clipped, f'with WCAG text spacing these shape names overflow their cell: {clipped}'
         shaped.evaluate('localStorage.clear()')
         shaped.close()
+
+        board = lambda name, length, width, pose, **at: {'name': name, 'length': length, 'width': width, 'thickness': 18, 'pose': pose, **at}
+        cabinet = json.dumps({'format': 'woodworking-planner', 'version': 3, 'name': 'Cabinet', 'joints': [], 'parts': [
+            board('Left side', 1000, 244, '+y+z+x'), board('Right side', 1000, 244, '+y+z+x', x=782),
+            board('Bottom', 764, 244, '+x-z+y', x=18), board('Top', 764, 244, '+x-z+y', x=18, y=982),
+            board('Door', 1000, 800, '+y-x+z', z=244)]})
+        joined = browser.new_page(viewport={'width': 1280, 'height': 900})
+        joined.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        joined.on('pageerror', lambda e: errors.append(str(e)))
+        joined.goto(URL)
+        joined.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(cabinet)})')
+        joined.reload()
+        expect(joined.locator('#parts li')).to_have_count(5)
+        row = lambda name: joined.locator('#parts li').filter(has=joined.locator('.nm', has_text=re.compile(f'^{name}$')))
+        spots = lambda name: joined.evaluate(f'JSON.stringify(woodworkingPlanner.project.parts.filter(p => p.name === "{name}").map(p => [p.x, p.y, p.z]))')
+        hinge_open = lambda: joined.evaluate('woodworkingPlanner.project.joints.find((j) => j.kind === "hinge").open')
+        expect(joined.locator('#hardware-empty')).to_be_visible()
+
+        row('Bottom').locator('.row-main').click()
+        expect(joined.locator('#joints-empty')).to_be_visible()
+        joined.click('#joint-add-open')
+        expect(joined.locator('#joint-other option')).to_have_text(['Left side', 'Right side', 'Door'])
+        joined.select_option('#joint-kind', 'screws')
+        joined.click('#joint-add-ok')
+        expect(row('Bottom').locator('.tag')).to_have_text('Joined to Left side')
+        expect(row('Left side').locator('.tag')).to_have_text('Joined to Bottom')
+        expect(joined.locator('#hardware-rows')).to_contain_text('Screw')
+        expect(joined.locator('#hardware-rows')).to_contain_text('4 × 45')
+        expect(joined.locator('#totals')).to_contain_text('2 hardware items')
+        card = joined.locator('details.joint[open]')
+        expect(card.locator('summary')).to_contain_text('Screws · to Left side')
+        card.locator('[data-jf=count]').fill('0')
+        expect(card.locator('.joint-error')).to_contain_text('whole number')
+        card.locator('[data-jf=count]').fill('4')
+        expect(card.locator('.joint-error')).to_be_empty()
+        card.locator('[data-jf=glued]').check()
+        expect(joined.locator('#hardware-rows')).to_contain_text('Wood glue')
+        expect(card.locator('[data-jf-act=suggest]')).to_be_visible()
+        card.locator('[data-jf-act=suggest]').click()
+        expect(joined.locator('#totals')).to_contain_text('2 hardware items')
+        joined.click('#joint-add-open')
+        expect(joined.locator('#joint-other option', has_text='Left side')).to_be_disabled()
+        joined.click('#joint-add-cancel')
+
+        row('Door').locator('.row-main').click()
+        joined.click('#joint-add-open')
+        joined.select_option('#joint-kind', 'hinge')
+        joined.select_option('#joint-other', label='Left side')
+        expect(joined.locator('#joint-add-note')).to_have_text('Door will swing on Left side.')
+        joined.click('#joint-add-ok')
+        expect(row('Door').locator('.tag')).to_have_text('Swings on Left side')
+        expect(joined.locator('#view-hint')).to_contain_text('swing it on its hinge')
+        expect(joined.locator('#swing-help')).to_be_visible()
+        expect(joined.locator('#hardware-rows')).to_contain_text('Butt hinge')
+        joined.locator('details.joint[open] input[type=number][data-jf=open]').fill('90')
+        expect(joined.locator('#view-sel')).to_contain_text('open 90°')
+        expect(row('Door').locator('.tag')).to_have_text('Swings on Left side · open 90°')
+        expect(joined.locator('.warn:visible')).to_have_count(0)
+        joined.locator('details.joint[open] input[type=number][data-jf=open]').fill('200')
+        expect(joined.locator('details.joint[open] .joint-error')).to_contain_text('up to how far it opens')
+        assert hinge_open() == 90
+
+        canvas = joined.locator('#viewport canvas').bounding_box()
+        def grab_spot():
+            for fy in [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]:
+                for fx in [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9]:
+                    x, y = canvas['x'] + canvas['width'] * fx, canvas['y'] + canvas['height'] * fy
+                    joined.mouse.move(x, y)
+                    if joined.evaluate('document.querySelector("#viewport canvas").style.cursor') == 'grab':
+                        return x, y
+            raise AssertionError('the picked piece is nowhere in the 3D view')
+        def drag(spot, dx, dy):
+            joined.mouse.move(*spot)
+            joined.mouse.down()
+            joined.mouse.move(spot[0] + dx, spot[1] + dy, steps=10)
+            joined.mouse.up()
+        door_before = spots('Door')
+        drag(grab_spot(), 120, 0)
+        swung = hinge_open()
+        assert swung != 90 and swung % 5 == 0, f'dragging the door did not swing it in 5° steps: {swung}'
+        assert spots('Door') == door_before, 'swinging must not move where the door is fixed'
+        joined.keyboard.press('Control+z')
+        assert hinge_open() == 90, f'one undo should take back the whole swing: {hinge_open()}'
+
+        row('Top').locator('.row-main').click()
+        joined.click('#joint-add-open')
+        joined.select_option('#joint-other', label='Door')
+        expect(joined.locator('#joint-add-note')).to_contain_text('Close it first')
+        expect(joined.locator('#joint-add-ok')).to_be_disabled()
+        joined.click('#joint-add-cancel')
+
+        row('Bottom').locator('.row-main').click()
+        side_before, right_before = spots('Left side'), spots('Right side')
+        drag(grab_spot(), 0, 70)
+        assert spots('Left side') != side_before, 'dragging the bottom did not carry the side it is screwed to'
+        assert spots('Right side') == right_before, 'a piece that is not joined moved with the assembly'
+        joined.keyboard.press('Control+z')
+        assert spots('Left side') == side_before
+
+        row('Left side').locator('.row-main').click()
+        joined.click('#lock')
+        row('Bottom').locator('.row-main').click()
+        expect(joined.locator('#editor [name=x]')).to_be_disabled()
+        expect(joined.locator('[data-rotate=y]')).to_be_disabled()
+        row('Door').locator('.row-main').click()
+        joined.locator('details.joint[open] [data-jf-act=close]').click()
+        assert hinge_open() == 0, 'a door hinged on a locked piece should still swing'
+        row('Left side').locator('.row-main').click()
+        joined.click('#lock')
+
+        carries = joined.locator('details.joint', has_text='carries Door')
+        expect(carries).to_have_attribute('open', '')
+        carries.locator('[data-jf-act=remove]').click()
+        expect(row('Door').locator('.tag')).to_have_count(0)
+        expect(joined.locator('#hardware-rows')).not_to_contain_text('hinge')
+        joined.keyboard.press('Control+z')
+        expect(row('Door').locator('.tag')).to_have_text('Swings on Left side')
+        joined.wait_for_timeout(400)
+        joined.screenshot(path=str(HERE / 'joints-1280.png'))
+
+        with joined.expect_download() as download:
+            joined.click('#save-file')
+        saved = HERE / 'joined.json'
+        download.value.save_as(saved)
+        joined.click('#new-project')
+        joined.set_input_files('#file-input', str(saved))
+        saved.unlink()
+        expect(row('Door').locator('.tag')).to_have_text('Swings on Left side')
+        assert joined.evaluate('woodworkingPlanner.project.joints.length') == 2
+        joined.evaluate('localStorage.clear()')
+        joined.close()
+
+        handset = browser.new_page(viewport={'width': 360, 'height': 800})
+        handset.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        handset.on('pageerror', lambda e: errors.append(str(e)))
+        handset.goto(URL)
+        handset.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(cabinet)})')
+        handset.reload()
+        handset.locator('#parts li').nth(4).locator('.row-main').click()
+        handset.click('.tabs [data-tab=edit]')
+        handset.click('#joint-add-open')
+        handset.select_option('#joint-kind', 'hinge')
+        handset.select_option('#joint-other', label='Left side')
+        handset.click('#joint-add-ok')
+        expect(handset.locator('details.joint[open] [data-jf=open][type=range]')).to_be_visible()
+        assert handset.evaluate('document.documentElement.scrollWidth') <= 360, 'the joints panel scrolls sideways on a phone'
+        handset.locator('details.joint[open]').screenshot(path=str(HERE / 'joint-360.png'))
+        handset.click('.tabs [data-tab=cut]')
+        clash = handset.evaluate("""[...document.querySelectorAll("#hardware-rows tr")].flatMap((tr) => {
+            const boxes = [...tr.children].map((td) => td.getBoundingClientRect());
+            return boxes.flatMap((a, i) => boxes.slice(i + 1).filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom).map(() => tr.textContent));
+        })""")
+        assert not clash, f'hardware cells overlap on a phone: {clash}'
+        assert handset.evaluate('document.documentElement.scrollWidth') <= 360, 'the hardware list scrolls sideways on a phone'
+        handset.screenshot(path=str(HERE / 'hardware-360.png'), full_page=True)
+        handset.evaluate('localStorage.clear()')
+        handset.close()
 
         dark = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='dark')
         dark.goto(URL)

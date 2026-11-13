@@ -57,7 +57,7 @@
     </div>
     <div id="view-sel" class="view-sel" hidden></div>
     <div id="debug" class="debug" role="status" aria-live="off" hidden></div>
-    <div class="view-hint">Drag to turn · scroll to zoom · right-drag to pan · click a board to pick it, then drag it to move it</div>
+    <div class="view-hint" id="view-hint">Drag to turn · scroll to zoom · right-drag to pan · click a board to pick it, then drag it to move it</div>
   </div>
 
   <nav class="tabs" aria-label="Panels">
@@ -98,6 +98,16 @@
       </table>
     </div>
     <p id="totals" class="totals"></p>
+    <div class="pane-h"><h2 id="hardware-title">Hardware</h2></div>
+    <div class="table-wrap">
+      <table class="cut-list hardware-list" role="table" aria-labelledby="hardware-title">
+        <thead role="rowgroup">
+          <tr role="row"><th class="num" role="columnheader">Qty</th><th role="columnheader">Item</th><th role="columnheader">Size (mm)</th><th role="columnheader">Used on</th></tr>
+        </thead>
+        <tbody id="hardware-rows" role="rowgroup"></tbody>
+      </table>
+    </div>
+    <p id="hardware-empty" class="empty">No hardware yet. Join two pieces that touch, and their hinges, screws and other fixings are listed here.</p>
   </section>
 
   <aside class="inspector" aria-labelledby="editor-title">
@@ -164,8 +174,27 @@
       <label>Wood
         <span class="wood"><i id="wood-swatch" class="sw"></i><select name="species" id="field-species"></select></span>
       </label>
+      <fieldset id="joints-box" class="joints-box">
+        <legend>Joints</legend>
+        <p id="joints-empty" class="help">Not joined to anything.</p>
+        <div id="joints" class="joints"></div>
+        <p id="swing-help" class="help" hidden>Drag this piece in the 3D view to swing it; drag the piece it hangs on to move both. The swing is not checked against other pieces: any it passes through are flagged as overlapping.</p>
+        <button type="button" id="joint-add-open" aria-expanded="false" aria-controls="joint-add">Add joint…</button>
+        <div id="joint-add" class="joint-add" hidden>
+          <div class="duo">
+            <label>Join with <select id="joint-kind"></select></label>
+            <label>To <select id="joint-other"></select></label>
+          </div>
+          <p id="joint-add-note" class="help" role="status"></p>
+          <div class="duo">
+            <button type="button" id="joint-add-ok" class="primary">Add joint</button>
+            <button type="button" id="joint-add-cancel">Cancel</button>
+          </div>
+        </div>
+        <p id="joints-none" class="help" hidden>Nothing touches this piece. Move it flush against another piece to join them.</p>
+      </fieldset>
       <button type="button" id="lock" class="lock" aria-pressed="false" title="Stop this board from being moved, rotated, resized or deleted">Lock in place</button>
-      <p id="locked-note" class="help" hidden>Locked: it can't be moved, rotated, resized or deleted until you unlock it. Its name and wood can still change.</p>
+      <p id="locked-note" class="help" hidden>Locked: it can't be moved, rotated, resized or deleted until you unlock it, and neither can anything joined to it. A door hinged on it can still swing. Its name and wood can still change.</p>
       <div class="duo">
         <button type="button" id="duplicate">Duplicate</button>
         <button type="button" id="delete" class="danger">Delete</button>
