@@ -8,6 +8,7 @@ import {
   cornerCount,
   cornerLayout,
   cutList,
+  cutSize,
   describePose,
   poseHalfTurn,
   duplicatePart,
@@ -21,10 +22,13 @@ import {
 import {
   EDGES,
   HINGE_TYPES,
+  JOINT_GROUPS,
   JOINT_KINDS,
   changeJoint,
   changePart,
   assemblyOverlaps,
+  cutAllowances,
+  cutJoint,
   dragMode,
   hardwareList,
   hardwarePieces,
@@ -32,6 +36,7 @@ import {
   hingeEdges,
   joinParts,
   joinedTo,
+  joineryXray,
   jointProblem,
   jointRemoval,
   moveAssembly,
@@ -351,8 +356,7 @@ function element(tag, className, text) {
 
 const trio = (length, width, thickness) => `${mm(length)} × ${mm(width)} × ${mm(thickness)}`;
 
-function blankText(part) {
-  const size = blank(part);
+function blankText(part, size = blank(part)) {
   return part.shape === 'dowel' ? `⌀${mm(size.width)} × ${mm(size.length)}` : trio(size.length, size.width, size.thickness);
 }
 
@@ -445,6 +449,8 @@ function jointTag(part) {
   return partners.size === 1 ? `Joined to ${partName([...partners][0])}` : `Joined to ${partners.size} pieces`;
 }
 
+const CUT_WARNINGS = { dado: 'Dado too deep', tenon: 'Tenon too big', dowels: 'Dowels too big' };
+
 function jointWarnings(part) {
   const words = new Set();
   for (const joint of jointsOn(part.id)) {
@@ -452,6 +458,8 @@ function jointWarnings(part) {
     if (!problem) continue;
     if (joint.kind === 'hinge') words.add(/thick/.test(problem) ? 'Too thin for concealed hinges' : 'Hinge can’t swing');
     else if (/no longer touches/.test(problem)) words.add('Joint no longer touches');
+    else if (/no longer meets/.test(problem)) words.add('Joint no longer fits');
+    else if (joint.kind in CUT_WARNINGS) words.add(CUT_WARNINGS[joint.kind]);
     else words.add('Fixing too long');
   }
   return [...words];
@@ -623,7 +631,9 @@ function renderShapeFields(part) {
   }
   $('arc-inner').hidden = part.shape !== 'arc';
   $('arc-inner').textContent = `Inner radius ${mm(part.outerRadius - part.bandWidth)} mm (outer radius less the band width).`;
-  $('cut-from').textContent = `Cut from ${blankText(part)}${part.shape === 'dowel' ? ' dowel rod' : ''}`;
+  const allowance = cutAllowances(project).get(part.id);
+  const extras = allowance ? [includesText(allowance, true), allowance.cuts].filter(Boolean) : [];
+  $('cut-from').textContent = [`Cut from ${blankText(part, cutSize(part, allowance))}${part.shape === 'dowel' ? ' dowel rod' : ''}`, ...extras].join(' · ');
   $('corners-box').hidden = part.shape !== 'board';
   $('corner-pick').hidden = part.corners === 'square';
   $('radius-field').hidden = part.corners !== 'rounded';
@@ -632,18 +642,25 @@ function renderShapeFields(part) {
   $('corner-shape').querySelector('path').setAttribute('d', cornerPreview(part));
 }
 
+function includesText({ lengthItems, widthItems }, short = false) {
+  if (short && lengthItems && !widthItems) return `includes ${lengthItems}`;
+  const sentences = [lengthItems && `Length includes ${lengthItems}`, widthItems && `Width includes ${widthItems}`].filter(Boolean);
+  return short ? sentences.map((each) => each[0].toLowerCase() + each.slice(1)).join(' · ') : sentences.join(' · ');
+}
+
 const CUT_LABELS = [...document.querySelectorAll('.cut-list thead th')].map((th) => th.textContent);
 
 function renderCutList() {
+  const allowances = cutAllowances(project);
   $('cut-rows').replaceChildren(
-    ...cutList(project.parts).map((row) => {
+    ...cutList(project.parts, allowances).map((row) => {
       const tr = document.createElement('tr');
       tr.setAttribute('role', 'row');
       const volume = (row.count * row.volume) / 1e9;
       const face = (row.count * row.area) / 1e6;
       const cells = [
         [`${row.count} ×`, 'num'],
-        [blankText(row.piece)],
+        [blankText(row.piece, row)],
         [row.names.join(', ')],
         [SPECIES[row.species].label],
         [`${volume.toFixed(4)} m³`, 'num'],
@@ -655,12 +672,12 @@ function renderCutList() {
         td.dataset.label = CUT_LABELS[i];
         tr.append(td);
       });
-      const note = shapeNote(row.piece);
+      const note = [shapeNote(row.piece), includesText(row), row.cuts].filter(Boolean).join(' · ');
       if (note) tr.children[1].append(element('span', 'shape-note', note));
       return tr;
     }),
   );
-  const sum = totals(project.parts);
+  const sum = totals(project.parts, allowances);
   const stat = (value, label) => {
     const span = element('span');
     span.append(element('b', '', value), ` ${label}`);
@@ -770,6 +787,21 @@ function markInvalid(input, note, message) {
   }
 }
 
+function dadoHelp(joint) {
+  const cut = cutJoint(project, joint);
+  if (!cut) return '';
+  const grows = cut.side === 'width' ? 'wider at this edge' : 'longer at this end';
+  return `A groove ${mm(blank(cut.part).thickness)} wide and ${mm(cut.reach)} deep across ${partName(cut.to.id)}. ${partName(cut.part.id)} is cut ${mm(cut.reach)} ${grows}.`;
+}
+
+function tenonHelp(joint) {
+  const cut = cutJoint(project, joint);
+  if (!cut) return '';
+  const size = blank(cut.part);
+  const shoulder = (whole, part) => mm(Math.max(0, (whole - part) / 2));
+  return `Shoulders: ${shoulder(size.thickness, joint.thickness)} on each face, ${shoulder(size.width, joint.width)} on each edge. ${partName(cut.part.id)} is cut ${mm(cut.reach)} longer at this end.`;
+}
+
 const JOINT_FORMS = {
   screws: [
     { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
@@ -784,6 +816,21 @@ const JOINT_FORMS = {
     { group: 'trio', fields: [['count', 'Brackets', 'count'], ['leg', 'Leg (mm)', 'mm'], ['width', 'Width (mm)', 'mm']] },
     { legend: 'Screws for each bracket', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'mm'], ['screwLength', 'Length (mm)', 'mm']] },
     { check: ['glued', 'Also glued'] },
+  ],
+  dado: [
+    { group: 'duo', fields: [['depth', 'Depth (mm)', 'mm']] },
+    { live: dadoHelp },
+    { check: ['glued', 'Glued'] },
+  ],
+  tenon: [
+    { group: 'trio', fields: [['length', 'Tenon length (mm)', 'mm'], ['thickness', 'Thickness (mm)', 'mm'], ['width', 'Width (mm)', 'mm']] },
+    { check: ['through', 'Through tenon'] },
+    { live: tenonHelp },
+    { check: ['glued', 'Glued'] },
+  ],
+  dowels: [
+    { group: 'trio', fields: [['count', 'Dowels', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
+    { check: ['glued', 'Glued'] },
   ],
   hinge: [
     { swing: true },
@@ -808,6 +855,9 @@ const lockedMoveMessage = (piece) => `That would swing ${piece.name || 'Unnamed'
 function jointTitle(joint, part) {
   const other = partName(joint.part === part.id ? joint.to : joint.part);
   if (joint.kind === 'hinge') return joint.part === part.id ? `Hinge · swings on ${other}` : `Hinge · carries ${other}`;
+  const goesIn = joint.part === part.id;
+  if (joint.kind === 'dado') return goesIn ? `Dado · into ${other}` : `Dado · houses ${other}`;
+  if (joint.kind === 'tenon') return goesIn ? `Mortise and tenon · into ${other}` : `Mortise and tenon · takes ${other}`;
   return `${JOINT_KINDS[joint.kind]} · to ${other}`;
 }
 
@@ -815,6 +865,12 @@ function jointSummary(joint) {
   const glued = joint.glued ? ' · glued' : '';
   if (joint.kind === 'screws' || joint.kind === 'nails') return `${joint.count} × ${mm(joint.diameter)} × ${mm(joint.length)}${glued}`;
   if (joint.kind === 'bracket') return `${joint.count} × ${mm(joint.leg)} × ${mm(joint.leg)} × ${mm(joint.width)}${glued}`;
+  if (joint.kind === 'dado') return `${mm(joint.depth)} deep${glued}`;
+  if (joint.kind === 'tenon') {
+    const length = cutJoint(project, joint)?.reach ?? joint.length;
+    return `${mm(length)} × ${mm(joint.thickness)} × ${mm(joint.width)} ${joint.through ? 'through tenon' : 'tenon'}${glued}`;
+  }
+  if (joint.kind === 'dowels') return `${joint.count} × ⌀${mm(joint.diameter)} × ${mm(joint.length)}${glued}`;
   if (joint.kind === 'hinge') {
     const type = joint.hingeType === 'concealed' ? 'concealed, 35 mm cup' : `${joint.hingeType} ${mm(joint.size)} mm`;
     return `${joint.count} × ${type} · open ${mm(joint.open)}°`;
@@ -829,6 +885,7 @@ function jointInput(joint, field, kind) {
   input.dataset.jf = field;
   input.dataset.joint = joint.id;
   input.dataset.check = kind;
+  if (kind === 'mm') input.dataset.length = '';
   return input;
 }
 
@@ -878,6 +935,12 @@ function jointBody(joint) {
     }
     if (row.help) {
       body.append(element('p', 'help', row.help));
+      continue;
+    }
+    if (row.live) {
+      const live = element('p', 'help');
+      live.dataset.live = '';
+      body.append(live);
       continue;
     }
     if (row.check) {
@@ -950,12 +1013,16 @@ function fillJointCard(card, joint, part) {
     const field = control.dataset.jf;
     if (control.type === 'range') control.max = String(joint.opensTo);
     if (field === 'open') control.disabled = stuck;
+    if (joint.kind === 'tenon' && field === 'length') control.disabled = joint.through;
     if (control === document.activeElement && control.getAttribute('aria-invalid') === 'true') continue;
     if (control === document.activeElement && control.type === 'number') continue;
+    const through = joint.kind === 'tenon' && field === 'length' && joint.through;
     if (control.type === 'checkbox') control.checked = Boolean(joint[field]);
-    else control.value = String(joint[field]);
+    else control.value = String(through ? cutJoint(project, joint)?.reach ?? joint.length : joint[field]);
     if (control.getAttribute('aria-invalid') === 'true') showJointError(control, null);
   }
+  const live = card.querySelector('[data-live]');
+  if (live) live.textContent = JOINT_FORMS[joint.kind].find((row) => row.live).live(joint);
   const size = card.querySelector('[data-jf-field="size"]');
   if (size) size.hidden = joint.hingeType === 'concealed';
   for (const button of card.querySelectorAll('[data-jf-act="close"], [data-jf-act="open-full"]')) button.disabled = stuck;
@@ -997,7 +1064,7 @@ function focusKeyOf(node) {
 
 function renderJointAdd(part, touching) {
   const kind = $('joint-kind');
-  if (!kind.options.length) fillSelect(kind, JOINT_KINDS);
+  if (!kind.options.length) fillGroupedSelect(kind, JOINT_GROUPS, JOINT_KINDS);
   const other = $('joint-other');
   const chosen = other.value;
   const joined = new Set(jointsOn(part.id).map((joint) => (joint.part === part.id ? joint.to : joint.part)));
@@ -1011,8 +1078,16 @@ function renderJointAdd(part, touching) {
   const free = touching.find((piece) => piece.id === chosen && !joined.has(piece.id)) ?? touching.find((piece) => !joined.has(piece.id));
   if (free) other.value = free.id;
   const result = free ? joinParts(project, kind.value, part.id, free.id) : { error: 'Every piece it touches is already joined to it.' };
-  $('joint-add-note').textContent = result.error ?? (kind.value === 'hinge' ? `${part.name || 'This piece'} will swing on ${free.name || 'it'}.` : '');
+  $('joint-add-note').textContent = result.error ?? joinNote(result.joint, part, free);
   $('joint-add-ok').disabled = Boolean(result.error);
+}
+
+function joinNote(joint, part, other) {
+  if (joint.kind === 'hinge') return `${part.name || 'This piece'} will swing on ${other.name || 'it'}.`;
+  if (joint.kind === 'dowels') return 'Holes are drilled in both pieces.';
+  if (joint.kind === 'tenon') return `${partName(joint.part)} gets the tenon. The mortise is cut in ${partName(joint.to)}.`;
+  if (joint.kind === 'dado') return `The ${cutJoint(project, joint)?.side === 'width' ? 'edge' : 'end'} of ${partName(joint.part)} sits in a groove cut across ${partName(joint.to)}.`;
+  return '';
 }
 
 function setAddingJoint(on) {
@@ -1060,9 +1135,10 @@ function showJointError(control, message) {
   note.textContent = [...new Set(messages)].join(' ');
 }
 
-function refusalMessage({ refused: reason, piece }, control) {
-  if (reason === 'locked') return lockedMoveMessage(piece);
-  if (reason === 'apart') return JOINT_ERRORS.apart;
+function refusalMessage({ refused, piece, reason }, control) {
+  if (refused === 'locked') return lockedMoveMessage(piece);
+  if (refused === 'apart') return JOINT_ERRORS.apart;
+  if (reason) return reason;
   if (control.dataset.jf === 'open') return JOINT_ERRORS.open;
   return JOINT_ERRORS[control.dataset.check] ?? JOINT_ERRORS.mm;
 }
@@ -1132,7 +1208,7 @@ function renderHardware() {
       const cells = [
         [row.count === null ? '–' : `${row.count} ×`, 'num'],
         [row.item],
-        [row.size ? row.size.map(mm).join(' × ') : '–'],
+        [row.size ? `${row.item === 'Dowel pin' ? '⌀' : ''}${row.size.map(mm).join(' × ')}` : '–'],
         [usedOn],
       ];
       cells.forEach(([text, className], i) => {
@@ -1201,6 +1277,7 @@ function sceneExtras() {
     placements: placements(project),
     hardware: hardwarePieces(project),
     hingeLine: hinge ? hingeAxis(project, hinge.id) : null,
+    xray: selectedId ? joineryXray(project, selectedId) : [],
   };
 }
 
@@ -1210,6 +1287,17 @@ function placeView() {
 
 function fillSelect(select, options) {
   select.replaceChildren(...Object.entries(options).map(([value, label]) => new Option(label, value)));
+}
+
+function fillGroupedSelect(select, groups, labels) {
+  select.replaceChildren(
+    ...Object.entries(groups).map(([name, values]) => {
+      const group = document.createElement('optgroup');
+      group.label = name;
+      group.append(...values.map((value) => new Option(labels[value], value)));
+      return group;
+    }),
+  );
 }
 fillSelect($('field-species'), Object.fromEntries(Object.entries(SPECIES).map(([key, { label }]) => [key, label])));
 fillSelect($('field-pose'), LIES);
