@@ -50,6 +50,7 @@ import {
 } from './joints.js';
 import { starterProject } from './project.js';
 import { createScene } from './scene.js';
+import { mm } from './format.js';
 import { download, loadDebug, loadPotato, loadSaved, loadSnap, readFile, save, saveDebug, savePotato, saveSnap } from './storage.js';
 import { createDebugPanel } from './debug.js';
 import { createOutlineEditor } from './outline-editor.js';
@@ -342,8 +343,6 @@ function toggleLock() {
   const toggled = updatePart(part, 'locked', !part.locked);
   commit({ ...project, parts: project.parts.map((each) => (each.id === part.id ? toggled : each)) });
 }
-
-const mm = (value) => `${Number(value).toLocaleString('en-GB', { maximumFractionDigits: 1 })}`;
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
