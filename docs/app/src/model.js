@@ -1,4 +1,4 @@
-import { convexParts, prism, solid, solidsClash } from './geometry.js';
+import { TOUCH_MM, convexParts, prism, solid, solidsClash, sweepSpans } from './geometry.js';
 
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
@@ -561,33 +561,57 @@ export function partFromFile(raw, index) {
 export const SNAP_GRID_MM = 10;
 export const SNAP_REACH_MM = 15;
 
-export function snapPosition(part, proposed, others, { snap = true } = {}) {
+function snapTargets(part, axis, value, others, placementOf, meeting) {
   const size = extents(part);
-  const result = {};
-  for (const axis of POSITION) {
-    if (!(axis in proposed)) continue;
-    const value = proposed[axis];
-    if (!snap) {
-      result[axis] = roundMm(value);
+  const near = [];
+  const consider = (target, side = 0) => {
+    if (Math.abs(target - value) <= SNAP_REACH_MM) near.push({ target, side });
+  };
+  if (axis === 'y' && !meeting) consider(0);
+  const across = AXES.filter((other) => other !== axis);
+  const mine = bounds(part);
+  for (const other of others) {
+    if (other.id === part.id) continue;
+    const placement = placementOf(other.id);
+    const shape = solidOf(other, placement);
+    const box = isIdentity(placement)
+      ? bounds(other)
+      : Object.fromEntries(['min', 'max'].map((side) => [side, Object.fromEntries(AXES.map((each, i) => [each, shape.box[side][i]]))]));
+    const inPath = across.every((each) => Math.min(mine.max[each], box.max[each]) - Math.max(mine.min[each], box.min[each]) > TOUCH_MM);
+    if (!meeting) {
+      consider(box.min[axis]);
+      consider(box.max[axis] - size[axis]);
+      if (!inPath) {
+        consider(box.max[axis]);
+        consider(box.min[axis] - size[axis]);
+      }
       continue;
     }
-    let best = null;
-    const consider = (target) => {
-      const distance = Math.abs(target - value);
-      if (distance <= SNAP_REACH_MM && (best === null || distance < Math.abs(best - value))) best = target;
-    };
-    if (axis === 'y') consider(0);
-    for (const other of others) {
-      if (other.id === part.id) continue;
-      const box = bounds(other);
-      for (const face of [box.min[axis], box.max[axis]]) {
-        consider(face);
-        consider(face - size[axis]);
-      }
-    }
-    result[axis] = roundMm(best ?? Math.round(value / SNAP_GRID_MM) * SNAP_GRID_MM);
+    if (!inPath || value < box.min[axis] - size[axis] - SNAP_REACH_MM || value > box.max[axis] + SNAP_REACH_MM) continue;
+    for (const span of sweepSpans(solidOf(part), shape, AXES.indexOf(axis))) span.forEach((travel, end) => consider(value + travel, end ? 1 : -1));
   }
-  if ('y' in result && result.y < 0 && snap) result.y = 0;
+  return near;
+}
+
+const roundClear = ({ target, side }) => (side < 0 ? Math.floor(target * 10 + 1e-6) : Math.ceil(target * 10 - 1e-6)) / 10 + 0;
+const nearest = (value, targets) => targets.reduce((best, each) => (best && Math.abs(best.target - value) <= Math.abs(each.target - value) ? best : each), null);
+
+// Each axis first snaps to grid and faces; then the one axis nearest a true meeting snaps there, with the others already in place, so the pieces touch without overlapping.
+export function snapPosition(part, proposed, others, { snap = true, placementOf = () => null } = {}) {
+  const axes = POSITION.filter((axis) => axis in proposed);
+  if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundMm(proposed[axis])]));
+  const result = {};
+  const plain = {};
+  for (const axis of axes) {
+    plain[axis] = nearest(proposed[axis], snapTargets({ ...part, ...proposed }, axis, proposed[axis], others, placementOf, false));
+    result[axis] = roundMm(plain[axis]?.target ?? Math.round(proposed[axis] / SNAP_GRID_MM) * SNAP_GRID_MM);
+  }
+  const meetings = axes
+    .map((axis) => ({ axis, meet: nearest(proposed[axis], snapTargets({ ...part, ...result, [axis]: proposed[axis] }, axis, proposed[axis], others, placementOf, true)) }))
+    .filter(({ axis, meet }) => meet && (!plain[axis] || Math.abs(meet.target - proposed[axis]) <= Math.abs(plain[axis].target - proposed[axis])));
+  const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
+  if (closest) result[closest.axis] = roundClear(closest.meet);
+  if ('y' in result && result.y < 0) result.y = 0;
   return result;
 }
 

@@ -110,7 +110,7 @@ function swingDrag(swing, invertSnap) {
 
 const handleDrag = timed(({ phase, id, delta, vertical, invertSnap, swing }) => {
   if (phase === 'start') {
-    dragStart = { project, base: project, part: project.parts.find((part) => part.id === id), hinge: swingingHinge(project, id) };
+    dragStart = { project, base: project, part: project.parts.find((part) => part.id === id), hinge: swingingHinge(project, id), placed: placements(project) };
     showDragModes(vertical, snapOn !== invertSnap);
     return;
   }
@@ -118,6 +118,7 @@ const handleDrag = timed(({ phase, id, delta, vertical, invertSnap, swing }) => 
   if (phase === 'rebase') {
     dragStart.base = project;
     dragStart.part = selectedPart();
+    dragStart.placed = placements(project);
     return;
   }
   if (phase === 'move' && swing !== undefined) {
@@ -130,7 +131,7 @@ const handleDrag = timed(({ phase, id, delta, vertical, invertSnap, swing }) => 
     const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
     const members = joinedTo(dragStart.base, id);
     const others = project.parts.filter((part) => !members.has(part.id));
-    const target = snapPosition(from, proposed, others, { snap: snapOn !== invertSnap });
+    const target = snapPosition(from, proposed, others, { snap: snapOn !== invertSnap, placementOf: (other) => dragStart.placed.get(other) });
     const next = moveAssembly(dragStart.base, id, target);
     const same = next.parts.every((part, i) => ['x', 'y', 'z'].every((axis) => part[axis] === project.parts[i][axis]));
     if (same) return;

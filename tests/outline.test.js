@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { POSES, SHAPES, bounds, legacyPose, makePart, makeShape, overlaps, rotatePart } from '../docs/app/src/model.js';
-import { assemblyOverlaps, contact, joinParts, touchingParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
+import { POSES, SHAPES, bounds, legacyPose, makePart, makeShape, overlaps, rotatePart, snapPosition } from '../docs/app/src/model.js';
+import { assemblyOverlaps, contact, joinParts, placements, touchingParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
+
+const mechanismPlacement = (project, id) => placements(project).get(id);
 
 const block = (size, fields = {}) => makePart({ name: 'Block', length: size, width: size, thickness: size, ...fields });
 
@@ -114,4 +116,38 @@ test('a shelf with rounded front corners meets the side only along its straight 
   assert.deepEqual(region.y, [300, 318]);
   assert.equal(region.z[0], 0);
   assert.ok(region.z[1] >= 194 && region.z[1] < 195, `straight end ends at z 194, got ${region.z[1]}`);
+});
+
+test('a disc dragged toward another disc snaps where the rims meet, not where the boxes would', () => {
+  const still = { ...makeShape('disc'), name: 'Still', x: 1000 };
+  const moving = { ...makeShape('disc'), name: 'Moving', z: 200 };
+  const { x } = snapPosition(moving, { x: 660 }, [still]);
+  assert.ok(Math.abs(x - 653.6) < 1, `rims meet near x 653.6, snapped to ${x}`);
+  assert.deepEqual(overlaps([{ ...moving, x }, still]), []);
+  assert.equal(overlaps([{ ...moving, x: x + 1 }, still]).length, 1);
+});
+
+test('a block slides past the open corner of a triangle and snaps against its slope', () => {
+  const triangle = { ...makeShape('triangle'), name: 'Triangle' };
+  const moving = block(20);
+  assert.equal(snapPosition(moving, { x: 207 }, [triangle]).x, 210);
+  assert.equal(snapPosition(moving, { x: 25 }, [triangle]).x, 20);
+  assert.equal(snapPosition(moving, { x: 25 }, [triangle], { snap: false }).x, 25);
+});
+
+test('snapping lines a piece up with the faces of a piece out of its path, as before', () => {
+  const disc = { ...makeShape('disc'), name: 'Disc', z: 1000 };
+  const moving = block(20);
+  assert.equal(snapPosition(moving, { x: 395 }, [disc]).x, 400);
+  assert.equal(snapPosition(moving, { x: 386 }, [disc]).x, 380);
+});
+
+test('snapping against a swung door uses where the door is now', () => {
+  const frame = side();
+  const door = makePart({ name: 'Door', length: 800, width: 400, thickness: 18, pose: legacyPose('yxz'), z: 244 });
+  const hung = joinParts({ name: 'Cabinet', parts: [frame, door], joints: [] }, 'hinge', door.id, frame.id);
+  const open = updateJoint(hung.project, hung.joint.id, 'open', 90);
+  const moving = block(50, { x: -100, z: 400 });
+  const placementOf = (id) => (id === door.id ? mechanismPlacement(open, id) : null);
+  assert.equal(snapPosition(moving, { x: -75 }, open.parts.filter((part) => part.id !== frame.id), { placementOf }).x, -68);
 });
