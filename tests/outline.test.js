@@ -159,6 +159,30 @@ test('dragging an assembly snaps where any of its pieces meets another by the tr
   assert.deepEqual(overlaps([{ ...disc, x: x + 18 }, still]), []);
 });
 
+const corner = () => [
+  makePart({ name: 'Left wall', length: 1000, width: 600, thickness: 18, pose: legacyPose('yzx') }),
+  makePart({ name: 'Back wall', length: 582, width: 1000, thickness: 18, pose: legacyPose('xyz'), x: 18 }),
+];
+
+test('a block dragged into an inside corner sits flush against both walls', () => {
+  const walls = corner();
+  const moving = block(200, { x: 300, z: 300 });
+  assert.deepEqual(snapPosition(moving, { x: 21, z: 22 }, walls), { x: 18, z: 18 });
+});
+
+test('a block dragged into an inside corner never ends up inside a wall', () => {
+  const walls = corner();
+  const moving = block(200, { x: 300, z: 300 });
+  const snapped = snapPosition(moving, { x: 19, z: 12 }, walls);
+  assert.deepEqual(overlaps([{ ...moving, ...snapped }, ...walls]), [], `snapped to ${JSON.stringify(snapped)}`);
+  for (let x = 18; x <= 33; x += 1.5) {
+    for (let z = 18; z <= 33; z += 1.5) {
+      const near = snapPosition(moving, { x, z }, walls);
+      assert.deepEqual(overlaps([{ ...moving, ...near }, ...walls]), [], `dragged to ${x}, ${z} snapped to ${JSON.stringify(near)}`);
+    }
+  }
+});
+
 test('the smallest round pieces still have a solid to test', () => {
   const thin = { ...makeShape('dowel'), dowelDiameter: 0.2 };
   assert.equal(overlaps([thin, { ...thin, id: 'twin' }]).length, 1);
