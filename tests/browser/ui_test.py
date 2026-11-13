@@ -642,6 +642,8 @@ try:
         last_item = zoomed.locator('.add-bar [data-add-shape=free]')
         box = last_item.bounding_box()
         assert box and box['y'] >= 0 and box['y'] + box['height'] <= 256 and box['x'] + box['width'] <= 320, f'at 320 × 256 the last shape button is cut off: {box}'
+        clipped = zoomed.evaluate('[...document.querySelectorAll(".add-bar .add-shapes button")].filter((b) => b.scrollWidth > b.clientWidth).map((b) => b.textContent)')
+        assert not clipped, f'at 320 px these shape buttons cut their names off: {clipped}'
         zoomed.screenshot(path=str(HERE / 'zoom-400.png'), full_page=True)
         zoomed.close()
 
@@ -694,6 +696,8 @@ try:
             expect(shapes.get_by_role('button', name=name, exact=True)).to_be_visible()
         widths = [shapes.get_by_role('button').nth(i).bounding_box()['width'] for i in range(6)]
         assert max(widths) - min(widths) < 1, f'the shape buttons are not the same size: {widths}'
+        clipped = shaped.evaluate('[...document.querySelectorAll(".parts .add-shapes button")].filter((b) => b.scrollWidth > b.clientWidth).map((b) => b.textContent)')
+        assert not clipped, f'these shape buttons cut their names off: {clipped}'
         shapes.get_by_role('button', name='Add disc').focus()
         shaped.keyboard.press('Enter')
         expect(shaped.locator('#parts li')).to_have_count(8)
