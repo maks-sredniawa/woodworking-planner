@@ -3,6 +3,7 @@ import {
   bodyOf,
   bounds,
   extents,
+  isIdentity,
   movePart,
   newId,
   overlaps,
@@ -340,8 +341,6 @@ export function mechanism(project) {
     frameOf: (info) => placementOf(info.frame),
   };
 }
-
-const isIdentity = (placement) => placement.m.every((value, i) => Math.abs(value - IDENTITY.m[i]) < 1e-9) && placement.o.every((value) => Math.abs(value) < 1e-9);
 
 export function placements(project) {
   const mech = mechanism(project);

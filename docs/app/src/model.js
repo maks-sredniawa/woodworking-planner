@@ -276,7 +276,7 @@ const placed = (placement, point) => placement.m.reduce((out, value, i) => {
   return out;
 }, [...placement.o]);
 const turned = (placement, vector) => placed({ ...placement, o: [0, 0, 0] }, vector);
-const isIdentity = (placement) =>
+export const isIdentity = (placement) =>
   !placement || (placement.m.every((value, i) => Math.abs(value - (i % 4 === 0 ? 1 : 0)) < 1e-9) && placement.o.every((value) => Math.abs(value) < 1e-9));
 const solids = new WeakMap();
 

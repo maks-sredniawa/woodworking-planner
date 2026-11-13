@@ -108,7 +108,7 @@ export function prism(polygon, depth) {
 }
 
 export function placeSolid(pieces, { origin, u, v, w }) {
-  const turn = ([a, b, c]) => [a * u[0] + b * v[0] + c * w[0], a * u[1] + b * v[1] + c * w[1], a * u[2] + b * v[2] + c * w[2]];
+  const orient = ([a, b, c]) => [a * u[0] + b * v[0] + c * w[0], a * u[1] + b * v[1] + c * w[1], a * u[2] + b * v[2] + c * w[2]];
   const placed = pieces.map(({ polygon, depth, normals, edges }) => {
     const middle = new Float64Array(polygon.length * 3);
     polygon.forEach(([s, t], i) => {
@@ -119,7 +119,7 @@ export function placeSolid(pieces, { origin, u, v, w }) {
       const point = [middle[3 * i], middle[3 * i + 1], middle[3 * i + 2]];
       return [point.map((value, k) => value - half[k]), point.map((value, k) => value + half[k])];
     });
-    return { corners, middle, half, normals: normals.map(turn), edges: edges.map(turn), w, box: boxOf(corners) };
+    return { corners, middle, half, normals: normals.map(orient), edges: edges.map(orient), w, box: boxOf(corners) };
   });
   return { pieces: placed, box: boxOf(placed.flatMap((piece) => [piece.box.min, piece.box.max])) };
 }
@@ -136,21 +136,18 @@ export function moveSolid(solid, offset) {
   return { pieces, box: { min: shift(solid.box.min), max: shift(solid.box.max) } };
 }
 
-let shadowLow = 0;
-let shadowHigh = 0;
-
-function castShadow(piece, x, y, z) {
+function castShadow(piece, x, y, z, shadow) {
   const { middle, half } = piece;
-  shadowLow = Infinity;
-  shadowHigh = -Infinity;
+  let low = Infinity;
+  let high = -Infinity;
   for (let i = 0; i < middle.length; i += 3) {
     const value = middle[i] * x + middle[i + 1] * y + middle[i + 2] * z;
-    if (value < shadowLow) shadowLow = value;
-    if (value > shadowHigh) shadowHigh = value;
+    if (value < low) low = value;
+    if (value > high) high = value;
   }
   const thick = Math.abs(half[0] * x + half[1] * y + half[2] * z);
-  shadowLow -= thick;
-  shadowHigh += thick;
+  shadow[0] = low - thick;
+  shadow[1] = high + thick;
 }
 
 const overlapOf = ([lowA, highA], [lowB, highB]) => Math.min(highA, highB) - Math.max(lowA, lowB);
@@ -184,11 +181,11 @@ function eachAxis(a, b, test) {
 
 function piecesClash(a, b) {
   if (!boxesCross(a.box, b.box)) return false;
+  const [one, two] = [[0, 0], [0, 0]];
   return eachAxis(a, b, (x, y, z) => {
-    castShadow(a, x, y, z);
-    const [fromA, toA] = [shadowLow, shadowHigh];
-    castShadow(b, x, y, z);
-    return Math.min(toA, shadowHigh) - Math.max(fromA, shadowLow) > TOUCH_MM;
+    castShadow(a, x, y, z, one);
+    castShadow(b, x, y, z, two);
+    return overlapOf(one, two) > TOUCH_MM;
   });
 }
 
@@ -276,13 +273,13 @@ export function meetingRegion(a, b, axis, at) {
 
 function pieceSweep(a, b, axis) {
   let [from, to] = [-Infinity, Infinity];
+  const [mine, theirs] = [[0, 0], [0, 0]];
   const meets = eachAxis(a, b, (x, y, z) => {
-    castShadow(a, x, y, z);
-    const [fromA, toA] = [shadowLow, shadowHigh];
-    castShadow(b, x, y, z);
+    castShadow(a, x, y, z, mine);
+    castShadow(b, x, y, z, theirs);
     const rate = [x, y, z][axis];
-    if (Math.abs(rate) < 1e-9) return Math.min(toA, shadowHigh) - Math.max(fromA, shadowLow) > TOUCH_MM;
-    const [one, two] = [(shadowLow - toA) / rate, (shadowHigh - fromA) / rate];
+    if (Math.abs(rate) < 1e-9) return overlapOf(mine, theirs) > TOUCH_MM;
+    const [one, two] = [(theirs[0] - mine[1]) / rate, (theirs[1] - mine[0]) / rate];
     from = Math.max(from, Math.min(one, two));
     to = Math.min(to, Math.max(one, two));
     return to - from > TOUCH_MM;
