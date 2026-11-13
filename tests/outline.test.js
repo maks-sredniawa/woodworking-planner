@@ -158,3 +158,10 @@ test('dragging an assembly snaps where any of its pieces meets another by the tr
   assert.equal(x + 18, snapPosition(disc, { x: 660 }, [still]).x);
   assert.deepEqual(overlaps([{ ...disc, x: x + 18 }, still]), []);
 });
+
+test('the smallest round pieces still have a solid to test', () => {
+  const thin = { ...makeShape('dowel'), dowelDiameter: 0.2 };
+  assert.equal(overlaps([thin, { ...thin, id: 'twin' }]).length, 1);
+  const tight = { ...makePart({ length: 1, width: 1 }), corners: 'rounded', cornerRadius: 0.1 };
+  assert.equal(overlaps([tight, { ...tight, id: 'twin' }]).length, 1);
+});
