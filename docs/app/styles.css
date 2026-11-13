@@ -315,6 +315,7 @@ main {
 .fields label.check input { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--accent); }
 .swing { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 6px 8px; align-items: center; }
 .swing > label { grid-column: 1 / -1; }
+.swing .stop-note { grid-column: 1 / -1; }
 .fields input[type="range"] { height: auto; padding: 0; border: 0; background: none; accent-color: var(--accent); }
 .joint-add { display: grid; gap: 8px; margin-top: 8px; }
 #hardware-empty { padding: 0 16px 14px; }

@@ -1,8 +1,8 @@
 import { legacyPose, makePart, newId, partFromFile, roundMm } from './model.js';
-import { JOINT_FIELDS, JOINT_KINDS, jointFieldValue } from './joints.js';
+import { JOINT_FIELDS, JOINT_FIELD_DEFAULTS, JOINT_KINDS, jointFieldValue } from './joints.js';
 
 export const FORMAT = 'woodworking-planner';
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 
 export function serialize(project) {
   const index = new Map(project.parts.map((part, i) => [part.id, i]));
@@ -31,8 +31,9 @@ function jointFromFile(raw, index, parts, earlier) {
   if (earlier.has(pair)) throw new Error(`${where} joins the same two pieces as an earlier joint.`);
   earlier.add(pair);
   const joint = { id: newId(), kind: raw.kind, part: parts[raw.part].id, to: parts[raw.to].id };
+  const defaults = JOINT_FIELD_DEFAULTS[raw.kind] ?? {};
   for (const field of Object.keys(JOINT_FIELDS[raw.kind])) {
-    const value = jointFieldValue(raw.kind, field, raw[field]);
+    const value = raw[field] === undefined && field in defaults ? defaults[field] : jointFieldValue(raw.kind, field, raw[field]);
     if (value === undefined) throw new Error(`${where} has an invalid ${field}.`);
     joint[field] = value;
   }

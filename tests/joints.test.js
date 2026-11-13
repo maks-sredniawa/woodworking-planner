@@ -196,7 +196,8 @@ test('a piece swings on only one hinge and nothing joins a piece while its hinge
   const handle = makePart({ name: 'Handle', length: 100, width: 20, thickness: 20, pose: legacyPose('yxz'), x: 350, y: 300, z: 262 });
   const hinged = joinParts(project([frame, leaf, right, handle]), 'hinge', leaf.id, frame.id);
   assert.match(joinParts(hinged.project, 'hinge', leaf.id, right.id).error, /already swings on a hinge/);
-  const open = updateJoint(hinged.project, hinged.joint.id, 'open', 30);
+  const passing = updateJoint(hinged.project, hinged.joint.id, 'stops', false);
+  const open = updateJoint(passing, hinged.joint.id, 'open', 30);
   assert.match(joinParts(open, 'glue', handle.id, leaf.id).error, /Close it first/);
 });
 
@@ -261,10 +262,30 @@ test('an angle bracket goes in the inside corner under a shelf, and needs one', 
   assert.match(joinParts(project([under, stacked]), 'bracket', stacked.id, under.id).error, /inside corner/);
 });
 
-test('a door swung into another piece overlaps it; swung clear, it does not', () => {
+test('an angle bracket takes screws no longer than the thinner piece, and warns when they are longer', () => {
+  const left = side();
+  const board = shelf({ thickness: 12 });
+  const { project: state, joint } = joinParts(project([left, board]), 'bracket', board.id, left.id);
+  assert.equal(joint.screwLength, 12);
+  assert.equal(jointProblem(state, joint.id), null);
+  assert.equal(jointProblem(updateJoint(state, joint.id, 'screwLength', 16), joint.id), 'The screws (16) are longer than Shelf is thick (12).');
+  assert.equal(jointProblem(updateJoint(state, joint.id, 'screwLength', 20), joint.id), 'The screws (20) are longer than Shelf is thick (12).');
+});
+
+test('an angle bracket on stock thinner than 12 gets screws short enough not to warn', () => {
+  for (const thick of [6, 9]) {
+    const left = side();
+    const board = shelf({ thickness: thick });
+    const { project: state, joint } = joinParts(project([left, board]), 'bracket', board.id, left.id);
+    assert.ok(joint.screwLength <= thick);
+    assert.equal(jointProblem(state, joint.id), null);
+  }
+});
+
+test('a door that swings through other pieces overlaps them; swung clear, it does not', () => {
   const { project: closed, joint } = hung();
   const box = makePart({ name: 'Box', length: 100, width: 100, thickness: 100, pose: legacyPose('xzy'), x: -150, y: 0, z: 250 });
-  const state = { ...closed, parts: [...closed.parts, box] };
+  const state = updateJoint({ ...closed, parts: [...closed.parts, box] }, joint.id, 'stops', false);
   assert.deepEqual(assemblyOverlaps(state), []);
   assert.deepEqual(assemblyOverlaps(updateJoint(state, joint.id, 'open', 90)), []);
   assert.deepEqual(assemblyOverlaps(updateJoint(state, joint.id, 'open', 150)), [[joint.part, box.id]]);
