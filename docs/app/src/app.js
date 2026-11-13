@@ -1252,63 +1252,16 @@ $('project-name').addEventListener('change', (event) => {
   if (name !== project.name) commit({ ...project, name });
 });
 
-$('add').addEventListener('click', () => addPart());
-$('add-phone').addEventListener('click', () => {
-  addPart();
-  showTab('edit');
-});
-
-function addMenu(toggle, menu, pick) {
-  const items = () => [...menu.querySelectorAll('[role="menuitem"]')];
-  const open = (index) => {
-    menu.hidden = false;
-    toggle.setAttribute('aria-expanded', 'true');
-    items().at(index)?.focus();
-  };
-  const close = (returnFocus) => {
-    if (menu.hidden) return;
-    menu.hidden = true;
-    toggle.setAttribute('aria-expanded', 'false');
-    if (returnFocus) toggle.focus();
-  };
-  toggle.addEventListener('click', () => (menu.hidden ? open(0) : close(true)));
-  toggle.addEventListener('keydown', (event) => {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    event.preventDefault();
-    event.stopPropagation();
-    open(event.key === 'ArrowUp' ? -1 : 0);
-  });
-  menu.addEventListener('keydown', (event) => {
-    const list = items();
-    const index = list.indexOf(document.activeElement);
-    const moves = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: list.length - 1 };
-    if (event.key in moves) {
-      event.preventDefault();
-      event.stopPropagation();
-      list[(moves[event.key] + list.length) % list.length].focus();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      close(true);
-    } else if (event.key === 'Tab') {
-      close(false);
-    }
-  });
-  menu.addEventListener('click', (event) => {
-    const item = event.target.closest('[data-add-shape]');
-    if (!item) return;
-    close(true);
-    pick(item.dataset.addShape);
-  });
-  document.addEventListener('pointerdown', (event) => {
-    if (!toggle.parentElement.contains(event.target)) close(false);
+for (const shapes of document.querySelectorAll('.add-shapes')) {
+  const onPhone = Boolean(shapes.closest('.add-bar'));
+  shapes.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-add-shape]');
+    if (!button) return;
+    addPart(button.dataset.addShape);
+    if (onPhone) showTab('edit');
   });
 }
-addMenu($('add-more'), $('add-menu'), (shape) => addPart(shape));
-addMenu($('add-more-phone'), $('add-menu-phone'), (shape) => {
-  addPart(shape);
-  showTab('edit');
-});
+
 
 function showTab(name) {
   $('main').dataset.tab = name;
