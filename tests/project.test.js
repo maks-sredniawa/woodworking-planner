@@ -14,7 +14,7 @@ const hungDoor = () => {
 test('joints are saved with the project and load back joining the same pieces', () => {
   const saved = hungDoor();
   const text = serialize(saved);
-  assert.match(text, /"version": 3/);
+  assert.match(text, /"version": 4/);
   const loaded = parseProject(text);
   assert.equal(loaded.joints.length, 1);
   const [joint] = loaded.joints;
@@ -35,5 +35,5 @@ test('a file with a broken joint is refused with the joint named', () => {
   assert.throws(() => parseProject(file([{ kind: 'glue', part: 0, to: 0 }])), /Joint 1 joins a piece to itself/);
   assert.throws(() => parseProject(file([{ kind: 'screws', part: 0, to: 1, count: 0, diameter: 4, length: 40, glued: false }])), /Joint 1 has an invalid count/);
   assert.throws(() => parseProject(file([{ kind: 'glue', part: 0, to: 1 }, { kind: 'glue', part: 1, to: 0 }])), /Joint 2 joins the same two pieces as an earlier joint/);
-  assert.throws(() => parseProject('{"format":"woodworking-planner","version":4,"parts":[]}'), /newer version/);
+  assert.throws(() => parseProject('{"format":"woodworking-planner","version":5,"parts":[]}'), /newer version/);
 });

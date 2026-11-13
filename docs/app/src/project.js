@@ -2,7 +2,7 @@ import { legacyPose, makePart, newId, partFromFile, roundMm } from './model.js';
 import { JOINT_FIELDS, JOINT_KINDS, jointFieldValue } from './joints.js';
 
 export const FORMAT = 'woodworking-planner';
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 
 export function serialize(project) {
   const index = new Map(project.parts.map((part, i) => [part.id, i]));
