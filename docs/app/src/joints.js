@@ -4,6 +4,7 @@ import {
   extents,
   movePart,
   newId,
+  overlaps,
   poseAxes,
   projectBounds,
   recentre,
@@ -614,37 +615,9 @@ export function insideCorner(to, part) {
   return candidates.sort((a, b) => rank(a) - rank(b) || b.span[1] - b.span[0] - (a.span[1] - a.span[0]))[0] ?? null;
 }
 
-function orientedBox(part, placement) {
-  const box = bounds(part);
-  const centre = transformPoint(placement, AXES.map((axis) => (box.min[axis] + box.max[axis]) / 2));
-  const half = AXES.map((axis) => (box.max[axis] - box.min[axis]) / 2);
-  const axes = [0, 1, 2].map((col) => [placement.m[col], placement.m[3 + col], placement.m[6 + col]]);
-  return { centre, half, axes };
-}
-
-function separated(a, b) {
-  const tests = [...a.axes, ...b.axes];
-  for (const first of a.axes) for (const second of b.axes) tests.push(cross(first, second));
-  const gap = b.centre.map((value, i) => value - a.centre[i]);
-  return tests.some((axis) => {
-    const size = Math.hypot(...axis);
-    if (size < 1e-6) return false;
-    const unitAxis = axis.map((value) => value / size);
-    const reach = (box) => box.axes.reduce((sum, each, i) => sum + box.half[i] * Math.abs(dot(each, unitAxis)), 0);
-    return Math.abs(dot(gap, unitAxis)) >= reach(a) + reach(b) - TOUCH_MM;
-  });
-}
-
 export function assemblyOverlaps(project) {
   const mech = mechanism(project);
-  const boxes = project.parts.map((part) => orientedBox(part, mech.placement(part.id)));
-  const pairs = [];
-  for (let i = 0; i < boxes.length; i++) {
-    for (let j = i + 1; j < boxes.length; j++) {
-      if (!separated(boxes[i], boxes[j])) pairs.push([project.parts[i].id, project.parts[j].id]);
-    }
-  }
-  return pairs;
+  return overlaps(project.parts, mech.placement);
 }
 
 const HARDWARE_ORDER = ['Butt hinge', 'Concealed hinge', 'Piano hinge', 'Angle bracket', 'Screw', 'Nail', 'Wood glue'];
