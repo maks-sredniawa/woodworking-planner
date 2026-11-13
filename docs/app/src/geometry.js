@@ -153,3 +153,80 @@ export function solidsClash(a, b) {
   if (!boxesCross(a.box, b.box)) return false;
   return a.pieces.some((piece) => boxesCross(piece.box, b.box) && b.pieces.some((other) => piecesClash(piece, other)));
 }
+
+function hull(points) {
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (sorted.length < 3) return sorted;
+  const half = (list) => {
+    const chain = [];
+    for (const point of list) {
+      while (chain.length >= 2 && turn(chain.at(-2), chain.at(-1), point) <= EPS) chain.pop();
+      chain.push(point);
+    }
+    chain.pop();
+    return chain;
+  };
+  return [...half(sorted), ...half([...sorted].reverse())];
+}
+
+function prismEdges(count) {
+  return Array.from({ length: count }, (_, j) => {
+    const next = (j + 1) % count;
+    return [[2 * j, 2 * j + 1], [2 * j, 2 * next], [2 * j + 1, 2 * next + 1]];
+  }).flat();
+}
+
+function footprint(piece, axis, low, high) {
+  if (piece.box.max[axis] < low || piece.box.min[axis] > high) return null;
+  const inside = piece.corners.filter((corner) => corner[axis] >= low && corner[axis] <= high);
+  const cuts = prismEdges(piece.corners.length / 2).flatMap(([i, j]) => {
+    const [p, q] = [piece.corners[i], piece.corners[j]];
+    return [low, high]
+      .filter((level) => (p[axis] - level) * (q[axis] - level) < 0)
+      .map((level) => p.map((value, k) => value + ((q[k] - value) * (level - p[axis])) / (q[axis] - p[axis])));
+  });
+  const others = [0, 1, 2].filter((k) => k !== axis);
+  const shape = hull([...inside, ...cuts].map((point) => others.map((k) => point[k])));
+  return shape.length >= 3 ? shape : null;
+}
+
+function clip(subject, by) {
+  let result = subject;
+  for (let i = 0; i < by.length && result.length; i++) {
+    const [a, b] = [by[i], by[(i + 1) % by.length]];
+    const input = result;
+    result = [];
+    input.forEach((point, j) => {
+      const previous = input[(j + input.length - 1) % input.length];
+      const [now, before] = [turn(a, b, point) >= 0, turn(a, b, previous) >= 0];
+      if (now !== before) {
+        const [dp, dq] = [turn(a, b, previous), turn(a, b, point)];
+        const share = dp / (dp - dq);
+        result.push([previous[0] + (point[0] - previous[0]) * share, previous[1] + (point[1] - previous[1]) * share]);
+      }
+      if (now) result.push(point);
+    });
+  }
+  return result;
+}
+
+export function meetingRegion(a, b, axis, at) {
+  const [low, high] = [at - TOUCH_MM, at + TOUCH_MM];
+  const near = (shape) => shape.pieces.map((piece) => footprint(piece, axis, low, high)).filter(Boolean);
+  const [mine, theirs] = [near(a), near(b)];
+  const others = [0, 1, 2].filter((k) => k !== axis);
+  let region = null;
+  for (const one of mine) {
+    for (const two of theirs) {
+      const shared = clip(one, two);
+      if (shared.length < 3) continue;
+      const spans = [0, 1].map((k) => [Math.min(...shared.map((point) => point[k])), Math.max(...shared.map((point) => point[k]))]);
+      if (spans.some(([from, to]) => to - from <= TOUCH_MM)) continue;
+      region ??= Object.fromEntries(others.map((k) => [k, [Infinity, -Infinity]]));
+      others.forEach((k, i) => {
+        region[k] = [Math.min(region[k][0], spans[i][0]), Math.max(region[k][1], spans[i][1])];
+      });
+    }
+  }
+  return region;
+}
