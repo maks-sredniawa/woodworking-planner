@@ -328,7 +328,10 @@ test('a refused joint change says why: not a value, past the limit, a locked pie
   const locked = { ...open, parts: open.parts.map((part) => (part.id === joint.part ? { ...part, locked: true } : part)) };
   assert.deepEqual(changeJoint(locked, joint.id, 'open', 'abc'), { refused: 'invalid' });
   assert.deepEqual(changeJoint(locked, joint.id, 'open', 200), { refused: 'limit' });
-  assert.deepEqual(changeJoint(locked, joint.id, 'open', 30), { refused: 'locked' });
+  const refusal = changeJoint(locked, joint.id, 'open', 30);
+  assert.deepEqual([refusal.refused, refusal.piece?.name], ['locked', 'Door']);
+  const lockedSuggest = suggestSizes({ ...locked, joints: [{ ...locked.joints[0], opensTo: 270, open: 200 }] }, joint.id);
+  assert.deepEqual([lockedSuggest.refused, lockedSuggest.piece?.name], ['locked', 'Door']);
   assert.equal(changeJoint(open, joint.id, 'open', 30).project.joints[0].open, 30);
   const apart = { ...locked, parts: locked.parts.map((part) => (part.id === joint.to ? { ...part, x: -500 } : part)) };
   assert.deepEqual(suggestSizes(apart, joint.id), { refused: 'apart' });
