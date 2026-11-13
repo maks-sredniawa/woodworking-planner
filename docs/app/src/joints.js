@@ -743,26 +743,28 @@ function hingePieces(project, joint, part, info) {
   const index = AXES.indexOf(axis);
   const low = Math.min(origin[index], origin[index] + direction[index] * length);
   const along = (value) => origin.map((coordinate, i) => (AXES[i] === axis ? value : coordinate));
-  if (joint.hingeType === 'concealed') {
-    const touch = contact(findPart(project, joint.to), part);
-    const inward = -edgeSign(info.edge);
-    const cupFromEdge = 22;
-    return spread(joint.count, low, low + length, KNUCKLE_INSET_MM).map((value) => {
-      const centre = along(value);
-      centre[AXES.indexOf(edgeAxis(info.edge))] += inward * cupFromEdge;
-      return { type: 'head', kind: 'cup', joint: joint.id, owner: part.id, centre, normal: unit(touch.axis, -touch.sign), radius: CONCEALED_CUP_MM / 2 };
-    });
-  }
-  const size = Math.min(joint.size, length);
-  const centres = joint.hingeType === 'piano' ? [low + length / 2] : spread(joint.count, low + size / 2, low + length - size / 2, KNUCKLE_INSET_MM);
-  return centres.map((centre) => ({
+  const knuckle = (centre, size, radius) => ({
     type: 'knuckle',
     joint: joint.id,
     owner: joint.to,
     from: along(centre - size / 2),
     to: along(centre + size / 2),
-    radius: joint.hingeType === 'piano' ? 3 : 5,
-  }));
+    radius,
+  });
+  if (joint.hingeType === 'concealed') {
+    const touch = contact(findPart(project, joint.to), part);
+    const inward = -edgeSign(info.edge);
+    const cupFromEdge = 22;
+    return spread(joint.count, low, low + length, KNUCKLE_INSET_MM).flatMap((value) => {
+      const centre = along(value);
+      centre[AXES.indexOf(edgeAxis(info.edge))] += inward * cupFromEdge;
+      const cup = { type: 'head', kind: 'cup', joint: joint.id, owner: part.id, centre, normal: unit(touch.axis, -touch.sign), radius: CONCEALED_CUP_MM / 2 };
+      return [cup, knuckle(value, Math.min(CONCEALED_CUP_MM, length), 3)];
+    });
+  }
+  const size = Math.min(joint.size, length);
+  if (joint.hingeType === 'piano') return [knuckle(low + length / 2, size, 3)];
+  return spread(joint.count, low + size / 2, low + length - size / 2, KNUCKLE_INSET_MM).map((centre) => knuckle(centre, size, 5));
 }
 
 function bracketPieces(joint, corner, part, to) {

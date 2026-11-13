@@ -235,6 +235,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
         hardware.add(owner);
       }
       const mesh = hardwareMesh(piece);
+      mesh.userData.type = piece.type;
       mesh.traverse((node) => {
         node.raycast = () => {};
       });
@@ -604,6 +605,10 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     fit: () => lastBox && frame(lastBox),
     look: (name) => lastBox && frame(lastBox, VIEWS[name]),
     framesDrawn: () => renderer.info.render.frame,
+    drawn: () => ({
+      hardware: hardware.children.flatMap((owner) => owner.children.map((mesh) => ({ owner: owner.userData.ownerId, type: mesh.userData.type }))),
+      hingeLine: hingeLine?.material.color.getHexString() ?? null,
+    }),
     setMeasuring: (on) => {
       measuring = on;
       readStats();

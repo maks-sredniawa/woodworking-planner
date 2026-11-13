@@ -302,6 +302,22 @@ test('hardware is placed where it sits: hinge knuckles on the hinge line, screw 
   }
 });
 
+test('a concealed hinge marks the hinge line on the frame beside each cup, like the other hinges', () => {
+  const { project: butt, joint } = hung();
+  const concealed = updateJoint(butt, joint.id, 'hingeType', 'concealed');
+  const pieces = hardwarePieces(concealed);
+  const cups = pieces.filter((piece) => piece.kind === 'cup');
+  const knuckles = pieces.filter((piece) => piece.type === 'knuckle');
+  assert.equal(cups.length, 2);
+  assert.equal(knuckles.length, 2);
+  knuckles.forEach((knuckle, i) => {
+    assert.equal(knuckle.owner, joint.to);
+    assert.deepEqual([knuckle.from[0], knuckle.from[2], knuckle.to[0], knuckle.to[2]], [0, 244, 0, 244]);
+    assert.equal(Math.abs(knuckle.to[1] - knuckle.from[1]), 35);
+    assert.equal((knuckle.from[1] + knuckle.to[1]) / 2, cups[i].centre[1]);
+  });
+});
+
 test('the hinge line follows the frame, and a locked door or assembly is pinned', () => {
   const { project: closed, joint } = hung();
   assert.deepEqual(hingeAxis(closed, joint.id), { origin: [0, 800, 244], direction: [0, -1, 0], length: 800 });

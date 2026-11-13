@@ -1426,7 +1426,7 @@ function showUnreadableSave(reason, kept) {
   $('file-error').textContent = `The project saved in this browser could not be opened. ${reason} ${copy}`;
   $('file-error').hidden = false;
 }
-window.woodworkingPlanner = { get project() { return project; }, select, framesDrawn: () => view.framesDrawn() };
+window.woodworkingPlanner = { get project() { return project; }, select, framesDrawn: () => view.framesDrawn(), drawn: () => view.drawn() };
 
 if ('serviceWorker' in navigator && isSecureContext) {
   navigator.serviceWorker.register('sw.js').catch((error) => console.warn('Working offline is not available:', error));
