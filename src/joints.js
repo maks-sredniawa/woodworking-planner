@@ -103,8 +103,10 @@ function defaultEdge(part, to, touch) {
 
 const hingeAxisOf = (touch, edge) => AXES.find((axis) => axis !== touch.axis && axis !== edgeAxis(edge));
 
-function hingeTypeDefaults(type, edgeLength, doorThickness) {
-  const screwLength = largestUpTo(SCREW_LENGTHS, doorThickness - 2);
+const thickness = (part) => Math.min(...Object.values(extents(part)));
+
+function hingeTypeDefaults(type, edgeLength, depth) {
+  const screwLength = largestUpTo(SCREW_LENGTHS, depth - 2);
   if (type === 'piano') {
     return { count: 1, size: edgeLength, screwsEach: 2 * Math.ceil(edgeLength / 100), screwDiameter: 3, screwLength, opensTo: 180 };
   }
@@ -117,7 +119,7 @@ function hingeTypeDefaults(type, edgeLength, doorThickness) {
 function hingeDefaults(meet, part, to) {
   const edge = defaultEdge(part, to, meet);
   const edgeLength = extents(part)[hingeAxisOf(meet, edge)];
-  return { hingeType: 'butt', edge, open: 0, ...hingeTypeDefaults('butt', edgeLength, extents(part)[meet.axis]) };
+  return { hingeType: 'butt', edge, open: 0, ...hingeTypeDefaults('butt', edgeLength, Math.min(thickness(part), thickness(to))) };
 }
 
 const DEFAULTS = {
@@ -339,8 +341,8 @@ export function jointProblem(project, jointId) {
     if (jammed) return jammed;
     const door = findPart(project, joint.part);
     const touch = door && findPart(project, joint.to) && contact(findPart(project, joint.to), door);
-    if (joint.hingeType === 'concealed' && touch && extents(door)[touch.axis] < CONCEALED_DOOR_MM) {
-      return `Concealed hinges need a door at least ${CONCEALED_DOOR_MM} mm thick; ${nameOf(door)} is ${roundMm(extents(door)[touch.axis])} mm.`;
+    if (joint.hingeType === 'concealed' && touch && thickness(door) < CONCEALED_DOOR_MM) {
+      return `Concealed hinges need a door at least ${CONCEALED_DOOR_MM} mm thick; ${nameOf(door)} is ${roundMm(thickness(door))} mm.`;
     }
     return null;
   }
@@ -391,15 +393,17 @@ function openAngle(project, id) {
 }
 
 export function removeJoint(project, jointId) {
-  return { ...project, joints: jointsOf(project).filter((joint) => joint.id !== jointId) };
+  const next = { ...project, joints: jointsOf(project).filter((joint) => joint.id !== jointId) };
+  return movesLockedPiece(project, next) ? project : next;
 }
 
 export function removePart(project, partId) {
-  return {
+  const next = {
     ...project,
     parts: project.parts.filter((part) => part.id !== partId),
     joints: jointsOf(project).filter((joint) => joint.part !== partId && joint.to !== partId),
   };
+  return movesLockedPiece(project, next) ? project : next;
 }
 
 const whole = (most) => (raw) => {
@@ -456,7 +460,7 @@ export function suggestedSizes(project, joint) {
   if (!meet) return null;
   if (joint.kind !== 'hinge') return { ...DEFAULTS[joint.kind](meet, part, to), ...('glued' in joint ? { glued: joint.glued } : {}) };
   const edge = hingeEdges(project, joint).includes(joint.edge) ? joint.edge : defaultEdge(part, to, meet);
-  const sizes = hingeTypeDefaults(joint.hingeType, extents(part)[hingeAxisOf(meet, edge)], extents(part)[meet.axis]);
+  const sizes = hingeTypeDefaults(joint.hingeType, extents(part)[hingeAxisOf(meet, edge)], Math.min(thickness(part), thickness(to)));
   return { ...sizes, open: Math.min(joint.open, sizes.opensTo) };
 }
 
@@ -484,26 +488,33 @@ function movesLockedPiece(before, after) {
 
 function unlessLockedMoves(project, next) {
   const result = withJoint(project, next);
-  return movesLockedPiece(project, result) ? null : result;
+  return movesLockedPiece(project, result) ? { refused: 'locked' } : { project: result };
 }
 
-export function updateJoint(project, jointId, field, raw) {
+export function changeJoint(project, jointId, field, raw) {
   const joint = jointsOf(project).find((each) => each.id === jointId);
-  if (!joint) return null;
-  const value = jointFieldValue(joint.kind, field, raw);
-  if (value === undefined) return null;
+  const value = joint && jointFieldValue(joint.kind, field, raw);
+  if (value === undefined) return { refused: 'invalid' };
   let next = { ...joint, [field]: value };
-  if (field === 'open' && value > joint.opensTo) return null;
-  if (field === 'edge' && !hingeEdges(project, joint).includes(value)) return null;
+  if (field === 'open' && value > joint.opensTo) return { refused: 'limit' };
+  if (field === 'edge' && !hingeEdges(project, joint).includes(value)) return { refused: 'invalid' };
   if (field === 'opensTo') next.open = Math.min(next.open, value);
   if (field === 'hingeType') next = { ...next, ...(suggestedSizes(withJoint(project, next), next) ?? {}) };
   return unlessLockedMoves(project, next);
 }
 
-export function applySuggestedSizes(project, jointId) {
+export function updateJoint(project, jointId, field, raw) {
+  return changeJoint(project, jointId, field, raw).project ?? null;
+}
+
+export function suggestSizes(project, jointId) {
   const joint = jointsOf(project).find((each) => each.id === jointId);
   const suggested = joint && suggestedSizes(project, joint);
-  return suggested ? unlessLockedMoves(project, { ...joint, ...suggested }) : null;
+  return suggested ? unlessLockedMoves(project, { ...joint, ...suggested }) : { refused: 'apart' };
+}
+
+export function applySuggestedSizes(project, jointId) {
+  return suggestSizes(project, jointId).project ?? null;
 }
 
 export function moveAssembly(project, id, position) {
