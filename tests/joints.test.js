@@ -262,6 +262,16 @@ test('an angle bracket goes in the inside corner under a shelf, and needs one', 
   assert.match(joinParts(project([under, stacked]), 'bracket', stacked.id, under.id).error, /inside corner/);
 });
 
+test('an angle bracket takes screws no longer than the thinner piece, and warns when they are longer', () => {
+  const left = side();
+  const board = shelf({ thickness: 12 });
+  const { project: state, joint } = joinParts(project([left, board]), 'bracket', board.id, left.id);
+  assert.equal(joint.screwLength, 12);
+  assert.equal(jointProblem(state, joint.id), null);
+  assert.equal(jointProblem(updateJoint(state, joint.id, 'screwLength', 16), joint.id), 'The screws (16) are longer than Shelf is thick (12).');
+  assert.equal(jointProblem(updateJoint(state, joint.id, 'screwLength', 20), joint.id), 'The screws (20) are longer than Shelf is thick (12).');
+});
+
 test('a door that swings through other pieces overlaps them; swung clear, it does not', () => {
   const { project: closed, joint } = hung();
   const box = makePart({ name: 'Box', length: 100, width: 100, thickness: 100, pose: legacyPose('xzy'), x: -150, y: 0, z: 250 });
