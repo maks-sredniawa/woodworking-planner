@@ -6,6 +6,7 @@ import {
   assemblyOverlaps,
   changeJoint,
   changePart,
+  changePosition,
   jointRemoval,
   partRemoval,
   removeJoint,
@@ -178,6 +179,16 @@ test('the ±10,000 mm limit on moving or turning an assembly counts where an ope
   assert.notEqual(rotateAssembly(closedLow, joint.to, 'z'), closedLow);
 });
 
+test('a typed move refused at the ±10,000 mm limit names the piece that would cross it', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  assert.equal(changePosition(open, joint.part, { x: -9990 }).piece.id, joint.part);
+  assert.equal(changePosition(open, joint.to, { x: -9990 }).piece.id, joint.part);
+  const farFrame = moveAssembly(closed, joint.to, { x: -9990 });
+  assert.equal(changePosition(farFrame, joint.part, { x: -10020 }).piece.id, joint.to);
+  assert.equal(changePosition(open, joint.part, { x: 100 }).project.parts[0].x, 100);
+});
+
 test('a piece swings on only one hinge and nothing joins a piece while its hinge is open', () => {
   const frame = side();
   const leaf = door();
@@ -320,6 +331,15 @@ test('a concealed hinge marks the hinge line on the frame beside each cup, like 
     assert.equal(Math.abs(knuckle.to[1] - knuckle.from[1]), 35);
     assert.equal((knuckle.from[1] + knuckle.to[1]) / 2, cups[i].centre[1]);
   });
+});
+
+test('a concealed hinge on a hinge line shorter than two cups keeps its knuckles on the line', () => {
+  const frame = side();
+  const short = door({ length: 60 });
+  const { project: hinged, joint } = joinParts(project([frame, short]), 'hinge', short.id, frame.id);
+  const concealed = updateJoint(updateJoint(hinged, joint.id, 'hingeType', 'concealed'), joint.id, 'count', 2);
+  const knuckles = hardwarePieces(concealed).filter((piece) => piece.type === 'knuckle');
+  assert.deepEqual(knuckles.map((knuckle) => [knuckle.from[1], knuckle.to[1]]), [[0, 35], [25, 60]]);
 });
 
 test('the hinge line follows the frame, and a locked door or assembly is pinned', () => {

@@ -857,6 +857,11 @@ try:
         expect(card.locator('summary')).to_contain_text('Screws · to Left side')
         card.locator('[data-jf=count]').fill('0')
         expect(card.locator('.joint-error')).to_contain_text('whole number')
+        before_rename = len(errors)
+        joined.fill('#editor [name=name]', 'Bottom board')
+        joined.fill('#editor [name=name]', 'Bottom')
+        assert len(errors) == before_rename, f'editing Name with a joint field still invalid threw: {errors[before_rename:]}'
+        card.locator('[data-jf=count]').fill('0')
         expect(card.locator('.joint-error')).to_have_attribute('aria-live', 'polite')
         error_id = card.locator('.joint-error').get_attribute('id')
         assert error_id, 'a joint error needs an id for aria-describedby'
@@ -1026,11 +1031,17 @@ try:
         door_card.locator('input[type=number][data-jf=open]').fill('90')
         row('Bottom').locator('.row-main').click()
         joined.fill('#editor [name=x]', '-9982')
-        expect(joined.locator('#x-error')).to_contain_text('joined to it past')
+        expect(joined.locator('#x-error')).to_contain_text('move Door, joined to it, past')
         assert spots('Bottom') == '[[18,0,0]]', f'a move that takes the open door past the limit moved the bottom: {spots("Bottom")}'
         joined.fill('#editor [name=x]', '18')
         expect(joined.locator('#x-error')).to_be_empty()
         row('Door').locator('.row-main').click()
+        door_spot = spots('Door')
+        joined.fill('#editor [name=x]', '-10000')
+        expect(joined.locator('#x-error')).to_have_text('That would move Door past ±10,000 mm.')
+        assert spots('Door') == door_spot, f'a move that takes the open door itself past the limit moved it: {spots("Door")}'
+        joined.fill('#editor [name=x]', '0')
+        expect(joined.locator('#x-error')).to_be_empty()
         door_card.locator('[data-jf-act=close]').click()
         assert hinge_open() == 0
         door_card.locator('[data-jf=hingeType]').select_option('concealed')
@@ -1044,7 +1055,7 @@ try:
         door_card.locator('[data-jf=hingeType]').select_option('butt')
         row('Bottom').locator('.row-main').click()
         joined.fill('#editor [name=x]', '-9995')
-        expect(joined.locator('#x-error')).to_contain_text('joined to it past')
+        expect(joined.locator('#x-error')).to_contain_text('move Left side, joined to it, past')
         assert spots('Bottom') == '[[18,0,0]]', f'an assembly move past the limit moved the bottom: {spots("Bottom")}'
         joined.fill('#editor [name=x]', '18')
         expect(joined.locator('#x-error')).to_be_empty()

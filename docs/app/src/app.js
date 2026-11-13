@@ -23,6 +23,7 @@ import {
   JOINT_KINDS,
   changeJoint,
   changePart,
+  changePosition,
   assemblyOverlaps,
   dragMode,
   hardwareList,
@@ -726,7 +727,7 @@ function sideError(part, side, value) {
 const fieldError = (part, input) => FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.';
 
 function pendingFields(changed) {
-  return [...$('editor').querySelectorAll('[aria-invalid="true"]')]
+  return [...$('editor').querySelectorAll('[name][aria-invalid="true"]')]
     .filter((field) => field !== changed)
     .map((field) => ({ field, typed: field.value }));
 }
@@ -1226,13 +1227,14 @@ $('editor').addEventListener('input', (event) => {
   }
   const pending = pendingFields(input);
   if (next && ['x', 'y', 'z'].includes(input.name)) {
-    const moved = moveAssembly(project, part.id, { [input.name]: next[input.name] });
-    if (moved === project && next[input.name] !== part[input.name]) {
-      showFieldError(input, `That would move a piece joined to it past ±${mm(MAX_SIZE_MM)} mm.`);
+    const move = changePosition(project, part.id, { [input.name]: next[input.name] });
+    if (move.refused) {
+      const name = move.piece.name || 'Unnamed';
+      showFieldError(input, `That would move ${move.piece.id === part.id ? name : `${name}, joined to it,`} past ±${mm(MAX_SIZE_MM)} mm.`);
       return;
     }
     showFieldError(input, null);
-    if (moved !== project) commit(moved, `${part.id}:${input.name}`);
+    commit(move.project, `${part.id}:${input.name}`);
   } else if (next) {
     const result = replacePart(next, typed ? input.name : null);
     if (result.refused) {
@@ -1255,6 +1257,7 @@ function refusePartEdit(input, message, typed) {
 
 function announceFieldError(input, message) {
   const note = $(`${input.name}-error`);
+  if (!note) return;
   announce(note, message);
   markInvalid(input, note, message);
 }
