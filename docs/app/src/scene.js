@@ -58,6 +58,9 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
   const hardware = new THREE.Group();
   scene.add(hardware);
   let hingeLine = null;
+  const xray = new THREE.Group();
+  xray.renderOrder = 2;
+  scene.add(xray);
   let placementOf = () => NO_PLACEMENT;
   const grain = new Map();
   let selectedId = null;
@@ -191,7 +194,25 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     return mesh;
   }
 
+  function boxFrom(piece) {
+    const size = piece.max.map((value, i) => value - piece.min[i]);
+    return new THREE.BoxGeometry(...size).translate(...piece.min.map((value, i) => value + size[i] / 2));
+  }
+
+  function hiddenWood(piece) {
+    const color = SPECIES[piece.species].color;
+    const offset = { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 };
+    const material = potato
+      ? new THREE.MeshLambertMaterial({ color, ...offset })
+      : new THREE.MeshStandardMaterial({ map: grainTexture(piece.species), roughness: 0.75, metalness: 0, ...offset });
+    const geometry = boxFrom(piece);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: COUNTERSINK })));
+    return mesh;
+  }
+
   function hardwareMesh(piece) {
+    if (piece.type === 'wood') return hiddenWood(piece);
     if (piece.type === 'head') {
       const group = new THREE.Group();
       if (piece.kind === 'screws' && !potato) group.add(disc(piece.radius * 1.4, 0.4, piece.centre, piece.normal, COUNTERSINK));
@@ -260,6 +281,43 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     scene.add(hingeLine);
   }
 
+  function dowelOutline(piece) {
+    const from = new THREE.Vector3(...piece.from);
+    const to = new THREE.Vector3(...piece.to);
+    const along = to.clone().sub(from).normalize();
+    const side = new THREE.Vector3().crossVectors(along, Math.abs(along.y) < 0.9 ? AXIS.y : AXIS.x).normalize().multiplyScalar(piece.radius);
+    const up = new THREE.Vector3().crossVectors(along, side);
+    const ring = (centre, step) => {
+      const angle = (step / 12) * Math.PI * 2;
+      return centre.clone().addScaledVector(side, Math.cos(angle)).addScaledVector(up, Math.sin(angle));
+    };
+    const points = [];
+    for (const centre of [from, to]) for (let step = 0; step < 12; step++) points.push(ring(centre, step), ring(centre, step + 1));
+    for (let step = 0; step < 12; step += 3) points.push(ring(from, step), ring(to, step));
+    return new THREE.BufferGeometry().setFromPoints(points);
+  }
+
+  function boxEdges(piece) {
+    const box = boxFrom(piece);
+    const edges = new THREE.EdgesGeometry(box);
+    box.dispose();
+    return edges;
+  }
+
+  function showXray(pieces) {
+    for (const child of [...xray.children]) disposeTree(child);
+    xray.clear();
+    for (const piece of pieces) {
+      const geometry = piece.type === 'dowel' ? dowelOutline(piece) : boxEdges(piece);
+      const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: theme.select, depthTest: false }));
+      lines.renderOrder = 2;
+      lines.raycast = () => {};
+      lines.matrixAutoUpdate = false;
+      lines.matrix.copy(placementMatrix(placementOf(piece.owner)));
+      xray.add(lines);
+    }
+  }
+
   function place(parts, extras = {}) {
     lastParts = parts;
     lastExtras = extras;
@@ -271,6 +329,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     }
     buildHardware(extras.hardware ?? []);
     showHingeLine(extras.hingeLine ?? null);
+    showXray(extras.xray ?? []);
     invalidate();
   }
 
@@ -345,6 +404,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     for (const part of parts) boards.add(boardMesh(part));
     buildHardware(extras.hardware ?? []);
     showHingeLine(extras.hingeLine ?? null);
+    showXray(extras.xray ?? []);
     paintSelection();
     const box = projectBounds(parts) ?? { min: { x: -500, y: 0, z: -500 }, max: { x: 500, y: 500, z: 500 } };
     placeGroundAndLight(box);
@@ -381,6 +441,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     }
     if (lastBox) placeGroundAndLight(lastBox);
     if (hingeLine) hingeLine.material.color.set(theme.select);
+    for (const lines of xray.children) lines.material.color.set(theme.select);
     paintSelection();
   }
 

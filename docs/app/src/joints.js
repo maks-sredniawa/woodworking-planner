@@ -957,6 +957,47 @@ function bracketPieces(joint, corner, part, to) {
   return plates;
 }
 
+const middleOf = ([low, high]) => (low + high) / 2;
+const corners = (box) => ({ min: AXES.map((axis) => Math.min(...box[axis])), max: AXES.map((axis) => Math.max(...box[axis])) });
+
+function dowelTraces(joint, { part, to, touch }) {
+  const { axis, sign, at: plane, region } = touch;
+  const [long, short] = Object.keys(region).sort((a, b) => region[b][1] - region[b][0] - (region[a][1] - region[a][0]));
+  const intoTo = Math.min(holeDepth(to, axis), Math.max(joint.length / 2, joint.length - holeDepth(part, axis)));
+  const ends = [plane - sign * (joint.length - intoTo), plane + sign * intoTo];
+  return spread(joint.count, ...region[long], 25).map((value) => {
+    const [from, end] = ends.map((coordinate) => at({ [axis]: coordinate, [long]: value, [short]: middleOf(region[short]) }));
+    return { type: 'dowel', owner: part.id, from, to: end, radius: joint.diameter / 2 };
+  });
+}
+
+function cutPieces(project, joint) {
+  const cut = cutJoint(project, joint);
+  if (!cut) return { wood: [], xray: [] };
+  if (joint.kind === 'dowels') return { wood: [], xray: dowelTraces(joint, cut) };
+  const { part, to, touch, reach } = cut;
+  const { axis, sign, at: plane, region } = touch;
+  const across = poseAxes(part.pose).thickness[1];
+  const along = AXES.find((each) => each !== axis && each !== across);
+  const box = { [axis]: [plane, plane + sign * reach], [across]: region[across], [along]: region[along] };
+  if (joint.kind === 'tenon') {
+    box[across] = [middleOf(region[across]) - joint.thickness / 2, middleOf(region[across]) + joint.thickness / 2];
+    box[along] = [middleOf(region[along]) - joint.width / 2, middleOf(region[along]) + joint.width / 2];
+  }
+  const end = corners(box);
+  const wood = [{ type: 'wood', joint: joint.id, owner: part.id, species: part.species, ...end }];
+  if (joint.kind === 'tenon') return { wood, xray: [{ type: 'box', owner: part.id, ...end }] };
+  const housing = bounds(to);
+  const groove = corners({ ...box, [along]: [housing.min[along], housing.max[along]] });
+  return { wood, xray: [{ type: 'box', owner: to.id, ...groove }] };
+}
+
+export function joineryXray(project, id) {
+  return jointsOf(project)
+    .filter((joint) => joint.part === id || joint.to === id)
+    .flatMap((joint) => cutPieces(project, joint).xray);
+}
+
 export function hardwarePieces(project) {
   const mech = mechanism(project);
   return jointsOf(project).flatMap((joint) => {
@@ -966,6 +1007,7 @@ export function hardwarePieces(project) {
     if (!touch) return [];
     if (joint.kind === 'screws' || joint.kind === 'nails') return headsFor(joint, part, to, touch);
     if (joint.kind === 'hinge') return hingePieces(project, joint, part, mech.hinges.get(joint.id));
+    if (CUT_KINDS.includes(joint.kind)) return cutPieces(project, joint).wood;
     if (joint.kind === 'bracket') {
       const corner = insideCorner(to, part);
       return corner ? bracketPieces(joint, corner, part, to) : [];

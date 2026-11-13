@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cutList, legacyPose, makePart, makeShape, totals } from '../docs/app/src/model.js';
-import { changeJoint, changePart, cutAllowances, hardwareList, jointProblem, joinParts, suggestedSizes, updateJoint } from '../docs/app/src/joints.js';
+import { assemblyOverlaps, changeJoint, changePart, cutAllowances, hardwareList, hardwarePieces, jointProblem, joineryXray, joinParts, suggestedSizes, updateJoint } from '../docs/app/src/joints.js';
 
 const leg = (fields = {}) => makePart({ name: 'Leg', length: 700, width: 45, thickness: 45, pose: legacyPose('yzx'), ...fields });
 const rail = (fields = {}) => makePart({ name: 'Rail', length: 600, width: 80, thickness: 24, pose: legacyPose('xyz'), x: 45, y: 600, z: 10, ...fields });
@@ -184,4 +184,37 @@ test('dowels are listed as dowel pins and glued cut joints as wood glue', () => 
       [null, 'Wood glue', null, ['Side – Shelf', 'Shelf – Side']],
     ],
   );
+});
+
+test('the tenon is drawn in the rail’s wood reaching into the leg, and traced when either piece is picked', () => {
+  const project = tenoned();
+  const [left, middle, right] = project.parts;
+  const wood = hardwarePieces(project).filter((piece) => piece.type === 'wood');
+  assert.deepEqual(wood.map(({ owner, species, min, max }) => ({ owner, species, min, max })), [
+    { owner: middle.id, species: 'pine', min: [15, 610, 18], max: [45, 670, 26] },
+  ]);
+  assert.deepEqual(joineryXray(project, left.id), [{ type: 'box', owner: middle.id, min: [15, 610, 18], max: [45, 670, 26] }]);
+  assert.deepEqual(joineryXray(project, middle.id), joineryXray(project, left.id));
+  assert.deepEqual(joineryXray(project, right.id), []);
+  assert.deepEqual(assemblyOverlaps(project), [], 'pieces in a cut joint do not overlap');
+});
+
+test('a dado draws the housed end and traces the groove right across the side', () => {
+  const housed = case_();
+  const project = joinParts(housed, 'dado', housed.parts[0].id, housed.parts[1].id).project;
+  const [wood] = hardwarePieces(project).filter((piece) => piece.type === 'wood');
+  assert.deepEqual([wood.min, wood.max], [[12, 300, 0], [18, 318, 244]]);
+  assert.deepEqual(joineryXray(project, project.parts[1].id), [{ type: 'box', owner: project.parts[0].id, min: [12, 300, 0], max: [18, 318, 244] }]);
+});
+
+test('dowels are traced as cylinders across the joint line and are not drawn otherwise', () => {
+  const housed = case_();
+  const project = joinParts(housed, 'dowels', housed.parts[0].id, housed.parts[1].id).project;
+  assert.deepEqual(hardwarePieces(project), []);
+  const traced = joineryXray(project, project.parts[0].id);
+  assert.equal(traced.length, 4);
+  assert.ok(traced.every((piece) => piece.type === 'dowel' && piece.radius === 4));
+  const [first] = traced;
+  assert.deepEqual([first.from[0], first.to[0]], [6, 46], 'the side takes what its 18 can hold (12), the shelf the rest');
+  assert.ok(traced.every((piece) => piece.from[1] === 309 && piece.to[1] === 309));
 });
