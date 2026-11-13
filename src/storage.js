@@ -1,4 +1,4 @@
-import { parseProject, serialize } from './model.js';
+import { parseProject, serialize } from './project.js';
 
 const KEY = 'woodworking-planner:project';
 const UNREADABLE_KEY = 'woodworking-planner:unreadable-project';

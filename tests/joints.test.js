@@ -1,0 +1,269 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { legacyPose, makePart, projectBounds, rotatePart } from '../src/model.js';
+import {
+  assemblyOverlaps,
+  contact,
+  dragMode,
+  hingeAxis,
+  hardwareList,
+  hardwarePieces,
+  insideCorner,
+  hingeEdges,
+  jointProblem,
+  joinParts,
+  moveAssembly,
+  rotateAssembly,
+  swingingHinge,
+  touchingParts,
+  updateJoint,
+  worldBounds,
+} from '../src/joints.js';
+
+const side = (fields = {}) =>
+  makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx'), ...fields });
+const shelf = (fields = {}) =>
+  makePart({ name: 'Shelf', length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 300, ...fields });
+
+test('a shelf butted against a side touches it across the side face', () => {
+  const left = side();
+  const board = shelf();
+  assert.deepEqual(contact(left, board), {
+    axis: 'x',
+    sign: 1,
+    at: 18,
+    region: { y: [300, 318], z: [0, 244] },
+  });
+  assert.equal(contact(board, left).sign, -1);
+});
+
+test('pieces that only share an edge, sit apart or cross do not touch', () => {
+  const left = side();
+  assert.equal(contact(left, shelf({ y: 1000 })), null);
+  assert.equal(contact(left, shelf({ x: 19 })), null);
+  assert.equal(contact(left, shelf({ x: 10 })), null);
+});
+
+test('touching pieces lists only the pieces that touch the given one', () => {
+  const left = side();
+  const board = shelf();
+  const far = shelf({ name: 'Far', x: 2000 });
+  assert.deepEqual(
+    touchingParts([left, board, far], board.id).map((part) => part.name),
+    ['Side'],
+  );
+});
+
+const project = (parts, joints = []) => ({ name: 'Test', parts, joints });
+
+test('joining two touching pieces adds a joint with defaults sized from the pieces', () => {
+  const left = side();
+  const board = shelf();
+  const result = joinParts(project([left, board]), 'screws', board.id, left.id);
+  assert.equal(result.error, undefined);
+  assert.equal(result.project.joints.length, 1);
+  const [joint] = result.project.joints;
+  assert.equal(joint.kind, 'screws');
+  assert.equal(joint.part, board.id);
+  assert.equal(joint.to, left.id);
+  assert.deepEqual([joint.count, joint.diameter, joint.length], [2, 4, 45]);
+});
+
+test('pieces that do not touch, or are already joined, cannot be joined', () => {
+  const left = side();
+  const board = shelf({ x: 40 });
+  assert.match(joinParts(project([left, board]), 'glue', board.id, left.id).error, /don’t touch/);
+  const touching = shelf();
+  const once = joinParts(project([left, touching]), 'glue', touching.id, left.id).project;
+  assert.match(joinParts(once, 'screws', left.id, touching.id).error, /already joined/);
+});
+
+test('moving any piece of an assembly moves every piece joined to it', () => {
+  const left = side();
+  const board = shelf();
+  const loose = shelf({ name: 'Loose', x: 2000 });
+  const joined = joinParts(project([left, board, loose]), 'glue', board.id, left.id).project;
+  const moved = moveAssembly(joined, board.id, { x: 118, y: 350 });
+  const by = Object.fromEntries(moved.parts.map((part) => [part.name, [part.x, part.y, part.z]]));
+  assert.deepEqual(by, { Side: [100, 50, 0], Shelf: [118, 350, 0], Loose: [2000, 300, 0] });
+});
+
+test('an assembly with a locked piece does not move', () => {
+  const left = side({ locked: true });
+  const board = shelf();
+  const joined = joinParts(project([left, board]), 'nails', board.id, left.id).project;
+  assert.equal(moveAssembly(joined, board.id, { x: 500 }), joined);
+});
+
+const door = (fields = {}) =>
+  makePart({ name: 'Door', length: 800, width: 400, thickness: 18, pose: legacyPose('yxz'), z: 244, ...fields });
+const hung = () => {
+  const frame = side();
+  const leaf = door();
+  return joinParts(project([frame, leaf]), 'hinge', leaf.id, frame.id);
+};
+
+test('a door hinged to a side hangs on its left edge with two butt hinges, closed', () => {
+  const { joint, error } = hung();
+  assert.equal(error, undefined);
+  assert.equal(joint.edge, '-x');
+  assert.equal(joint.open, 0);
+  assert.deepEqual(
+    [joint.hingeType, joint.count, joint.size, joint.screwsEach, joint.screwDiameter, joint.screwLength, joint.opensTo],
+    ['butt', 2, 75, 6, 3.5, 16, 180],
+  );
+});
+
+test('opening the hinge swings the door out to the front around its left edge', () => {
+  const { project: closed, joint } = hung();
+  const doorId = joint.part;
+  assert.deepEqual(worldBounds(closed, doorId), { min: { x: 0, y: 0, z: 244 }, max: { x: 400, y: 800, z: 262 } });
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  assert.deepEqual(worldBounds(open, doorId), { min: { x: -18, y: 0, z: 244 }, max: { x: 0, y: 800, z: 644 } });
+  assert.equal(updateJoint(closed, joint.id, 'open', 181), null);
+});
+
+test('moving the frame carries the open door with it, dragging the door swings it', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  const moved = moveAssembly(open, joint.to, { x: 100 });
+  assert.deepEqual(worldBounds(moved, joint.part).min, { x: 82, y: 0, z: 244 });
+  assert.equal(swingingHinge(open, joint.part)?.id, joint.id);
+  assert.equal(swingingHinge(open, joint.to), null);
+});
+
+test('a piece swings on only one hinge and nothing joins a piece while its hinge is open', () => {
+  const frame = side();
+  const leaf = door();
+  const right = side({ name: 'Right side', x: 382 });
+  const handle = makePart({ name: 'Handle', length: 100, width: 20, thickness: 20, pose: legacyPose('yxz'), x: 350, y: 300, z: 262 });
+  const hinged = joinParts(project([frame, leaf, right, handle]), 'hinge', leaf.id, frame.id);
+  assert.match(joinParts(hinged.project, 'hinge', leaf.id, right.id).error, /already swings on a hinge/);
+  const open = updateJoint(hinged.project, hinged.joint.id, 'open', 30);
+  assert.match(joinParts(open, 'glue', handle.id, leaf.id).error, /Close it first/);
+});
+
+test('a hinge cannot swing when the door is also fixed to the frame through another piece', () => {
+  const frame = side();
+  const leaf = door({ length: 1000 });
+  const top = makePart({ name: 'Top', length: 400, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 982 });
+  let state = project([frame, leaf, top]);
+  const hinge = joinParts(state, 'hinge', leaf.id, frame.id);
+  state = joinParts(hinge.project, 'screws', top.id, frame.id).project;
+  state = joinParts(state, 'screws', leaf.id, top.id).project;
+  state = updateJoint(state, hinge.joint.id, 'open', 90);
+  assert.match(jointProblem(state, hinge.joint.id), /Can’t swing: Door is also fixed to Side through Top/);
+  assert.deepEqual(worldBounds(state, leaf.id).min, { x: 0, y: 0, z: 244 });
+});
+
+test('turning a piece of an assembly turns the whole assembly about its footprint, hinge and all', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 40);
+  const turned = rotateAssembly(open, joint.to, 'y');
+  const [frame, leaf] = turned.parts;
+  assert.ok(contact(frame, leaf), 'the door still touches the side');
+  assert.deepEqual(projectBounds(turned.parts), { min: { x: 69, y: 0, z: -69 }, max: { x: 331, y: 1000, z: 331 } });
+  const hinge = turned.joints[0];
+  assert.equal(hinge.open, 40);
+  assert.notEqual(hinge.edge, joint.edge);
+  assert.deepEqual(hingeEdges(turned, hinge).includes(hinge.edge), true);
+  const tipped = rotateAssembly(closed, joint.part, 'x');
+  assert.equal(projectBounds(tipped.parts).min.y, 0);
+});
+
+test('turning a piece that is not joined turns only that piece, as before', () => {
+  const loose = shelf();
+  const state = project([loose, side()]);
+  assert.deepEqual(rotateAssembly(state, loose.id, 'y').parts[0], rotatePart(loose, 'y'));
+});
+
+test('an angle bracket goes in the inside corner under a shelf, and needs one', () => {
+  const left = side();
+  const board = shelf();
+  const { joint } = joinParts(project([left, board]), 'bracket', board.id, left.id);
+  assert.deepEqual([joint.count, joint.leg, joint.width, joint.screwsEach, joint.screwDiameter, joint.screwLength], [2, 40, 16, 4, 3.5, 16]);
+  assert.deepEqual(insideCorner(left, board), { axis: 'x', at: 18, across: 'y', edge: 300, side: -1, along: 'z', span: [0, 244], base: left.id, standing: board.id });
+  const under = makePart({ name: 'Under', length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 282 });
+  const stacked = makePart({ name: 'Stacked', length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 300 });
+  assert.match(joinParts(project([under, stacked]), 'bracket', stacked.id, under.id).error, /inside corner/);
+});
+
+test('a door swung into another piece overlaps it; swung clear, it does not', () => {
+  const { project: closed, joint } = hung();
+  const box = makePart({ name: 'Box', length: 100, width: 100, thickness: 100, pose: legacyPose('xzy'), x: -150, y: 0, z: 250 });
+  const state = { ...closed, parts: [...closed.parts, box] };
+  assert.deepEqual(assemblyOverlaps(state), []);
+  assert.deepEqual(assemblyOverlaps(updateJoint(state, joint.id, 'open', 90)), []);
+  assert.deepEqual(assemblyOverlaps(updateJoint(state, joint.id, 'open', 150)), [[joint.part, box.id]]);
+});
+
+test('the hardware list counts and sizes every fixing, screws from brackets and hinges included', () => {
+  const left = side();
+  const board = shelf();
+  const lower = shelf({ name: 'Lower', y: 100 });
+  const leaf = door();
+  const back = makePart({ name: 'Back', length: 1000, width: 400, thickness: 6, pose: legacyPose('yxz'), z: -6 });
+  let state = project([left, board, lower, leaf, back]);
+  const screwed = joinParts(state, 'screws', board.id, left.id);
+  state = updateJoint(screwed.project, screwed.joint.id, 'glued', true);
+  state = joinParts(state, 'bracket', lower.id, left.id).project;
+  state = joinParts(state, 'hinge', leaf.id, left.id).project;
+  state = joinParts(state, 'nails', back.id, left.id).project;
+  assert.deepEqual(
+    hardwareList(state).map(({ item, size, count, usedOn }) => [count, item, size, usedOn]),
+    [
+      [2, 'Butt hinge', [75], ['Door – Side']],
+      [2, 'Angle bracket', [40, 40, 16], ['Lower – Side']],
+      [20, 'Screw', [3.5, 16], ['Lower – Side', 'Door – Side']],
+      [2, 'Screw', [4, 45], ['Shelf – Side']],
+      [10, 'Nail', [1.2, 15], ['Back – Side']],
+      [null, 'Wood glue', null, ['Shelf – Side']],
+    ],
+  );
+});
+
+test('hardware is placed where it sits: hinge knuckles on the hinge line, screw heads on the outside face', () => {
+  const { project: hinged, joint } = hung();
+  const knuckles = hardwarePieces(hinged).filter((piece) => piece.type === 'knuckle');
+  assert.equal(knuckles.length, 2);
+  for (const knuckle of knuckles) {
+    assert.equal(knuckle.owner, joint.to);
+    assert.deepEqual([knuckle.from[0], knuckle.from[2], knuckle.to[0], knuckle.to[2]], [0, 244, 0, 244]);
+    assert.equal(Math.abs(knuckle.to[1] - knuckle.from[1]), 75);
+  }
+  assert.ok(knuckles[0].from[1] > 0 && knuckles[1].to[1] < 800 && knuckles[1].to[1] > 600);
+
+  const left = side();
+  const board = shelf();
+  const screwed = joinParts(project([left, board]), 'screws', board.id, left.id).project;
+  const heads = hardwarePieces(screwed).filter((piece) => piece.type === 'head');
+  assert.equal(heads.length, 2);
+  for (const head of heads) {
+    assert.equal(head.owner, left.id);
+    assert.deepEqual([head.centre[0], head.centre[1], head.normal], [0, 309, [-1, 0, 0]]);
+  }
+});
+
+test('the hinge line follows the frame, and a locked door or assembly is pinned', () => {
+  const { project: closed, joint } = hung();
+  assert.deepEqual(hingeAxis(closed, joint.id), { origin: [0, 800, 244], direction: [0, -1, 0], length: 800 });
+  const moved = moveAssembly(closed, joint.to, { x: 100 });
+  assert.deepEqual(hingeAxis(moved, joint.id).origin, [100, 800, 244]);
+  const lockedDoor = { ...closed, parts: closed.parts.map((part) => (part.id === joint.part ? { ...part, locked: true } : part)) };
+  assert.equal(dragMode(closed, joint.part), 'swing');
+  assert.equal(dragMode(closed, joint.to), 'move');
+  assert.equal(dragMode(lockedDoor, joint.part), 'none');
+  assert.equal(dragMode(lockedDoor, joint.to), 'none');
+  assert.equal(updateJoint(lockedDoor, joint.id, 'open', 20), null);
+});
+
+test('concealed hinges warn on a door thinner than 16 mm but still swing', () => {
+  const frame = side();
+  const thin = door({ thickness: 12 });
+  const { project: hinged, joint } = joinParts(project([frame, thin]), 'hinge', thin.id, frame.id);
+  const concealed = updateJoint(hinged, joint.id, 'hingeType', 'concealed');
+  assert.equal(concealed.joints[0].opensTo, 110);
+  assert.match(jointProblem(concealed, joint.id), /at least 16 mm thick/);
+  assert.equal(dragMode(concealed, thin.id), 'swing');
+  assert.equal(jointProblem(hinged, joint.id), null);
+});
