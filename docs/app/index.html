@@ -76,6 +76,7 @@
         <button type="button" data-add-shape="dowel" aria-label="Add dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
         <button type="button" data-add-shape="arc" aria-label="Add arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
         <button type="button" data-add-shape="triangle" aria-label="Add triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
+        <button type="button" data-add-shape="free" aria-label="Add free shape"><svg class="choice-icon pentagon" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M9 2.5 15.5 7.2 13 15H5L2.5 7.2Z"/></svg>Free</button>
       </div>
     </div>
     <ul id="parts" class="list"></ul>
@@ -122,11 +123,16 @@
           <label class="choice"><input type="radio" name="shape" value="dowel" data-geometry><span class="choice-icon" aria-hidden="true">━</span><span>Dowel</span></label>
           <label class="choice"><input type="radio" name="shape" value="arc" data-geometry><span class="choice-icon" aria-hidden="true">◜</span><span>Arc</span></label>
           <label class="choice"><input type="radio" name="shape" value="triangle" data-geometry><span class="choice-icon" aria-hidden="true">◺</span><span>Triangle</span></label>
+          <label class="choice"><input type="radio" name="shape" value="free" data-geometry><svg class="choice-icon pentagon" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M9 2.5 15.5 7.2 13 15H5L2.5 7.2Z"/></svg><span>Free</span></label>
         </div>
         <p id="shape-error" class="field-error" aria-live="polite"></p>
       </fieldset>
       <fieldset>
         <legend>Size (mm)</legend>
+        <div id="free-box" class="free-box" hidden>
+          <div class="free-pick"><svg id="free-preview" class="free-preview" aria-hidden="true" focusable="false"><path></path></svg></div>
+          <button type="button" id="edit-outline" class="edit-outline">Edit outline…</button>
+        </div>
         <div class="trio" id="sizes">
           <div class="field" data-field="length"><label>Length <input name="length" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="length-error" class="field-error" aria-live="polite"></p></div>
           <div class="field" data-field="width"><label>Width <input name="width" data-geometry class="num" type="number" min="0.1" step="any" inputmode="decimal"></label><p id="width-error" class="field-error" aria-live="polite"></p></div>
@@ -212,8 +218,48 @@
     <button type="button" data-add-shape="dowel" aria-label="Add dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
     <button type="button" data-add-shape="arc" aria-label="Add arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
     <button type="button" data-add-shape="triangle" aria-label="Add triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
+    <button type="button" data-add-shape="free" aria-label="Add free shape"><svg class="choice-icon pentagon" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M9 2.5 15.5 7.2 13 15H5L2.5 7.2Z"/></svg>Free</button>
   </div>
 </div>
+<dialog id="outline-dialog" class="outline-dialog" aria-labelledby="outline-title">
+  <div class="pane-h outline-head"><h2 id="outline-title">Outline</h2></div>
+  <div class="outline-draw">
+    <svg id="outline-svg" class="outline-svg" tabindex="0" role="application" aria-roledescription="drawing" aria-label="Outline drawing. Arrow keys move the picked point. The points table below does the same with numbers."></svg>
+    <div id="outline-chip" class="outline-chip" hidden></div>
+    <p id="outline-draw-help" class="help outline-draw-help" hidden>Draw the outline in one stroke. Lift to finish.</p>
+  </div>
+  <div class="outline-tools">
+    <div class="tool-group" role="group" aria-label="Points">
+      <button type="button" id="outline-add">Add point</button>
+      <button type="button" id="outline-remove">Remove point</button>
+      <button type="button" id="outline-straighten">Straighten</button>
+      <button type="button" id="outline-draw" aria-pressed="false" title="Draw the whole outline freehand in one stroke">Draw</button>
+    </div>
+    <div class="tool-group" role="group" aria-label="Outline history">
+      <button type="button" id="outline-undo" title="Undo (Ctrl+Z)">Undo</button>
+      <button type="button" id="outline-redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+      <button type="button" id="outline-snap" aria-pressed="true" title="Points land on a 10 mm grid while dragging (hold Alt for the opposite)">Snap</button>
+    </div>
+    <p id="outline-problem" class="field-error" aria-live="polite"></p>
+    <p id="outline-note" class="field-error" aria-live="polite"></p>
+  </div>
+  <div class="outline-side fields">
+    <div class="points-head" aria-hidden="true"><span>#</span><span>From left (mm)</span><span>From bottom (mm)</span><span>Bend (mm)</span></div>
+    <ol id="outline-points" class="points"></ol>
+    <p class="help">Drag a point to move it. Drag the small diamond in the middle of an edge to curve that edge. Bend is how far the curve bulges.</p>
+  </div>
+  <div class="outline-foot">
+    <div id="outline-actions" class="outline-actions">
+      <button type="button" id="outline-cancel">Cancel</button>
+      <button type="button" id="outline-done" class="primary">Done</button>
+    </div>
+    <div id="outline-discard" class="outline-actions outline-discard" hidden>
+      <p>Discard the changes to this outline?</p>
+      <button type="button" id="outline-discard-yes" class="danger">Discard</button>
+      <button type="button" id="outline-keep">Keep editing</button>
+    </div>
+  </div>
+</dialog>
 <script type="module" src="src/app.js"></script>
 </body>
 </html>

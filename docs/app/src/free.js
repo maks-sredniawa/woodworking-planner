@@ -216,18 +216,35 @@ export function setBend(points, i, bend) {
   return points.map((each, k) => (k === i ? { ...each, bend: round(bend) } : each));
 }
 
-export function addPoint(points, i) {
+export function insertPoint(points, i, [x, y]) {
   const a = points[i];
-  const [x, y] = apex(points, i);
-  const split = (bend) => {
-    if (!bend) return 0;
-    const { radius, half } = circle(points, i);
-    const quarter = Math.atan(Math.abs(bend) / half);
-    return Math.sign(bend) * radius * (1 - Math.cos(quarter));
+  const b = next(points, i);
+  let at;
+  if (a.bend && halfEdge(points, i)) {
+    const { cx, cy, radius } = circle(points, i);
+    const [ax, ay] = apex(points, i);
+    const toward = Math.hypot(x - cx, y - cy) ? [x - cx, y - cy] : [ax - cx, ay - cy];
+    const length = Math.hypot(...toward);
+    at = [cx + (toward[0] / length) * radius, cy + (toward[1] / length) * radius];
+  } else {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    at = [a.x + t * dx, a.y + t * dy];
+  }
+  const added = { x: round(at[0]), y: round(at[1]), bend: 0 };
+  const sagitta = (from, to) => {
+    if (!a.bend) return 0;
+    const { radius } = circle(points, i);
+    const half = Math.hypot(to.x - from.x, to.y - from.y) / 2;
+    return Math.sign(a.bend) * (radius - Math.sqrt(Math.max(0, radius * radius - half * half)));
   };
-  const halfBend = round(split(a.bend));
-  const added = { x: round(x), y: round(y), bend: halfBend };
-  return [...points.slice(0, i), { ...a, bend: halfBend }, added, ...points.slice(i + 1)];
+  const first = { ...a, bend: round(sagitta(a, added)) };
+  return fitBends([...points.slice(0, i), first, { ...added, bend: round(sagitta(added, b)) }, ...points.slice(i + 1)]);
+}
+
+export function addPoint(points, i) {
+  return insertPoint(points, i, apex(points, i));
 }
 
 export function removePoint(points, i) {

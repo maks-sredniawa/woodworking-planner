@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SHAPES, blank, cutList, extents, faceArea, makePart, makeShape, outline, pieceVolume, updatePart } from '../docs/app/src/model.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
-import { addPoint, area, bendToward, fromStroke, movePoint, outlineProblem, removePoint, winding } from '../docs/app/src/free.js';
+import { addPoint, area, insertPoint, bendToward, fromStroke, movePoint, outlineProblem, removePoint, winding } from '../docs/app/src/free.js';
 
 const close = (actual, expected, tolerance = 1e-6) =>
   assert.ok(Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected)), `${actual} is not ${expected}`);
@@ -158,4 +158,14 @@ test('a hand-drawn stroke becomes a few points, with bends where it curves', () 
   const zigzag = Array.from({ length: 400 }, (_, i) => [i * 5, i % 2 ? 40 + i : i]);
   assert.ok(fromStroke(zigzag).length <= 24);
   assert.equal(fromStroke([[0, 0], [5, 0], [5, 40], [0, 40]]), null, 'too small to be an outline');
+});
+
+test('a point added on an edge lands where it was asked, and a curved edge stays on its circle', () => {
+  const square = pts([0, 0], [400, 0], [400, 300], [0, 300]);
+  assert.deepEqual(insertPoint(square, 0, [100, 7]).map(({ x, y }) => [x, y]), [[0, 0], [100, 0], [400, 0], [400, 300], [0, 300]]);
+  const disc = updatePart(makeShape('disc'), 'shape', 'free').points;
+  const split = insertPoint(disc, 0, [380, 60]);
+  close(area(split), area(disc), 1e-3);
+  const [x, y] = [split[1].x - 200, split[1].y - 200];
+  close(Math.hypot(x, y), 200, 1e-3);
 });
