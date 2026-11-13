@@ -190,10 +190,11 @@ export function outlineProblem(points, maxSize) {
       if (Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y) < SAME_PLACE_MM) return { kind: 'together', points: [i, j] };
     }
   }
-  if (area(points) < 1) return { kind: 'flat' };
+  const straight = points.every((each) => !each.bend);
+  if (straight && Math.abs(chordArea(points)) < 1) return { kind: 'flat' };
   const crossed = crossing(points);
   if (crossed) return { kind: 'crossing', edges: crossed };
-  return null;
+  return area(points) < 1 ? { kind: 'flat' } : null;
 }
 
 function clampBend(points, i) {
@@ -281,7 +282,11 @@ function simplify(line, tolerance) {
     walk(from, far);
     walk(far, to);
   };
-  walk(0, line.length - 1);
+  const last = line.length - 1;
+  const far = line.reduce((best, p, k) => (Math.hypot(p[0] - line[0][0], p[1] - line[0][1]) > Math.hypot(line[best][0] - line[0][0], line[best][1] - line[0][1]) ? k : best), 0);
+  keep.add(far);
+  walk(0, far);
+  walk(far, last);
   return [...keep].sort((a, b) => a - b);
 }
 
