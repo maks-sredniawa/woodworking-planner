@@ -696,10 +696,11 @@ export function changeJoint(project, jointId, field, raw) {
   if (value === undefined) return { refused: 'invalid' };
   let next = { ...joint, [field]: value };
   if (field === 'open' && value > joint.opensTo) return { refused: 'limit' };
-  const stop = field === 'open' ? swingStop(project, jointId) : null;
-  if (stop && value > stop.angle) {
-    const result = unlessLockedMoves(project, { ...next, open: stop.angle });
-    return result.project ? { ...result, stopped: stop } : result;
+  if (field === 'open') {
+    const stop = swingStop(project, jointId);
+    const result = unlessLockedMoves(project, stop && value > stop.angle ? { ...next, open: stop.angle } : next);
+    if (result.project) knownStops.set(result.project, new Map([[jointId, stop]]));
+    return result.project && stop && value > stop.angle ? { ...result, stopped: stop } : result;
   }
   if (field === 'edge' && !hingeEdges(project, joint).includes(value)) return { refused: 'invalid' };
   if (field === 'face' && !jointFaces(project, joint).includes(value)) return { refused: 'invalid' };
@@ -812,6 +813,21 @@ function orientedBox(part, placement) {
   return { centre, half, axes };
 }
 
+function boxGap(a, b) {
+  const tests = [...a.axes, ...b.axes];
+  for (const first of a.axes) for (const second of b.axes) tests.push(cross(first, second));
+  const gap = b.centre.map((value, i) => value - a.centre[i]);
+  let widest = -Infinity;
+  for (const axis of tests) {
+    const size = Math.hypot(...axis);
+    if (size < 1e-6) continue;
+    const unitAxis = axis.map((value) => value / size);
+    const reach = (box) => box.axes.reduce((sum, each, i) => sum + box.half[i] * Math.abs(dot(each, unitAxis)), 0);
+    widest = Math.max(widest, Math.abs(dot(gap, unitAxis)) - reach(a) - reach(b));
+  }
+  return widest;
+}
+
 function separated(a, b) {
   const tests = [...a.axes, ...b.axes];
   for (const first of a.axes) for (const second of b.axes) tests.push(cross(first, second));
@@ -884,23 +900,31 @@ function findStop(project, jointId) {
     const boxes = swung(angle);
     return obstacles.find(({ box }) => boxes.some((each) => !separated(each, box))) ?? null;
   };
-  const step = Math.min(1, (STOP_TRAVEL_MM / Math.max(radius, 1)) * (180 / Math.PI));
+  const toDegrees = (mm) => (mm / Math.max(radius, 1)) * (180 / Math.PI);
+  const due = obstacles.map(() => 0);
   let clear = 0;
-  for (let angle = step; clear < joint.opensTo; angle += step) {
-    const at = Math.min(angle, joint.opensTo);
-    if (!blocker(at)) {
-      clear = at;
+  for (let angle = 0; ; angle = Math.min(joint.opensTo, ...due)) {
+    const boxes = swung(angle);
+    let hit = false;
+    obstacles.forEach(({ box }, i) => {
+      if (due[i] > angle) return;
+      const gap = Math.min(...boxes.map((each) => boxGap(each, box)));
+      if (gap < -TOUCH_MM) hit = true;
+      else due[i] = angle + toDegrees(Math.max(STOP_TRAVEL_MM, gap + TOUCH_MM));
+    });
+    if (!hit) {
+      clear = angle;
+      if (angle >= joint.opensTo) return null;
       continue;
     }
-    let hit = at;
+    let reached = angle;
     for (let i = 0; i < STOP_REFINE_STEPS; i++) {
-      const middle = (clear + hit) / 2;
-      if (blocker(middle)) hit = middle;
+      const middle = (clear + reached) / 2;
+      if (blocker(middle)) reached = middle;
       else clear = middle;
     }
-    return { angle: Math.floor(clear + 1e-6), by: blocker(hit).part.id };
+    return { angle: Math.floor(clear + 1e-6), by: blocker(reached).part.id };
   }
-  return null;
 }
 
 export function assemblyOverlaps(project) {
