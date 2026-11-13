@@ -309,9 +309,12 @@ function deleteRefusal(id) {
   return removal.refused ? lockedMoveMessage(removal.piece) : null;
 }
 
+const pendingAnnouncements = new WeakMap();
+
 function announce(note, message) {
+  cancelAnimationFrame(pendingAnnouncements.get(note));
   note.textContent = '';
-  if (message) requestAnimationFrame(() => (note.textContent = message));
+  if (message) pendingAnnouncements.set(note, requestAnimationFrame(() => (note.textContent = message)));
 }
 
 function showDeleteRefusal(message, origin) {
@@ -753,7 +756,12 @@ function recheckPendingFields(pending) {
 function showFieldError(input, message) {
   const note = $(`${input.name}-error`);
   if (!note) return;
+  cancelAnimationFrame(pendingAnnouncements.get(note));
   if (note.textContent !== (message ?? '')) note.textContent = message ?? '';
+  markInvalid(input, note, message);
+}
+
+function markInvalid(input, note, message) {
   if (message) {
     input.setAttribute('aria-invalid', 'true');
     input.setAttribute('aria-describedby', note.id);
@@ -1243,8 +1251,10 @@ $('editor').addEventListener('submit', (event) => event.preventDefault());
 
 function refusePartEdit(input, message, typed) {
   if (!typed) renderEditor();
-  if ($(`${input.name}-error`)) showFieldError(input, message);
-  else announce($('editor-note'), message);
+  const note = $(`${input.name}-error`);
+  if (!note) return announce($('editor-note'), message);
+  announce(note, message);
+  markInvalid(input, note, message);
 }
 
 $('project-name').addEventListener('change', (event) => {
@@ -1261,7 +1271,6 @@ for (const shapes of document.querySelectorAll('.add-shapes')) {
     if (onPhone) showTab('edit');
   });
 }
-
 
 function showTab(name) {
   $('main').dataset.tab = name;

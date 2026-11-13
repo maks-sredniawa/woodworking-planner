@@ -992,6 +992,10 @@ try:
         expect(joined.locator('#width-error')).to_be_empty()
         joined.locator('#editor .choice', has_text='Disc').click()
         expect(joined.locator('#shape-error')).to_have_text(locked_door)
+        joined.locator('#shape-error').evaluate(watch_note)
+        joined.locator('#editor .choice', has_text='Disc').click()
+        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        expect(joined.locator('#shape-error')).to_have_text(locked_door)
         expect(joined.locator('#editor [name=shape][value=board]')).to_be_checked()
         assert hinge_open() == 180, f'reshaping the frame swung a locked door to {hinge_open()}'
         row('Door').locator('.row-main').click()
