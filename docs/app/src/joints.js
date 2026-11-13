@@ -6,6 +6,7 @@ import {
   newId,
   poseAxes,
   projectBounds,
+  recentre,
   rotatePart,
   roundMm,
   turnAxis,
@@ -570,19 +571,20 @@ export function rotateAssembly(project, id, axis) {
   }
   if (parts.some((part) => part.locked)) return project;
   const before = projectBounds(parts);
-  const centre = point(before.min).map((value, i) => roundMm((value + point(before.max)[i]) / 2));
+  const origin = point(before.min);
   const turned = parts.map((part) => {
     const box = bounds(part);
-    const corners = [box.min, box.max].map((corner) => turnVector(point(corner).map((value, i) => value - centre[i]), axis));
-    const min = [0, 1, 2].map((i) => Math.min(corners[0][i], corners[1][i]) + centre[i]);
+    const corners = [box.min, box.max].map((corner) => turnVector(point(corner).map((value, i) => value - origin[i]), axis));
+    const min = [0, 1, 2].map((i) => Math.min(corners[0][i], corners[1][i]));
     const { length, width, thickness } = poseAxes(part.pose);
     const pose = [length, width, thickness].map((signed) => turnAxis(signed, axis)).join('');
     return { ...part, pose, x: min[0], y: min[1], z: min[2] };
   });
   const after = projectBounds(turned);
-  const shift = { x: 0, y: before.min.y - after.min.y, z: 0 };
-  for (const each of ['x', 'z']) shift[each] = roundMm((before.min[each] + before.max[each] - after.min[each] - after.max[each]) / 2);
-  const placed = turned.map((part) => ({ ...part, ...Object.fromEntries(AXES.map((each) => [each, roundMm(part[each] + shift[each])])) }));
+  const span = (box, each) => box.max[each] - box.min[each];
+  const corner = { y: before.min.y };
+  for (const each of ['x', 'z']) corner[each] = before.min[each] + recentre(span(before, each), span(after, each));
+  const placed = turned.map((part) => ({ ...part, ...Object.fromEntries(AXES.map((each) => [each, roundMm(corner[each] + part[each] - after.min[each])])) }));
   if (placed.some((part) => AXES.some((each) => Math.abs(part[each]) > MAX_SIZE_MM))) return project;
   const byId = new Map(placed.map((part) => [part.id, part]));
   const joints = jointsOf(project).map((joint) =>
