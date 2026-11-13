@@ -1,7 +1,7 @@
 export const MIN_POINTS = 3;
 export const MAX_POINTS = 64;
-export const MAX_DRAWN_POINTS = 24;
-export const SAME_PLACE_MM = 1;
+const MAX_DRAWN_POINTS = 24;
+const SAME_PLACE_MM = 1;
 const STEP_RAD = (4 * Math.PI) / 180;
 const CHECK_SEGMENTS = 8;
 
@@ -172,7 +172,7 @@ function edgesCross(paths, i, j) {
   return false;
 }
 
-export function crossing(points) {
+function crossing(points) {
   const paths = points.map((_, i) => edgePath(points, i, CHECK_SEGMENTS));
   for (let i = 0; i < points.length; i++) {
     for (let j = i + 1; j < points.length; j++) {
@@ -204,7 +204,7 @@ function clampBend(points, i) {
   return { ...points[i], bend: Math.sign(bend) * most };
 }
 
-export function fitBends(points) {
+function fitBends(points) {
   return points.map((_, i) => clampBend(points, i));
 }
 

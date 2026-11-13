@@ -102,6 +102,7 @@ test('a free shape is saved with its outline, in format version 4, and older fil
   assert.equal('points' in parseProject(file({ shape: 'board', points: [] }, 3)).parts[0], false);
   assert.throws(() => parseProject(file({ shape: 'free', points: pts([0, 0], [100, 100], [100, 0], [0, 100]) })), /Part 1 has an invalid outline/);
   assert.throws(() => parseProject(file({ shape: 'free', points: [{ x: 'a', y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] })), /Part 1 has an invalid outline/);
+  assert.throws(() => parseProject(file({ shape: 'free', points: [{ x: null, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 100 }] })), /Part 1 has an invalid outline/);
   assert.throws(() => parseProject('{"format":"woodworking-planner","version":5,"parts":[]}'), /newer version/);
 });
 
