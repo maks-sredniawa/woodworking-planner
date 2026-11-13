@@ -17,8 +17,16 @@ const THEMES = {
   light: { background: 0xe6e9ec, gridMajor: 0xbcc3ca, gridMinor: 0xd3d8dd, select: 0x0f766e },
   dark: { background: 0x16191c, gridMajor: 0x363d44, gridMinor: 0x262b30, select: 0x2dd4bf },
 };
+const STEEL = 0xc4cbd2;
+const COUNTERSINK = 0x2b2f33;
+const HEAD_MM = 1.5;
+const NO_PLACEMENT = { m: [1, 0, 0, 0, 1, 0, 0, 0, 1], o: [0, 0, 0] };
 
-export function createScene(container, { onSelect, onDrag }) {
+function placementMatrix({ m, o }) {
+  return new THREE.Matrix4().set(m[0], m[1], m[2], o[0], m[3], m[4], m[5], o[1], m[6], m[7], m[8], o[2], 0, 0, 0, 1);
+}
+
+export function createScene(container, { onSelect, onDrag, dragKind }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   const fullPixelRatio = () => Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(fullPixelRatio());
@@ -47,6 +55,10 @@ export function createScene(container, { onSelect, onDrag }) {
 
   const boards = new THREE.Group();
   scene.add(boards);
+  const hardware = new THREE.Group();
+  scene.add(hardware);
+  let hingeLine = null;
+  let placementOf = () => NO_PLACEMENT;
   const grain = new Map();
   let selectedId = null;
   let fitted = false;
@@ -55,6 +67,7 @@ export function createScene(container, { onSelect, onDrag }) {
   let dirty = true;
   let potato = false;
   let lastParts = [];
+  let lastExtras = {};
   const invalidate = () => {
     dirty = true;
   };
@@ -143,10 +156,9 @@ export function createScene(container, { onSelect, onDrag }) {
     mesh.castShadow = !potato;
     mesh.receiveShadow = !potato;
     mesh.userData.partId = part.id;
-    mesh.userData.locked = part.locked;
 
     const basis = sceneBasis(part.pose).map((column) => new THREE.Vector3(...column));
-    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(...basis));
+    mesh.userData.pose = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(...basis));
 
     placeMesh(mesh, part);
 
@@ -161,12 +173,104 @@ export function createScene(container, { onSelect, onDrag }) {
 
   function placeMesh(mesh, part) {
     const size = extents(part);
-    mesh.position.set(part.x + size.x / 2, part.y + size.y / 2, part.z + size.z / 2);
+    const placement = placementOf(part.id);
+    const turn = new THREE.Quaternion().setFromRotationMatrix(placementMatrix({ ...placement, o: [0, 0, 0] }));
+    mesh.position.set(part.x + size.x / 2, part.y + size.y / 2, part.z + size.z / 2).applyMatrix4(placementMatrix(placement));
+    mesh.quaternion.copy(turn).multiply(mesh.userData.pose);
   }
 
-  function moveBoard(part) {
-    const mesh = boards.children.find((child) => child.userData.partId === part.id);
-    if (mesh) placeMesh(mesh, part);
+  function steel(color = STEEL) {
+    return potato ? new THREE.MeshLambertMaterial({ color }) : new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.5 });
+  }
+
+  function disc(radius, thickness, centre, normal, color) {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, thickness, potato ? 8 : 16), steel(color));
+    const along = new THREE.Vector3(...normal);
+    mesh.quaternion.setFromUnitVectors(AXIS.y, along);
+    mesh.position.set(...centre).addScaledVector(along, thickness / 2);
+    return mesh;
+  }
+
+  function hardwareMesh(piece) {
+    if (piece.type === 'head') {
+      const group = new THREE.Group();
+      if (piece.kind === 'screws' && !potato) group.add(disc(piece.radius * 1.4, 0.4, piece.centre, piece.normal, COUNTERSINK));
+      group.add(disc(piece.radius, piece.kind === 'cup' ? 1 : HEAD_MM, piece.centre, piece.normal));
+      return group;
+    }
+    if (piece.type === 'knuckle') {
+      const from = new THREE.Vector3(...piece.from);
+      const to = new THREE.Vector3(...piece.to);
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(piece.radius, piece.radius, from.distanceTo(to), potato ? 6 : 8), steel());
+      mesh.quaternion.setFromUnitVectors(AXIS.y, to.clone().sub(from).normalize());
+      mesh.position.copy(from).add(to).multiplyScalar(0.5);
+      return mesh;
+    }
+    const size = piece.max.map((value, i) => value - piece.min[i]);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), steel());
+    mesh.position.set(...piece.min.map((value, i) => value + size[i] / 2));
+    return mesh;
+  }
+
+  function disposeTree(root) {
+    root.traverse((node) => {
+      node.geometry?.dispose();
+      node.material?.dispose();
+    });
+  }
+
+  function buildHardware(pieces) {
+    for (const child of [...hardware.children]) disposeTree(child);
+    hardware.clear();
+    const owners = new Map();
+    for (const piece of pieces) {
+      let owner = owners.get(piece.owner);
+      if (!owner) {
+        owner = new THREE.Group();
+        owner.matrixAutoUpdate = false;
+        owner.matrix.copy(placementMatrix(placementOf(piece.owner)));
+        owner.matrixWorldNeedsUpdate = true;
+        owner.userData.ownerId = piece.owner;
+        owners.set(piece.owner, owner);
+        hardware.add(owner);
+      }
+      const mesh = hardwareMesh(piece);
+      mesh.traverse((node) => {
+        node.raycast = () => {};
+      });
+      owner.add(mesh);
+    }
+  }
+
+  function showHingeLine(line) {
+    if (hingeLine) {
+      scene.remove(hingeLine);
+      disposeTree(hingeLine);
+      hingeLine = null;
+    }
+    if (!line) return;
+    const origin = new THREE.Vector3(...line.origin);
+    const end = origin.clone().addScaledVector(new THREE.Vector3(...line.direction), line.length);
+    hingeLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([origin, end]),
+      new THREE.LineBasicMaterial({ color: theme.select, depthTest: false }),
+    );
+    hingeLine.renderOrder = 2;
+    hingeLine.raycast = () => {};
+    scene.add(hingeLine);
+  }
+
+  function place(parts, extras = {}) {
+    lastParts = parts;
+    lastExtras = extras;
+    placementOf = (id) => extras.placements?.get(id) ?? NO_PLACEMENT;
+    const byId = new Map(parts.map((part) => [part.id, part]));
+    for (const mesh of boards.children) {
+      const part = byId.get(mesh.userData.partId);
+      if (part) placeMesh(mesh, part);
+    }
+    buildHardware(extras.hardware ?? []);
+    showHingeLine(extras.hingeLine ?? null);
     invalidate();
   }
 
@@ -233,10 +337,14 @@ export function createScene(container, { onSelect, onDrag }) {
     sun.shadow.camera.updateProjectionMatrix();
   }
 
-  function setParts(parts) {
+  function setParts(parts, extras = {}) {
     lastParts = parts;
+    lastExtras = extras;
+    placementOf = (id) => extras.placements?.get(id) ?? NO_PLACEMENT;
     disposeBoards();
     for (const part of parts) boards.add(boardMesh(part));
+    buildHardware(extras.hardware ?? []);
+    showHingeLine(extras.hingeLine ?? null);
     paintSelection();
     const box = projectBounds(parts) ?? { min: { x: -500, y: 0, z: -500 }, max: { x: 500, y: 500, z: 500 } };
     placeGroundAndLight(box);
@@ -259,7 +367,7 @@ export function createScene(container, { onSelect, onDrag }) {
     sun.castShadow = !on;
     floor.visible = !on;
     resize();
-    setParts(lastParts);
+    setParts(lastParts, lastExtras);
   }
 
   function setTheme(dark) {
@@ -272,6 +380,7 @@ export function createScene(container, { onSelect, onDrag }) {
       grid = null;
     }
     if (lastBox) placeGroundAndLight(lastBox);
+    if (hingeLine) hingeLine.material.color.set(theme.select);
     paintSelection();
   }
 
@@ -297,7 +406,21 @@ export function createScene(container, { onSelect, onDrag }) {
     return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point);
   }
 
+  function swingAngle() {
+    boardUnder(drag.pointer);
+    const point = raycaster.ray.intersectPlane(drag.plane, new THREE.Vector3());
+    if (point) drag.last = point.clone();
+    const now = drag.last.clone().sub(drag.origin).projectOnPlane(drag.axis);
+    const start = drag.start.clone().sub(drag.origin).projectOnPlane(drag.axis);
+    const signed = Math.atan2(start.clone().cross(now).dot(drag.axis), start.dot(now));
+    return THREE.MathUtils.radToDeg(signed);
+  }
+
   function updateDrag() {
+    if (drag.swing) {
+      onDrag({ phase: 'move', id: drag.id, swing: swingAngle(), invertSnap: drag.alt });
+      return;
+    }
     const vertical = drag.shift !== liftMode;
     if (vertical !== drag.vertical) {
       drag.start = drag.last.clone();
@@ -324,7 +447,9 @@ export function createScene(container, { onSelect, onDrag }) {
       down = { x: event.clientX, y: event.clientY };
       if (event.button !== 0 || !selectedId) return;
       const hit = boardUnder(event);
-      if (hit?.object.userData.partId !== selectedId || hit.object.userData.locked) return;
+      if (hit?.object.userData.partId !== selectedId) return;
+      const kind = dragKind(selectedId);
+      if (kind.mode === 'none') return;
       const vertical = event.shiftKey !== liftMode;
       drag = {
         id: selectedId,
@@ -336,6 +461,11 @@ export function createScene(container, { onSelect, onDrag }) {
         shift: event.shiftKey,
         alt: event.altKey,
       };
+      if (kind.mode === 'swing') {
+        const axis = new THREE.Vector3(...kind.axis.direction).normalize();
+        const origin = new THREE.Vector3(...kind.axis.origin);
+        Object.assign(drag, { swing: true, axis, origin, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(axis, hit.point) });
+      }
       controls.enabled = false;
       canvas.setPointerCapture(event.pointerId);
       canvas.style.cursor = 'grabbing';
@@ -348,7 +478,7 @@ export function createScene(container, { onSelect, onDrag }) {
     if (!drag) {
       if (event.buttons === 0 && selectedId) {
         const hovered = boardUnder(event)?.object.userData;
-        canvas.style.cursor = hovered?.partId === selectedId && !hovered.locked ? 'grab' : '';
+        canvas.style.cursor = hovered?.partId === selectedId && dragKind(selectedId).mode !== 'none' ? 'grab' : '';
       }
       return;
     }
@@ -465,7 +595,7 @@ export function createScene(container, { onSelect, onDrag }) {
   return {
     canvas,
     setParts,
-    moveBoard,
+    place,
     setSelected,
     setLiftMode: (on) => {
       liftMode = on;

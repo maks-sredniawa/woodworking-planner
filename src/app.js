@@ -11,17 +11,37 @@ import {
   describePose,
   poseHalfTurn,
   duplicatePart,
-  movePart,
   newPartBeside,
   outline,
-  overlaps,
   projectBounds,
-  rotatePart,
   snapPosition,
-  starterProject,
   totals,
   updatePart,
 } from './model.js';
+import {
+  EDGES,
+  HINGE_TYPES,
+  JOINT_KINDS,
+  assemblyOverlaps,
+  dragMode,
+  hardwareList,
+  hardwarePieces,
+  hingeAxis,
+  hingeEdges,
+  joinParts,
+  joinedTo,
+  jointProblem,
+  moveAssembly,
+  placements,
+  removeJoint,
+  removePart,
+  rotateAssembly,
+  suggestedSizes,
+  swingingHinge,
+  touchingParts,
+  updateJoint,
+} from './joints.js';
+import { starterProject } from './project.js';
 import { createScene } from './scene.js';
 import { download, loadDebug, loadPotato, loadSaved, loadSnap, readFile, save, saveDebug, savePotato, saveSnap } from './storage.js';
 import { createDebugPanel } from './debug.js';
@@ -42,6 +62,8 @@ const FINE_NUDGE_MM = 1;
 let dragStart = null;
 let snapOn = loadSnap();
 let liftOn = false;
+let addingJoint = false;
+let openJointId = null;
 
 function showDragModes(lifting, snapping) {
   $('mode-floor').setAttribute('aria-pressed', String(!lifting));
@@ -49,28 +71,67 @@ function showDragModes(lifting, snapping) {
   $('snap').setAttribute('aria-pressed', String(snapping));
 }
 
-const view = createScene($('viewport'), { onSelect: (id) => select(id), onDrag: (event) => handleDrag(event) });
+const view = createScene($('viewport'), {
+  onSelect: (id) => select(id),
+  onDrag: (event) => handleDrag(event),
+  dragKind: (id) => {
+    const mode = dragMode(project, id);
+    return mode === 'swing' ? { mode, axis: hingeAxis(project, swingingHinge(project, id).id) } : { mode };
+  },
+});
 
-const handleDrag = timed(({ phase, id, delta, vertical, invertSnap }) => {
+const SWING_STEP_DEG = 5;
+const SWING_CATCH_DEG = 3;
+
+function swingTo(angle, limit, snapping) {
+  const clamp = (value) => Math.min(limit, Math.max(0, value));
+  if (!snapping) return Math.round(clamp(angle) * 10) / 10;
+  const caught = [0, 90, limit].find((stop) => stop <= limit && Math.abs(angle - stop) <= SWING_CATCH_DEG);
+  return clamp(caught ?? Math.round(angle / SWING_STEP_DEG) * SWING_STEP_DEG);
+}
+
+const jointById = (state, id) => (state.joints ?? []).find((joint) => joint.id === id);
+
+function swingDrag(swing, invertSnap) {
+  const start = jointById(dragStart.project, dragStart.hinge.id);
+  const angle = swingTo(start.open + swing, start.opensTo, snapOn !== invertSnap);
+  if (angle === jointById(project, start.id).open) return;
+  const next = updateJoint({ ...dragStart.project, parts: project.parts }, start.id, 'open', angle);
+  if (!next) return;
+  project = next;
+  placeView();
+  renderEditor();
+  renderSelectionChip();
+}
+
+const handleDrag = timed(({ phase, id, delta, vertical, invertSnap, swing }) => {
   if (phase === 'start') {
-    dragStart = { project, part: project.parts.find((part) => part.id === id) };
+    dragStart = { project, base: project, part: project.parts.find((part) => part.id === id), hinge: swingingHinge(project, id) };
     showDragModes(vertical, snapOn !== invertSnap);
     return;
   }
   if (!dragStart) return;
   if (phase === 'rebase') {
+    dragStart.base = project;
     dragStart.part = selectedPart();
+    return;
+  }
+  if (phase === 'move' && swing !== undefined) {
+    if (dragStart.hinge) swingDrag(swing, invertSnap);
     return;
   }
   if (phase === 'move') {
     showDragModes(vertical, snapOn !== invertSnap);
     const from = dragStart.part;
     const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
-    const current = selectedPart();
-    const next = movePart(current, snapPosition(from, proposed, project.parts, { snap: snapOn !== invertSnap }));
-    if (next === current || ['x', 'y', 'z'].every((axis) => next[axis] === current[axis])) return;
-    project = { ...project, parts: project.parts.map((part) => (part.id === id ? next : part)) };
-    view.moveBoard(next);
+    const members = joinedTo(dragStart.base, id);
+    const others = project.parts.filter((part) => !members.has(part.id));
+    const target = snapPosition(from, proposed, others, { snap: snapOn !== invertSnap });
+    const next = moveAssembly(dragStart.base, id, target);
+    const same = next.parts.every((part, i) => ['x', 'y', 'z'].every((axis) => part[axis] === project.parts[i][axis]));
+    if (same) return;
+    project = next;
+    placeView();
     renderEditor();
     return;
   }
@@ -89,9 +150,8 @@ const handleDrag = timed(({ phase, id, delta, vertical, invertSnap }) => {
 function rotateSelected(axis) {
   const part = selectedPart();
   if (!part) return;
-  const turned = rotatePart(part, axis);
-  if (turned === part) return;
-  commit({ ...project, parts: project.parts.map((each) => (each.id === part.id ? turned : each)) });
+  const turned = rotateAssembly(project, part.id, axis);
+  if (turned !== project) commit(turned);
 }
 
 function setSnap(on) {
@@ -109,8 +169,8 @@ function setLift(on) {
 function nudge(axis, amount) {
   const part = selectedPart();
   if (!part) return;
-  const next = movePart(part, { [axis]: part[axis] + amount });
-  if (next !== part) replacePart(next, 'nudge');
+  const next = moveAssembly(project, part.id, { [axis]: part[axis] + amount });
+  if (next !== project) commit(next, `${part.id}:nudge`);
 }
 
 function commit(next, editKey = null) {
@@ -156,8 +216,10 @@ function afterHistoryMove() {
 }
 
 const select = keepingFocus((id) => {
+  if (id !== selectedId) addingJoint = false;
   selectedId = id;
   view.setSelected(id);
+  placeView();
   renderParts();
   renderEditor();
   renderSelectionChip();
@@ -226,7 +288,7 @@ function duplicateSelected() {
 
 const deleteSelected = keepingFocus(() => {
   if (!selectedId || selectedPart()?.locked) return;
-  commit({ ...project, parts: project.parts.filter((part) => part.id !== selectedId) });
+  commit(removePart(project, selectedId));
   select(null);
 });
 
@@ -324,8 +386,38 @@ function silhouette(part) {
   return svg;
 }
 
+const partName = (id) => project.parts.find((part) => part.id === id)?.name || 'Unnamed';
+const jointsOn = (id) => (project.joints ?? []).filter((joint) => joint.part === id || joint.to === id);
+const assemblyPinned = (id) => project.parts.some((part) => joinedTo(project, id).has(part.id) && part.locked);
+
+function openAngleOf(id) {
+  const hinge = swingingHinge(project, id);
+  return hinge?.part === id ? hinge.open : null;
+}
+
+function jointTag(part) {
+  const joints = jointsOn(part.id);
+  if (!joints.length) return null;
+  const hinge = swingingHinge(project, part.id);
+  if (hinge?.part === part.id) return `Swings on ${partName(hinge.to)}${hinge.open ? ` · open ${mm(hinge.open)}°` : ''}`;
+  const partners = new Set(joints.map((joint) => (joint.part === part.id ? joint.to : joint.part)));
+  return partners.size === 1 ? `Joined to ${partName([...partners][0])}` : `Joined to ${partners.size} pieces`;
+}
+
+function jointWarnings(part) {
+  const words = new Set();
+  for (const joint of jointsOn(part.id)) {
+    const problem = jointProblem(project, joint.id);
+    if (!problem) continue;
+    if (joint.kind === 'hinge') words.add(/thick/.test(problem) ? 'Too thin for concealed hinges' : 'Hinge can’t swing');
+    else if (/no longer touches/.test(problem)) words.add('Joint no longer touches');
+    else words.add('Fixing too long');
+  }
+  return [...words];
+}
+
 function renderParts() {
-  const clashing = new Set(overlaps(project.parts).flat());
+  const clashing = new Set(assemblyOverlaps(project).flat());
   const focusKey = $('parts').contains(document.activeElement) ? document.activeElement.dataset.focus : null;
   $('parts').replaceChildren(
     ...project.parts.map((part) => {
@@ -338,8 +430,10 @@ function renderParts() {
       main.setAttribute('aria-pressed', String(selected));
       main.addEventListener('click', () => select(selected ? null : part.id));
       main.append(silhouette(part), element('span', 'nm', part.name || 'Unnamed'), element('span', 'dim', sizeText(part)));
-      if (part.locked) main.append(element('span', 'tag', '🔒 Locked'));
-      if (clashing.has(part.id)) main.append(element('span', 'warn', 'Overlaps another piece'));
+      const tags = [part.locked && '🔒 Locked', jointTag(part)].filter(Boolean);
+      if (tags.length) main.append(element('span', 'tag', tags.join(' · ')));
+      const warnings = [clashing.has(part.id) && 'Overlaps another piece', ...jointWarnings(part)].filter(Boolean);
+      if (warnings.length) main.append(element('span', 'warn', warnings.join(' · ')));
       item.append(main);
       if (selected) {
         const actions = element('div', 'row-acts');
@@ -381,7 +475,12 @@ function renderSelectionChip() {
   const chip = $('view-sel');
   chip.hidden = !part;
   if (!part) return;
-  chip.replaceChildren(...(part.locked ? ['🔒 '] : []), element('b', '', part.name || 'Unnamed'), ` · ${sizeText(part)}`);
+  const open = openAngleOf(part.id);
+  chip.replaceChildren(
+    ...(part.locked ? ['🔒 '] : []),
+    element('b', '', part.name || 'Unnamed'),
+    ` · ${open === null ? sizeText(part) : open ? `open ${mm(open)}°` : 'closed'}`,
+  );
 }
 
 function describeView() {
@@ -415,11 +514,13 @@ function renderEditor() {
     showFieldError(input, null);
   }
   for (const input of form.querySelectorAll('[data-geometry]')) input.disabled = part.locked;
+  if (assemblyPinned(part.id)) for (const name of ['x', 'y', 'z']) form.querySelector(`[name="${name}"]`).disabled = true;
   $('lock').setAttribute('aria-pressed', String(part.locked));
   $('lock').textContent = part.locked ? '🔒 Locked · unlock' : 'Lock in place';
   $('locked-note').hidden = !part.locked;
   $('wood-swatch').style.background = SPECIES[part.species].color;
   renderShapeFields(part);
+  renderJoints(part);
   const focused = document.activeElement;
   if (focused?.type === 'radio' && form.contains(focused) && !focused.checked) {
     form.querySelector(`[name="${focused.name}"]:checked`)?.focus();
@@ -533,6 +634,8 @@ function renderCutList() {
     stat(sum.area.toFixed(2), 'm² face'),
     stat(`≈ ${sum.weight.toFixed(1)}`, 'kg'),
   );
+  const fixings = hardwareList(project).reduce((count, row) => count + (row.count ?? 0), 0);
+  if (fixings) $('totals').append(stat(String(fixings), fixings === 1 ? 'hardware item' : 'hardware items'));
   const box = projectBounds(project.parts);
   $('overall').textContent = box
     ? `Overall ${mm(box.max.x - box.min.x)} wide × ${mm(box.max.y - box.min.y)} high × ${mm(box.max.z - box.min.z)} deep (mm)`
@@ -624,6 +727,343 @@ function showFieldError(input, message) {
   }
 }
 
+const JOINT_FORMS = {
+  screws: [
+    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
+    { check: ['glued', 'Also glued'] },
+  ],
+  nails: [
+    { group: 'trio', fields: [['count', 'Nails', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
+    { check: ['glued', 'Also glued'] },
+  ],
+  glue: [{ help: 'Nothing to set. Counts as one glued joint in the hardware list.' }],
+  bracket: [
+    { group: 'trio', fields: [['count', 'Brackets', 'count'], ['leg', 'Leg (mm)', 'mm'], ['width', 'Width (mm)', 'mm']] },
+    { legend: 'Screws for each bracket', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'mm'], ['screwLength', 'Length (mm)', 'mm']] },
+    { check: ['glued', 'Also glued'] },
+  ],
+  hinge: [
+    { swing: true },
+    { select: ['hingeType', 'Type', () => HINGE_TYPES] },
+    { group: 'trio', fields: [['count', 'Hinges', 'count'], ['size', 'Length (mm)', 'mm'], ['screwsEach', 'Screws each', 'whole']] },
+    { group: 'duo', fields: [['screwDiameter', 'Screw diameter (mm)', 'mm'], ['screwLength', 'Screw length (mm)', 'mm']] },
+    { group: 'duo', select: ['edge', 'Hinge edge', (joint) => Object.fromEntries(hingeEdges(project, joint).map((edge) => [edge, EDGES[edge]]))], fields: [['opensTo', 'Opens up to (°)', 'deg']] },
+  ],
+};
+
+const JOINT_ERRORS = {
+  count: 'Enter a whole number, at least 1.',
+  whole: 'Enter a whole number, 0 or more.',
+  mm: 'Enter a size above 0 mm.',
+  deg: 'Enter an angle from 1° to 270°.',
+  open: 'Enter an angle from 0° up to how far it opens.',
+};
+
+function jointTitle(joint, part) {
+  const other = partName(joint.part === part.id ? joint.to : joint.part);
+  if (joint.kind === 'hinge') return joint.part === part.id ? `Hinge · swings on ${other}` : `Hinge · carries ${other}`;
+  return `${JOINT_KINDS[joint.kind]} · to ${other}`;
+}
+
+function jointSummary(joint) {
+  const glued = joint.glued ? ' · glued' : '';
+  if (joint.kind === 'screws' || joint.kind === 'nails') return `${joint.count} × ${mm(joint.diameter)} × ${mm(joint.length)}${glued}`;
+  if (joint.kind === 'bracket') return `${joint.count} × ${mm(joint.leg)} × ${mm(joint.leg)} × ${mm(joint.width)}${glued}`;
+  if (joint.kind === 'hinge') {
+    const type = joint.hingeType === 'concealed' ? 'concealed, 35 mm cup' : `${joint.hingeType} ${mm(joint.size)} mm`;
+    return `${joint.count} × ${type} · open ${mm(joint.open)}°`;
+  }
+  return '';
+}
+
+function jointInput(joint, field, kind) {
+  const input = element('input', 'num');
+  Object.assign(input, { type: 'number', step: kind === 'mm' || kind === 'deg' ? 'any' : '1', inputMode: kind === 'mm' || kind === 'deg' ? 'decimal' : 'numeric' });
+  input.min = kind === 'whole' ? '0' : kind === 'deg' ? '1' : kind === 'count' ? '1' : '0.1';
+  input.dataset.jf = field;
+  input.dataset.joint = joint.id;
+  input.dataset.check = kind;
+  return input;
+}
+
+function jointSelect(joint, field, options) {
+  const select = document.createElement('select');
+  fillSelect(select, options);
+  select.dataset.jf = field;
+  select.dataset.joint = joint.id;
+  return select;
+}
+
+function labelled(text, control) {
+  const label = element('label', '', `${text} `);
+  label.append(control);
+  return label;
+}
+
+function jointButton(joint, act, text, className = '') {
+  const button = element('button', className, text);
+  button.type = 'button';
+  button.dataset.jfAct = act;
+  button.dataset.joint = joint.id;
+  return button;
+}
+
+function swingControls(joint) {
+  const box = element('div', 'swing');
+  const range = Object.assign(document.createElement('input'), { type: 'range', min: '0', step: '1' });
+  range.setAttribute('aria-label', 'Open angle');
+  Object.assign(range.dataset, { jf: 'open', joint: joint.id });
+  const number = jointInput(joint, 'open', 'deg');
+  number.min = '0';
+  number.setAttribute('aria-label', 'Open (°)');
+  const buttons = element('div', 'duo');
+  buttons.append(jointButton(joint, 'close', 'Close'), jointButton(joint, 'open-full', 'Open fully'));
+  box.append(element('label', '', 'Open (°)'), range, number, buttons);
+  return box;
+}
+
+function jointBody(joint) {
+  const body = element('div', 'joint-body');
+  body.append(Object.assign(element('p', 'warn'), { role: 'status' }));
+  for (const row of JOINT_FORMS[joint.kind]) {
+    if (row.swing) {
+      body.append(swingControls(joint));
+      continue;
+    }
+    if (row.help) {
+      body.append(element('p', 'help', row.help));
+      continue;
+    }
+    if (row.check) {
+      const box = Object.assign(document.createElement('input'), { type: 'checkbox' });
+      Object.assign(box.dataset, { jf: row.check[0], joint: joint.id });
+      const label = element('label', 'check');
+      label.append(box, row.check[1]);
+      body.append(label);
+      continue;
+    }
+    const holder = row.legend ? element('fieldset') : body;
+    if (row.legend) holder.append(element('legend', '', row.legend));
+    const group = row.group ? element('div', row.group) : holder;
+    if (row.select) {
+      const [field, text, options] = row.select;
+      group.append(labelled(text, jointSelect(joint, field, options(joint))));
+    }
+    for (const [field, text, kind] of row.fields ?? []) {
+      const wrap = element('div', 'field');
+      wrap.dataset.jfField = field;
+      wrap.append(labelled(text, jointInput(joint, field, kind)));
+      group.append(wrap);
+    }
+    if (group !== holder) holder.append(group);
+    if (holder !== body) body.append(holder);
+  }
+  body.append(element('p', 'field-error joint-error'));
+  const actions = element('div', 'duo');
+  actions.append(jointButton(joint, 'suggest', 'Use suggested sizes'), jointButton(joint, 'remove', 'Remove joint', 'danger'));
+  body.append(actions);
+  return body;
+}
+
+function jointCard(joint, part) {
+  const card = element('details', 'joint');
+  card.name = 'joint';
+  card.dataset.jointCard = joint.id;
+  card.open = joint.id === openJointId;
+  const summary = element('summary');
+  summary.append(element('span', 'jn'), element('span', 'dim'), element('span', 'warn'));
+  card.append(summary, jointBody(joint));
+  card.addEventListener('toggle', () => {
+    if (card.open) openJointId = joint.id;
+    else if (openJointId === joint.id) openJointId = null;
+  });
+  fillJointCard(card, joint, part);
+  return card;
+}
+
+function differsFromSuggestion(joint) {
+  const suggested = suggestedSizes(project, joint);
+  return Boolean(suggested) && Object.entries(suggested).some(([field, value]) => field !== 'open' && joint[field] !== value);
+}
+
+function fillJointCard(card, joint, part) {
+  const problem = jointProblem(project, joint.id);
+  const [title, summary, warn] = card.querySelector('summary').children;
+  title.textContent = jointTitle(joint, part);
+  summary.textContent = jointSummary(joint);
+  summary.hidden = !summary.textContent;
+  warn.textContent = problem ? problem.split(/[.;]/)[0] : '';
+  warn.hidden = !problem;
+  const note = card.querySelector('.joint-body > .warn');
+  note.textContent = problem ?? '';
+  note.hidden = !problem;
+  const stuck = joint.kind === 'hinge' && dragMode(project, joint.part) !== 'swing';
+  for (const control of card.querySelectorAll('[data-jf]')) {
+    const field = control.dataset.jf;
+    if (control.type === 'range') control.max = String(joint.opensTo);
+    if (field === 'open') control.disabled = stuck;
+    if (control === document.activeElement && control.getAttribute('aria-invalid') === 'true') continue;
+    if (control === document.activeElement && control.type === 'number') continue;
+    if (control.type === 'checkbox') control.checked = Boolean(joint[field]);
+    else control.value = String(joint[field]);
+    control.removeAttribute('aria-invalid');
+  }
+  const size = card.querySelector('[data-jf-field="size"]');
+  if (size) size.hidden = joint.hingeType === 'concealed';
+  for (const button of card.querySelectorAll('[data-jf-act="close"], [data-jf-act="open-full"]')) button.disabled = stuck;
+  card.querySelector('[data-jf-act="suggest"]').hidden = !differsFromSuggestion(joint);
+}
+
+let jointsShape = '';
+
+function renderJoints(part) {
+  const joints = jointsOn(part.id);
+  const shape = [part.id, ...joints.map((joint) => `${joint.id}:${joint.hingeType ?? ''}:${hingeEdges(project, joint).join()}`)].join('|');
+  const list = $('joints');
+  if (shape !== jointsShape) {
+    jointsShape = shape;
+    const focusKey = list.contains(document.activeElement) ? focusKeyOf(document.activeElement) : null;
+    list.replaceChildren(...joints.map((joint) => jointCard(joint, part)));
+    if (focusKey) list.querySelector(focusKey)?.focus();
+  } else {
+    for (const joint of joints) fillJointCard(list.querySelector(`[data-joint-card="${joint.id}"]`), joint, part);
+  }
+  $('joints-empty').hidden = joints.length > 0;
+  const touching = touchingParts(project.parts, part.id);
+  $('swing-help').hidden = dragMode(project, part.id) !== 'swing';
+  $('joints-none').hidden = touching.length > 0 || joints.length > 0;
+  $('joint-add-open').hidden = touching.length === 0;
+  $('joint-add-open').setAttribute('aria-expanded', String(addingJoint));
+  $('joint-add').hidden = !addingJoint || touching.length === 0;
+  if (addingJoint) renderJointAdd(part, touching);
+}
+
+function focusKeyOf(node) {
+  if (node.dataset.jf) return `[data-jf="${node.dataset.jf}"][data-joint="${node.dataset.joint}"]${node.type === 'range' ? '[type="range"]' : ''}`;
+  if (node.dataset.jfAct) return `[data-jf-act="${node.dataset.jfAct}"][data-joint="${node.dataset.joint}"]`;
+  if (node.closest('[data-joint-card]')) return `[data-joint-card="${node.closest('[data-joint-card]').dataset.jointCard}"] summary`;
+  return null;
+}
+
+function renderJointAdd(part, touching) {
+  const kind = $('joint-kind');
+  if (!kind.options.length) fillSelect(kind, JOINT_KINDS);
+  const other = $('joint-other');
+  const chosen = other.value;
+  const joined = new Set(jointsOn(part.id).map((joint) => (joint.part === part.id ? joint.to : joint.part)));
+  other.replaceChildren(
+    ...touching.map((piece) => {
+      const option = new Option(joined.has(piece.id) ? `${piece.name || 'Unnamed'} (already joined)` : piece.name || 'Unnamed', piece.id);
+      option.disabled = joined.has(piece.id);
+      return option;
+    }),
+  );
+  const free = touching.find((piece) => piece.id === chosen && !joined.has(piece.id)) ?? touching.find((piece) => !joined.has(piece.id));
+  if (free) other.value = free.id;
+  const result = free ? joinParts(project, kind.value, part.id, free.id) : { error: 'Every piece it touches is already joined to it.' };
+  $('joint-add-note').textContent = result.error ?? (kind.value === 'hinge' ? `${part.name || 'This piece'} will swing on ${free.name || 'it'}.` : '');
+  $('joint-add-ok').disabled = Boolean(result.error);
+}
+
+function setAddingJoint(on) {
+  addingJoint = on;
+  renderEditor();
+  if (on) $('joint-kind').focus();
+  else $('joint-add-open').focus();
+}
+
+$('joint-add-open').addEventListener('click', () => setAddingJoint(!addingJoint));
+$('joint-add-cancel').addEventListener('click', () => setAddingJoint(false));
+for (const id of ['joint-kind', 'joint-other']) $(id).addEventListener('change', () => renderEditor());
+$('joint-add-ok').addEventListener('click', () => {
+  const part = selectedPart();
+  if (!part) return;
+  const result = joinParts(project, $('joint-kind').value, part.id, $('joint-other').value);
+  if (result.error) {
+    $('joint-add-note').textContent = result.error;
+    return;
+  }
+  addingJoint = false;
+  openJointId = result.joint.id;
+  commit(result.project);
+  $('joint-add-open').focus();
+});
+
+function showJointError(control, message) {
+  const card = control.closest('[data-joint-card]');
+  const note = card?.querySelector('.joint-error');
+  if (!note) return;
+  note.textContent = message ?? '';
+  if (message) control.setAttribute('aria-invalid', 'true');
+  else control.removeAttribute('aria-invalid');
+}
+
+$('joints').addEventListener('input', (event) => {
+  const control = event.target;
+  const { jf: field, joint: jointId } = control.dataset;
+  if (!field || !jointId) return;
+  const raw = control.type === 'checkbox' ? control.checked : control.value;
+  const next = updateJoint(project, jointId, field, raw);
+  const typed = control.type === 'number' || control.type === 'range';
+  if (!next) {
+    if (typed) showJointError(control, field === 'open' ? JOINT_ERRORS.open : JOINT_ERRORS[control.dataset.check]);
+    else renderEditor();
+    return;
+  }
+  showJointError(control, null);
+  commit(next, typed ? `${jointId}:${field}` : null);
+});
+
+$('joints').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-jf-act]');
+  if (!button) return;
+  const joint = jointById(project, button.dataset.joint);
+  if (!joint) return;
+  const act = button.dataset.jfAct;
+  if (act === 'remove') {
+    commit(removeJoint(project, joint.id));
+    $('joint-add-open').hidden ? $('editor').querySelector('[name="name"]').focus() : $('joint-add-open').focus();
+    return;
+  }
+  if (act === 'suggest') {
+    const suggested = suggestedSizes(project, joint);
+    if (suggested) commit({ ...project, joints: project.joints.map((each) => (each.id === joint.id ? { ...each, ...suggested } : each)) });
+    return;
+  }
+  const next = updateJoint(project, joint.id, 'open', act === 'close' ? 0 : joint.opensTo);
+  if (next) commit(next);
+});
+
+const HARDWARE_LABELS = [...document.querySelectorAll('.hardware-list thead th')].map((th) => th.textContent);
+const USED_ON_SHOWN = 2;
+
+function renderHardware() {
+  const rows = hardwareList(project);
+  $('hardware-rows').replaceChildren(
+    ...rows.map((row) => {
+      const tr = document.createElement('tr');
+      tr.setAttribute('role', 'row');
+      const more = row.usedOn.length - USED_ON_SHOWN;
+      const usedOn = row.usedOn.slice(0, USED_ON_SHOWN).join(', ') + (more > 0 ? ` +${more} more` : '');
+      const cells = [
+        [row.count === null ? '–' : `${row.count} ×`, 'num'],
+        [row.item],
+        [row.size ? row.size.map(mm).join(' × ') : '–'],
+        [usedOn],
+      ];
+      cells.forEach(([text, className], i) => {
+        const td = element('td', className, text);
+        td.setAttribute('role', 'cell');
+        td.dataset.label = HARDWARE_LABELS[i];
+        tr.append(td);
+      });
+      return tr;
+    }),
+  );
+  $('hardware-empty').hidden = rows.length > 0;
+  document.querySelector('.hardware-list').hidden = rows.length === 0;
+}
+
 const debug = createDebugPanel($('debug'), view);
 
 function timed(work) {
@@ -642,12 +1082,13 @@ const render = timed(renderAll);
 function renderAll() {
   if (document.activeElement !== $('project-name')) $('project-name').value = project.name;
   document.title = `${project.name} · Woodworking planner`;
-  view.setParts(project.parts);
+  view.setParts(project.parts, sceneExtras());
   view.setSelected(selectedId);
   renderParts();
   renderEditor();
   renderSelectionChip();
   renderCutList();
+  renderHardware();
   renderButtons();
   describeView();
 }
@@ -658,8 +1099,27 @@ function renderButtons() {
   $('duplicate').disabled = !selectedId;
   const locked = Boolean(selectedPart()?.locked);
   $('delete').disabled = !selectedId || locked;
+  const pinned = Boolean(selectedId) && assemblyPinned(selectedId);
   for (const button of document.querySelectorAll('.move-tools [data-mode]')) button.disabled = !selectedId;
-  for (const button of document.querySelectorAll('.move-tools [data-rotate]')) button.disabled = !selectedId || locked;
+  for (const button of document.querySelectorAll('.move-tools [data-rotate]')) button.disabled = !selectedId || locked || pinned;
+  const swings = Boolean(selectedId) && dragMode(project, selectedId) === 'swing';
+  $('view-hint').textContent = swings ? SWING_HINT : MOVE_HINT;
+}
+
+const MOVE_HINT = document.querySelector('.view-hint').textContent;
+const SWING_HINT = 'Drag the picked piece to swing it on its hinge · drag the piece it hangs on to move both · drag elsewhere to turn the view';
+
+function sceneExtras() {
+  const hinge = selectedId && swingingHinge(project, selectedId);
+  return {
+    placements: placements(project),
+    hardware: hardwarePieces(project),
+    hingeLine: hinge ? hingeAxis(project, hinge.id) : null,
+  };
+}
+
+function placeView() {
+  view.place(project.parts, sceneExtras());
 }
 
 function fillSelect(select, options) {
@@ -680,7 +1140,11 @@ $('editor').addEventListener('input', (event) => {
     return;
   }
   const pending = pendingFields(input);
-  if (next) {
+  if (next && ['x', 'y', 'z'].includes(input.name)) {
+    const moved = moveAssembly(project, part.id, { [input.name]: next[input.name] });
+    showFieldError(input, null);
+    if (moved !== project) commit(moved, `${part.id}:${input.name}`);
+  } else if (next) {
     showFieldError(input, null);
     replacePart(next, typed ? input.name : null);
   } else {
@@ -811,7 +1275,7 @@ $('file-input').addEventListener('change', async (event) => {
   }
 });
 $('new-project').addEventListener('click', () => {
-  commit({ name: 'Untitled project', parts: [] });
+  commit({ name: 'Untitled project', parts: [], joints: [] });
   view.fit();
 });
 $('starter').addEventListener('click', () => {
