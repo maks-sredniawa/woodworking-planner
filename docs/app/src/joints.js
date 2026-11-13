@@ -52,9 +52,20 @@ export const JOINT_KINDS = {
   glue: 'Glue',
   bracket: 'Angle bracket',
   hinge: 'Hinge',
+  pocketScrews: 'Pocket screws',
+  mendingPlate: 'Mending plate',
+  cornerPlate: 'Corner plate',
 };
 
+export const JOINT_GROUPS = [
+  { label: 'Fixings', kinds: ['screws', 'nails', 'pocketScrews', 'glue'] },
+  { label: 'Plates and brackets', kinds: ['bracket', 'mendingPlate', 'cornerPlate'] },
+  { label: 'Cut joints', kinds: [] },
+  { label: 'Moving', kinds: ['hinge'] },
+];
+
 export const HINGE_TYPES = { butt: 'Butt', concealed: 'Concealed (35 mm cup)', piano: 'Piano' };
+export const FACES = { '-z': 'Back face', '-y': 'Bottom face', '-x': 'Left face', '+x': 'Right face', '+y': 'Top face', '+z': 'Front face' };
 export const EDGES = { '-x': 'Left edge', '+x': 'Right edge', '-y': 'Bottom edge', '+y': 'Top edge', '-z': 'Back edge', '+z': 'Front edge' };
 
 const SCREW_LENGTHS = [12, 16, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 120];
@@ -63,6 +74,8 @@ const BRACKET_LEGS = [20, 30, 40, 50, 60, 80, 100];
 const CONCEALED_CUP_MM = 35;
 const CONCEALED_DOOR_MM = 16;
 const EDGE_PREFERENCE = ['-z', '-x', '+y', '+x', '-y', '+z'];
+const PLATES = [[40, 12], [50, 12], [63, 16], [80, 16]];
+const PLATE_SCREW_LENGTHS = [12, 16, 20];
 
 function standard(sizes, wanted, most) {
   const fitting = sizes.filter((size) => size <= most);
@@ -105,6 +118,96 @@ function defaultEdge(part, to, touch) {
 const hingeAxisOf = (touch, edge) => AXES.find((axis) => axis !== touch.axis && axis !== edgeAxis(edge));
 
 const thickness = (part) => Math.min(...Object.values(extents(part)));
+const thicknessAxis = (part) => poseAxes(part.pose).thickness[1];
+const span = ([low, high]) => high - low;
+const thirdAxis = (a, b) => AXES.find((axis) => axis !== a && axis !== b);
+
+function flushFaces(part, to, touch) {
+  return Object.keys(FACES).filter((face) => edgeAxis(face) !== touch.axis && near(edgeCoordinate(part, face), edgeCoordinate(to, face)));
+}
+
+function plateCorner(part, to, touch, face) {
+  const along = thirdAxis(touch.axis, edgeAxis(face));
+  const [low, high] = touch.region[along];
+  const pieces = [part, to].map((piece) => ({ piece, box: bounds(piece) }));
+  for (const [end, out] of [[low, -1], [high, 1]]) {
+    const reach = ({ box }) => (out < 0 ? box.min[along] : box.max[along]);
+    const ending = pieces.find((entry) => near(reach(entry), end));
+    const going = pieces.find((entry) => entry !== ending && out * (reach(entry) - end) >= TOUCH_MM);
+    if (ending && going) {
+      return { along, end, out, into: going.piece === part ? touch.sign : -touch.sign, ending: ending.piece, going: going.piece };
+    }
+  }
+  return null;
+}
+
+const plateKind = (kind) => kind === 'mendingPlate' || kind === 'cornerPlate';
+
+function facesFor(kind, part, to, touch) {
+  if (kind === 'pocketScrews') {
+    const axis = thicknessAxis(part);
+    return axis === touch.axis ? [] : [`-${axis}`, `+${axis}`];
+  }
+  if (!plateKind(kind)) return [];
+  const faces = flushFaces(part, to, touch);
+  return kind === 'cornerPlate' ? faces.filter((face) => plateCorner(part, to, touch, face)) : faces;
+}
+
+export function jointFaces(project, joint) {
+  const part = findPart(project, joint.part);
+  const to = findPart(project, joint.to);
+  const touch = part && to && contact(to, part);
+  return touch ? facesFor(joint.kind, part, to, touch) : [];
+}
+
+function plateFace(joint, part, to, touch) {
+  const faces = facesFor(joint.kind, part, to, touch);
+  return faces.includes(joint.face) ? joint.face : faces[0] ?? null;
+}
+
+function plateRefusal(kind, part, to, touch) {
+  const lineUp = `Line up a face of ${nameOf(part)} with a face of ${nameOf(to)} first.`;
+  const flush = flushFaces(part, to, touch);
+  if (kind === 'mendingPlate') return flush.length ? null : `A mending plate needs one flat face running across both pieces. ${lineUp}`;
+  const needs = 'A corner plate needs two pieces meeting at a right angle with one flat face across both';
+  if (!flush.length) return `${needs}. ${lineUp}`;
+  return facesFor(kind, part, to, touch).length ? null : `${needs}, and these are in line. Use a mending plate instead.`;
+}
+
+const POCKET_SCREW_LENGTHS = [[15, 25], [22, 32], [30, 38], [Infinity, 64]];
+
+function pocketLength(drilled) {
+  const thick = extents(drilled)[thicknessAxis(drilled)];
+  return POCKET_SCREW_LENGTHS.find(([most], i) => (i === 0 ? thick < most : thick <= most))[1];
+}
+
+const pocketRefusal = 'Pocket screws go through the end or edge of one piece, and these lie face to face. Use screws instead.';
+
+function pocketProblem(joint, part, to, touch) {
+  if (thicknessAxis(part) === touch.axis) return pocketRefusal;
+  const out = joint.length - extents(part)[thicknessAxis(part)];
+  const depth = extents(to)[touch.axis];
+  return out > depth ? `The pocket screws (${joint.length}) come out the far side of ${nameOf(to)} (${roundBox(depth)} thick).` : null;
+}
+
+const stockPlate = (lengthRoom, widthRoom) => PLATES.filter(([length, width]) => length <= lengthRoom && width <= widthRoom).at(-1) ?? PLATES[0];
+
+function plateScrews(part, to, face) {
+  const depth = Math.min(extents(part)[edgeAxis(face)], extents(to)[edgeAxis(face)]);
+  return { screwsEach: 4, screwDiameter: 3.5, screwLength: largestUpTo(PLATE_SCREW_LENGTHS, depth - 2) };
+}
+
+function plateRoom(kind, part, to, touch, face) {
+  if (kind === 'mendingPlate') {
+    const line = span(touch.region[thirdAxis(touch.axis, edgeAxis(face))]);
+    return { length: 2 * Math.min(extents(part)[touch.axis], extents(to)[touch.axis]), width: line, line };
+  }
+  const corner = plateCorner(part, to, touch, face);
+  return {
+    length: Math.min(extents(corner.ending)[touch.axis], extents(corner.going)[corner.along]),
+    width: Math.min(extents(corner.going)[touch.axis], extents(corner.ending)[corner.along]),
+  };
+}
 
 function hingeTypeDefaults(type, edgeLength, depth) {
   const screwLength = largestUpTo(SCREW_LENGTHS, depth - 2);
@@ -148,6 +251,23 @@ const DEFAULTS = {
     };
   },
   hinge: hingeDefaults,
+  mendingPlate: (meet, part, to, wanted) => {
+    const face = plateFace({ kind: 'mendingPlate', face: wanted?.face }, part, to, meet);
+    const room = plateRoom('mendingPlate', part, to, meet, face);
+    const [length, width] = stockPlate(room.length, room.width);
+    return { count: room.line > 300 ? 2 : 1, length, width, ...plateScrews(part, to, face), face, glued: false };
+  },
+  cornerPlate: (meet, part, to, wanted) => {
+    const face = plateFace({ kind: 'cornerPlate', face: wanted?.face }, part, to, meet);
+    const room = plateRoom('cornerPlate', part, to, meet, face);
+    const [leg, width] = stockPlate(room.length, room.width);
+    return { leg, width, ...plateScrews(part, to, face), face, glued: false };
+  },
+  pocketScrews: (meet, part) => {
+    const axis = thicknessAxis(part);
+    const line = span(meet.region[thirdAxis(meet.axis, axis)]);
+    return { count: 2 + Math.floor(Math.max(0, line - 150) / 150), diameter: 4, length: pocketLength(part), face: `-${axis}`, glued: false };
+  },
 };
 
 export function joinedTo(project, id) {
@@ -355,10 +475,34 @@ export function jointProblem(project, jointId) {
   if ((joint.kind === 'screws' || joint.kind === 'nails') && joint.length > meet.through + meet.into) {
     return `Longer than both pieces together (${roundBox(meet.through + meet.into)} mm): it will come out the other side.`;
   }
+  if (plateKind(joint.kind)) return plateProblem(joint, part, to, meet);
+  if (joint.kind === 'pocketScrews') return pocketProblem(joint, part, to, meet);
   return null;
 }
 
-export function joinParts(project, kind, partId, toId) {
+function plateProblem(joint, part, to, touch) {
+  const refusal = plateRefusal(joint.kind, part, to, touch);
+  if (refusal) return refusal;
+  const face = plateFace(joint, part, to, touch);
+  const room = plateRoom(joint.kind, part, to, touch, face);
+  if (joint.width > room.width) {
+    const size = joint.kind === 'mendingPlate' ? [joint.length, joint.width] : [joint.leg, joint.leg, joint.width];
+    return `The plate (${size.join(' × ')}) is wider than the face it sits on (${roundBox(room.width)}).`;
+  }
+  const depth = (piece) => extents(piece)[edgeAxis(face)];
+  const thin = [part, to].filter((piece) => joint.screwLength > depth(piece)).sort((a, b) => depth(a) - depth(b))[0];
+  return thin ? `The screws (${joint.screwLength}) are longer than ${nameOf(thin)} is thick (${roundBox(depth(thin))}).` : null;
+}
+
+function drilledFirst(project, kind, partId, toId) {
+  const part = findPart(project, partId);
+  const to = findPart(project, toId);
+  const touch = kind === 'pocketScrews' && part && to && contact(to, part);
+  return touch && thicknessAxis(part) === touch.axis && thicknessAxis(to) !== touch.axis ? [toId, partId] : [partId, toId];
+}
+
+export function joinParts(project, kind, pickedId, otherId) {
+  const [partId, toId] = drilledFirst(project, kind, pickedId, otherId);
   const part = findPart(project, partId);
   const to = findPart(project, toId);
   if (!part || !to || part === to || !Object.hasOwn(JOINT_KINDS, kind)) return { error: 'Pick two different pieces to join.' };
@@ -382,6 +526,11 @@ export function joinParts(project, kind, partId, toId) {
   if (kind === 'bracket' && !insideCorner(to, part)) {
     return { error: 'An angle bracket needs an inside corner where the pieces meet, and these lie face to face.' };
   }
+  if (plateKind(kind)) {
+    const refusal = plateRefusal(kind, part, to, meet);
+    if (refusal) return { error: refusal };
+  }
+  if (kind === 'pocketScrews' && thicknessAxis(part) === meet.axis) return { error: pocketRefusal };
   const joint = { id: newId(), kind, part: partId, to: toId, ...DEFAULTS[kind](meet, part, to) };
   return { project: { ...project, joints: [...joints, joint] }, joint };
 }
@@ -429,6 +578,8 @@ const millimetres = (most) => (raw) => {
   const value = Math.round(Number(raw) * 10) / 10;
   return raw !== '' && Number.isFinite(value) && value > 0 && value <= most ? value : undefined;
 };
+const yesNo = (raw) => (typeof raw === 'boolean' ? raw : undefined);
+const face = (raw) => (Object.hasOwn(FACES, raw) ? raw : undefined);
 const degrees = (least, most) => (raw) => {
   const value = Math.round(Number(raw) * 10) / 10;
   return raw !== '' && Number.isFinite(value) && value >= least && value <= most ? value : undefined;
@@ -458,6 +609,26 @@ export const JOINT_FIELDS = {
     open: degrees(0, 270),
     edge: (raw) => (Object.hasOwn(EDGES, raw) ? raw : undefined),
   },
+  mendingPlate: {
+    count: counted(100),
+    length: millimetres(1000),
+    width: millimetres(1000),
+    screwsEach: whole(100),
+    screwDiameter: millimetres(20),
+    screwLength: millimetres(500),
+    face,
+    glued: yesNo,
+  },
+  pocketScrews: { count: counted(500), diameter: millimetres(20), length: millimetres(500), face, glued: yesNo },
+  cornerPlate: {
+    leg: millimetres(1000),
+    width: millimetres(1000),
+    screwsEach: whole(100),
+    screwDiameter: millimetres(20),
+    screwLength: millimetres(500),
+    face,
+    glued: yesNo,
+  },
 };
 
 export function jointFieldValue(kind, field, raw) {
@@ -469,7 +640,10 @@ export function suggestedSizes(project, joint) {
   const to = findPart(project, joint.to);
   const meet = part && to && meeting(part, to);
   if (!meet) return null;
-  if (joint.kind !== 'hinge') return { ...DEFAULTS[joint.kind](meet, part, to), ...('glued' in joint ? { glued: joint.glued } : {}) };
+  if (joint.kind !== 'hinge') {
+    const kept = Object.fromEntries(['glued', 'face'].filter((field) => field in joint).map((field) => [field, joint[field]]));
+    return { ...DEFAULTS[joint.kind](meet, part, to, joint), ...kept };
+  }
   const edge = hingeEdges(project, joint).includes(joint.edge) ? joint.edge : defaultEdge(part, to, meet);
   const sizes = hingeTypeDefaults(joint.hingeType, extents(part)[hingeAxisOf(meet, edge)], Math.min(thickness(part), thickness(to)));
   return { ...sizes, open: Math.min(joint.open, sizes.opensTo) };
@@ -515,6 +689,7 @@ export function changeJoint(project, jointId, field, raw) {
   let next = { ...joint, [field]: value };
   if (field === 'open' && value > joint.opensTo) return { refused: 'limit' };
   if (field === 'edge' && !hingeEdges(project, joint).includes(value)) return { refused: 'invalid' };
+  if (field === 'face' && !jointFaces(project, joint).includes(value)) return { refused: 'invalid' };
   if (field === 'opensTo') next.open = Math.min(next.open, value);
   if (field === 'hingeType') next = { ...next, ...(suggestedSizes(withJoint(project, next), next) ?? {}) };
   return unlessLockedMoves(project, next);
@@ -588,9 +763,11 @@ export function rotateAssembly(project, id, axis) {
   const placed = turned.map((part) => ({ ...part, ...Object.fromEntries(AXES.map((each) => [each, roundMm(corner[each] + part[each] - after.min[each])])) }));
   if (placed.some((part) => AXES.some((each) => Math.abs(part[each]) > MAX_SIZE_MM))) return project;
   const byId = new Map(placed.map((part) => [part.id, part]));
-  const joints = jointsOf(project).map((joint) =>
-    joint.kind === 'hinge' && members.has(joint.part) ? { ...joint, edge: turnAxis(joint.edge, axis) } : joint,
-  );
+  const joints = jointsOf(project).map((joint) => {
+    if (!members.has(joint.part)) return joint;
+    if (joint.kind === 'hinge') return { ...joint, edge: turnAxis(joint.edge, axis) };
+    return joint.face ? { ...joint, face: turnAxis(joint.face, axis) } : joint;
+  });
   return { ...project, parts: project.parts.map((part) => byId.get(part.id) ?? part), joints };
 }
 
@@ -647,7 +824,8 @@ export function assemblyOverlaps(project) {
   return pairs;
 }
 
-const HARDWARE_ORDER = ['Butt hinge', 'Concealed hinge', 'Piano hinge', 'Angle bracket', 'Screw', 'Nail', 'Wood glue'];
+const HARDWARE_ORDER = ['Butt hinge', 'Concealed hinge', 'Piano hinge', 'Angle bracket', 'Mending plate', 'Corner plate', 'Screw', 'Pocket screw', 'Nail', 'Wood glue'];
+const SCREWED_HARDWARE = ['hinge', 'bracket', 'mendingPlate', 'cornerPlate'];
 
 export function hardwareList(project) {
   const rows = new Map();
@@ -668,9 +846,12 @@ export function hardwareList(project) {
       add(item, [joint.size], joint.count, usedOn);
     }
     if (joint.kind === 'bracket') add('Angle bracket', [joint.leg, joint.leg, joint.width], joint.count, usedOn);
-    if ((joint.kind === 'hinge' || joint.kind === 'bracket') && joint.screwsEach > 0) {
-      add('Screw', [joint.screwDiameter, joint.screwLength], joint.count * joint.screwsEach, usedOn);
+    if (joint.kind === 'mendingPlate') add('Mending plate', [joint.length, joint.width], joint.count, usedOn);
+    if (joint.kind === 'cornerPlate') add('Corner plate', [joint.leg, joint.leg, joint.width], 1, usedOn);
+    if (SCREWED_HARDWARE.includes(joint.kind) && joint.screwsEach > 0) {
+      add('Screw', [joint.screwDiameter, joint.screwLength], (joint.count ?? 1) * joint.screwsEach, usedOn);
     }
+    if (joint.kind === 'pocketScrews') add('Pocket screw', [joint.diameter, joint.length], joint.count, usedOn);
     if (joint.kind === 'screws') add('Screw', [joint.diameter, joint.length], joint.count, usedOn);
     if (joint.kind === 'nails') add('Nail', [joint.diameter, joint.length], joint.count, usedOn);
     if (joint.kind === 'glue' || joint.glued) add('Wood glue', null, null, usedOn);
@@ -768,6 +949,78 @@ function bracketPieces(joint, corner, part, to) {
   return plates;
 }
 
+const spots = (count, low, high, inset) => (count > 0 ? spread(count, low, high, inset) : []);
+
+function boxBetween(owner, joint, ranges) {
+  const ends = Object.fromEntries(AXES.map((axis) => [axis, [Math.min(...ranges[axis]), Math.max(...ranges[axis])]]));
+  return { type: 'plate', joint: joint.id, owner, min: AXES.map((axis) => ends[axis][0]), max: AXES.map((axis) => ends[axis][1]) };
+}
+
+function plateHead(joint, owner, face, coordinate, spot) {
+  return {
+    type: 'head',
+    kind: 'plateScrew',
+    joint: joint.id,
+    owner,
+    centre: at({ [edgeAxis(face)]: coordinate, ...spot }),
+    normal: unit(edgeAxis(face), edgeSign(face)),
+    radius: Math.max(2.5, joint.screwDiameter * 0.9),
+  };
+}
+
+function platePieces(joint, part, to, touch) {
+  const face = plateFace(joint, part, to, touch);
+  if (!face || plateRefusal(joint.kind, part, to, touch)) return [];
+  const across = edgeAxis(face);
+  const surface = edgeCoordinate(part, face);
+  const outside = surface + edgeSign(face) * PLATE_MM;
+  const sheet = [surface, outside];
+  const pieces = [];
+  if (joint.kind === 'mendingPlate') {
+    const along = thirdAxis(touch.axis, across);
+    const half = joint.length / 2;
+    for (const centre of spread(joint.count, ...touch.region[along], joint.width)) {
+      pieces.push(boxBetween(to.id, joint, { [touch.axis]: [touch.at - half, touch.at + half], [across]: sheet, [along]: [centre - joint.width / 2, centre + joint.width / 2] }));
+      const screws = spots(joint.screwsEach, touch.at - half, touch.at + half, joint.length / 8);
+      for (const spot of screws) pieces.push(plateHead(joint, to.id, face, outside, { [touch.axis]: spot, [along]: centre }));
+    }
+    return pieces;
+  }
+  const { along, end, out, into } = plateCorner(part, to, touch, face);
+  const { leg, width } = joint;
+  const inner = end - out * width;
+  pieces.push(boxBetween(to.id, joint, { [touch.axis]: [touch.at, touch.at + into * width], [across]: sheet, [along]: [inner, inner + out * leg] }));
+  pieces.push(boxBetween(to.id, joint, { [touch.axis]: [touch.at - into * (leg - width), touch.at], [across]: sheet, [along]: [inner, end] }));
+  const onGoing = Math.ceil(joint.screwsEach / 2);
+  for (const spot of spots(onGoing, end, inner + out * leg, width / 2)) {
+    pieces.push(plateHead(joint, to.id, face, outside, { [touch.axis]: touch.at + (into * width) / 2, [along]: spot }));
+  }
+  for (const spot of spots(joint.screwsEach - onGoing, touch.at - into * (leg - width), touch.at, width / 2)) {
+    pieces.push(plateHead(joint, to.id, face, outside, { [touch.axis]: spot, [along]: end - (out * width) / 2 }));
+  }
+  return pieces;
+}
+
+const POCKET = { fromEnd: 22, length: 24, width: 10 };
+
+function pocketPieces(joint, part, touch) {
+  const axis = thicknessAxis(part);
+  if (axis === touch.axis || !joint.count) return [];
+  const face = edgeAxis(joint.face) === axis ? joint.face : `-${axis}`;
+  const along = thirdAxis(touch.axis, axis);
+  const back = Math.min(POCKET.fromEnd, extents(part)[touch.axis] / 2);
+  return spread(joint.count, ...touch.region[along], 25).map((spot) => ({
+    type: 'pocket',
+    joint: joint.id,
+    owner: part.id,
+    centre: at({ [touch.axis]: touch.at + touch.sign * back, [axis]: edgeCoordinate(part, face), [along]: spot }),
+    normal: unit(axis, edgeSign(face)),
+    along: unit(touch.axis, -touch.sign),
+    length: POCKET.length,
+    width: POCKET.width,
+  }));
+}
+
 export function hardwarePieces(project) {
   const mech = mechanism(project);
   return jointsOf(project).flatMap((joint) => {
@@ -781,6 +1034,8 @@ export function hardwarePieces(project) {
       const corner = insideCorner(to, part);
       return corner ? bracketPieces(joint, corner, part, to) : [];
     }
+    if (plateKind(joint.kind)) return platePieces(joint, part, to, touch);
+    if (joint.kind === 'pocketScrews') return pocketPieces(joint, part, touch);
     return [];
   });
 }
