@@ -266,6 +266,7 @@ function freePointsOf(part) {
     const halfW = part.width / 2;
     return [point(-halfL, -halfW), point(halfL, -halfW), point(-halfL, halfW)];
   }
+  if (part.shape === 'dowel') return boardPoints({ ...part, width: part.dowelDiameter });
   return boardPoints(part);
 }
 
