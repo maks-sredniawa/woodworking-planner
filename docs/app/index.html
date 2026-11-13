@@ -67,22 +67,20 @@
   </nav>
 
   <section class="parts" aria-labelledby="parts-title">
-    <div class="pane-h">
+    <div class="pane-h parts-h">
       <h2 id="parts-title">Parts <span id="part-count" class="count"></span></h2>
-      <div class="add-split">
-        <button type="button" id="add" class="primary">Add board</button>
-        <button type="button" id="add-more" class="primary more-shapes" aria-label="Add another shape" aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu">▾</button>
-        <div id="add-menu" class="add-menu" role="menu" aria-label="Add another shape" hidden>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="disc"><span class="choice-icon" aria-hidden="true">○</span>Disc</button>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
-        </div>
+      <div class="add-shapes" role="group" aria-labelledby="add-label">
+        <span id="add-label" class="add-label">Add a piece</span>
+        <button type="button" id="add" data-add-shape="board" aria-label="Add board"><span class="choice-icon" aria-hidden="true">▭</span>Board</button>
+        <button type="button" data-add-shape="disc" aria-label="Add disc"><span class="choice-icon" aria-hidden="true">○</span>Disc</button>
+        <button type="button" data-add-shape="dowel" aria-label="Add dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
+        <button type="button" data-add-shape="arc" aria-label="Add arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
+        <button type="button" data-add-shape="triangle" aria-label="Add triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
       </div>
     </div>
     <ul id="parts" class="list"></ul>
     <p id="parts-note" class="field-error parts-note" aria-live="polite"></p>
-    <p id="parts-empty" class="empty" hidden>No boards yet. Add one to start.</p>
+    <p id="parts-empty" class="empty" hidden>No pieces yet. Press a shape to add one.</p>
   </section>
 
   <section class="cut" aria-labelledby="cut-title">
@@ -207,15 +205,13 @@
   </aside>
 </main>
 <div class="add-bar">
-  <div class="add-split">
-    <button type="button" id="add-phone" class="primary">Add board</button>
-    <button type="button" id="add-more-phone" class="primary more-shapes" aria-label="Add another shape" aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu-phone">▾</button>
-    <div id="add-menu-phone" class="add-menu up" role="menu" aria-label="Add another shape" hidden>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="disc"><span class="choice-icon" aria-hidden="true">○</span>Disc</button>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
-        <button type="button" role="menuitem" tabindex="-1" data-add-shape="triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
-    </div>
+  <div class="add-shapes" role="group" aria-labelledby="add-label-phone">
+    <span id="add-label-phone" class="add-label">Add a piece</span>
+    <button type="button" id="add-phone" data-add-shape="board" aria-label="Add board"><span class="choice-icon" aria-hidden="true">▭</span>Board</button>
+    <button type="button" data-add-shape="disc" aria-label="Add disc"><span class="choice-icon" aria-hidden="true">○</span>Disc</button>
+    <button type="button" data-add-shape="dowel" aria-label="Add dowel"><span class="choice-icon" aria-hidden="true">━</span>Dowel</button>
+    <button type="button" data-add-shape="arc" aria-label="Add arc"><span class="choice-icon" aria-hidden="true">◜</span>Arc</button>
+    <button type="button" data-add-shape="triangle" aria-label="Add triangle"><span class="choice-icon" aria-hidden="true">◺</span>Triangle</button>
   </div>
 </div>
 <script type="module" src="src/app.js"></script>

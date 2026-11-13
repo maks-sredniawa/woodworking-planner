@@ -506,12 +506,12 @@ try:
             })()''')
             assert covered is None, f'a focused row is hidden: {covered}'
 
-        phone.click('#add-more-phone')
-        expect(phone.locator('#add-menu-phone')).to_be_visible()
-        menu = phone.locator('#add-menu-phone').bounding_box()
-        bar = phone.locator('#add-more-phone').bounding_box()
-        assert menu['y'] + menu['height'] <= bar['y'], f'the phone menu does not open upward: {menu} {bar}'
-        phone.click('#add-menu-phone [data-add-shape=dowel]')
+        phone_shapes = phone.locator('.add-bar .add-shapes button')
+        expect(phone_shapes).to_have_text(['▭Board', '○Disc', '━Dowel', '◜Arc', '◺Triangle'])
+        sizes = [phone_shapes.nth(i).bounding_box() for i in range(5)]
+        assert all(box['width'] >= 44 and box['height'] >= 44 for box in sizes), f'phone shape buttons are under 44 px: {sizes}'
+        assert len({round(box['y']) for box in sizes}) == 1, f'the phone shape buttons do not sit in one row: {sizes}'
+        phone.click('.add-bar [data-add-shape=dowel]')
         expect(phone.locator('.tabs [data-tab=edit]')).to_have_attribute('aria-pressed', 'true')
         expect(phone.locator('#view-sel')).to_contain_text('⌀30 × 450 dowel')
         expect(phone.locator('#cut-from')).to_have_text('Cut from ⌀30 × 450 dowel rod')
@@ -637,12 +637,9 @@ try:
                 return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
             }})()''')
             assert reachable, f'at 320 × 256 the end of the {tab} panel cannot be scrolled into view'
-        zoomed.click('#add-more-phone')
-        last_item = zoomed.locator('#add-menu-phone [data-add-shape=triangle]')
-        last_item.scroll_into_view_if_needed()
+        last_item = zoomed.locator('.add-bar [data-add-shape=triangle]')
         box = last_item.bounding_box()
-        assert box and box['y'] >= 0 and box['y'] + box['height'] <= 256, f'at 320 × 256 the last shape in the menu is cut off: {box}'
-        zoomed.keyboard.press('Escape')
+        assert box and box['y'] >= 0 and box['y'] + box['height'] <= 256 and box['x'] + box['width'] <= 320, f'at 320 × 256 the last shape button is cut off: {box}'
         zoomed.screenshot(path=str(HERE / 'zoom-400.png'), full_page=True)
         zoomed.close()
 
@@ -689,20 +686,16 @@ try:
         shaped.keyboard.press('Control+z')
         assert shape_of(4) == 'board' and active() == ['shape', 'board'], f'Ctrl+Z on a shape radio: {shape_of(4)} {active()}'
 
-        shaped.click('#add-more')
-        expect(shaped.locator('#add-more')).to_have_attribute('aria-expanded', 'true')
-        assert active()[1] == '' and shaped.evaluate('document.activeElement.dataset.addShape') == 'disc', 'the menu did not focus its first item'
-        shaped.keyboard.press('ArrowUp')
-        assert shaped.evaluate('document.activeElement.dataset.addShape') == 'triangle', 'ArrowUp should wrap to the last item'
-        shaped.keyboard.press('Escape')
-        expect(shaped.locator('#add-menu')).to_be_hidden()
-        assert active()[1] == 'add-more', f'Escape did not return focus to the menu button: {active()}'
-        expect(shaped.locator('#editor')).to_be_visible()
-        shaped.keyboard.press('ArrowDown')
-        expect(shaped.locator('#add-menu')).to_be_visible()
+        shapes = shaped.get_by_role('group', name='Add a piece')
+        expect(shapes.get_by_role('button')).to_have_count(5)
+        for name in ['Add board', 'Add disc', 'Add dowel', 'Add arc', 'Add triangle']:
+            expect(shapes.get_by_role('button', name=name, exact=True)).to_be_visible()
+        widths = [shapes.get_by_role('button').nth(i).bounding_box()['width'] for i in range(5)]
+        assert max(widths) - min(widths) < 1, f'the shape buttons are not the same size: {widths}'
+        shapes.get_by_role('button', name='Add disc').focus()
         shaped.keyboard.press('Enter')
         expect(shaped.locator('#parts li')).to_have_count(8)
-        assert active()[1] == 'add-more', f'adding from the menu lost focus: {active()}'
+        assert shaped.evaluate('document.activeElement.dataset.addShape') == 'disc', f'adding a disc lost focus: {active()}'
         expect(shaped.locator('.row.sel .nm')).to_have_text('Disc')
         expect(shaped.locator('.row.sel .dim')).to_have_text('⌀400 × 18')
         expect(shaped.locator('.row.sel svg.sil')).to_have_attribute('aria-hidden', 'true')
@@ -792,8 +785,7 @@ try:
         shaped.wait_for_timeout(500)
         shaped.screenshot(path=str(HERE / 'shapes-1280.png'))
 
-        shaped.click('#add-more')
-        shaped.click('#add-menu [data-add-shape=triangle]')
+        shaped.click('.parts [data-add-shape=triangle]')
         expect(shaped.locator('.row.sel .nm')).to_have_text('Triangle')
         triangle_pose = lambda: shaped.evaluate('woodworkingPlanner.project.parts.at(-1).pose')
         start_pose = triangle_pose()
@@ -812,8 +804,7 @@ try:
         shaped.click('[data-rotate=z]')
         assert triangle_pose() == start_pose, f'four Rolls should bring the triangle back: {triangle_pose()}'
 
-        shaped.click('#add-more')
-        shaped.click('#add-menu [data-add-shape=arc]')
+        shaped.click('.parts [data-add-shape=arc]')
         for name, value in [('outerRadius', '1234.5'), ('bandWidth', '234.5'), ('sweep', '123.5'), ('thickness', '45.5')]:
             shaped.fill(f'#editor [name={name}]', value)
         expect(shaped.locator('.row.sel .dim')).to_have_text('Arc R1,234.5 × 234.5 × 123.5° × 45.5')
