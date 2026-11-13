@@ -955,9 +955,29 @@ try:
         expect(door_card.locator('.joint-error')).to_contain_text('locked')
         expect(door_card.locator('[data-jf=hingeType]')).to_have_value('butt')
         assert hinge_open() == 180, f'changing the hinge type swung a locked door to {hinge_open()}'
+        expect(door_card.locator('[data-jf-act=remove]')).to_be_disabled()
+        row('Left side').locator('.row-main').click()
+        expect(joined.locator('#delete')).to_be_disabled()
+        expect(joined.locator('#delete')).to_have_attribute('title', re.compile('locked door shut'))
+        row('Door').locator('.row-main').click()
         joined.click('#lock')
+        expect(door_card.locator('[data-jf-act=remove]')).to_be_enabled()
+        door_card.locator('[data-jf=count]').fill('0')
+        door_card.locator('[data-jf=screwsEach]').fill('-1')
+        expect(door_card.locator('.joint-error')).to_contain_text('at least 1')
+        expect(door_card.locator('.joint-error')).to_contain_text('0 or more')
+        door_card.locator('[data-jf=screwsEach]').fill('6')
+        expect(door_card.locator('.joint-error')).to_be_empty()
+        expect(door_card.locator('[data-jf=count]')).to_have_value('3')
+        expect(door_card.locator('[data-jf=count]')).not_to_have_attribute('aria-invalid', 'true')
         door_card.locator('[data-jf-act=close]').click()
         assert hinge_open() == 0
+        row('Bottom').locator('.row-main').click()
+        joined.fill('#editor [name=x]', '-9995')
+        expect(joined.locator('#x-error')).to_contain_text('joined to it past')
+        assert spots('Bottom') == '[[18,0,0]]', f'an assembly move past the limit moved the bottom: {spots("Bottom")}'
+        joined.fill('#editor [name=x]', '18')
+        expect(joined.locator('#x-error')).to_be_empty()
         row('Left side').locator('.row-main').click()
 
         carries = joined.locator('details.joint', has_text='carries Door')
@@ -981,6 +1001,13 @@ try:
         expect(row('Door').locator('.tag')).to_have_text('Swings on Left side')
         saved.unlink()
         assert joined.evaluate('woodworkingPlanner.project.joints.length') == 2
+        newer = HERE / 'newer.json'
+        newer.write_text('{"format":"woodworking-planner","version":99,"parts":[]}')
+        joined.set_input_files('#file-input', str(newer))
+        expect(joined.locator('#file-error')).to_contain_text('newer version')
+        newer.unlink()
+        joined.click('#starter')
+        expect(joined.locator('#file-error')).to_be_hidden()
         joined.evaluate('localStorage.clear()')
         joined.close()
 

@@ -4,6 +4,10 @@ import { legacyPose, makePart, projectBounds, rotatePart } from '../src/model.js
 import {
   applySuggestedSizes,
   assemblyOverlaps,
+  changeJoint,
+  removeJoint,
+  removePart,
+  suggestSizes,
   contact,
   dragMode,
   hingeAxis,
@@ -303,4 +307,38 @@ test('concealed hinges warn on a door thinner than 16 mm but still swing', () =>
   assert.match(jointProblem(concealed, joint.id), /at least 16 mm thick/);
   assert.equal(dragMode(concealed, thin.id), 'swing');
   assert.equal(jointProblem(hinged, joint.id), null);
+});
+
+test('hinge screws are sized from the thickness of the pieces, even for a piece hinged on its end', () => {
+  const frame = side();
+  const flap = shelf();
+  const { joint } = joinParts(project([frame, flap]), 'hinge', flap.id, frame.id);
+  assert.equal(joint.screwLength, 16);
+  const thin = shelf({ thickness: 12 });
+  const { project: hinged, joint: thinJoint } = joinParts(project([frame, thin]), 'hinge', thin.id, frame.id);
+  assert.match(jointProblem(updateJoint(hinged, thinJoint.id, 'hingeType', 'concealed'), thinJoint.id), /Shelf is 12 mm/);
+});
+
+test('a refused joint change says why: not a value, past the limit, a locked piece or pieces apart', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 120);
+  const locked = { ...open, parts: open.parts.map((part) => (part.id === joint.part ? { ...part, locked: true } : part)) };
+  assert.deepEqual(changeJoint(locked, joint.id, 'open', 'abc'), { refused: 'invalid' });
+  assert.deepEqual(changeJoint(locked, joint.id, 'open', 200), { refused: 'limit' });
+  assert.deepEqual(changeJoint(locked, joint.id, 'open', 30), { refused: 'locked' });
+  assert.equal(changeJoint(open, joint.id, 'open', 30).project.joints[0].open, 30);
+  const apart = { ...locked, parts: locked.parts.map((part) => (part.id === joint.to ? { ...part, x: -500 } : part)) };
+  assert.deepEqual(suggestSizes(apart, joint.id), { refused: 'apart' });
+  assert.deepEqual(suggestSizes(locked, joint.id).refused, undefined);
+});
+
+test('removing the hinge or the frame of a locked open door is refused, since it would swing the door shut', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  const locked = { ...open, parts: open.parts.map((part) => (part.id === joint.part ? { ...part, locked: true } : part)) };
+  assert.equal(removeJoint(locked, joint.id), locked);
+  assert.equal(removePart(locked, joint.to), locked);
+  assert.equal(removeJoint(open, joint.id).joints.length, 0);
+  const shut = { ...closed, parts: locked.parts };
+  assert.equal(removePart(shut, joint.to).parts.length, 1);
 });

@@ -22,7 +22,7 @@ import {
   EDGES,
   HINGE_TYPES,
   JOINT_KINDS,
-  applySuggestedSizes,
+  changeJoint,
   assemblyOverlaps,
   dragMode,
   hardwareList,
@@ -31,7 +31,6 @@ import {
   hingeEdges,
   joinParts,
   joinedTo,
-  jointFieldValue,
   jointProblem,
   moveAssembly,
   placements,
@@ -39,7 +38,7 @@ import {
   removePart,
   rotateAssembly,
   suggestedSizes,
-  swingLocked,
+  suggestSizes,
   swingingHinge,
   touchingParts,
   updateJoint,
@@ -290,7 +289,7 @@ function duplicateSelected() {
 }
 
 const deleteSelected = keepingFocus(() => {
-  if (!selectedId || selectedPart()?.locked) return;
+  if (!selectedId || selectedPart()?.locked || removalBlocked(selectedId)) return;
   commit(removePart(project, selectedId));
   select(null);
 });
@@ -454,7 +453,8 @@ function renderParts() {
         remove.type = 'button';
         remove.dataset.focus = `delete:${part.id}`;
         remove.addEventListener('click', deleteSelected);
-        remove.disabled = part.locked;
+        remove.disabled = part.locked || removalBlocked(part.id);
+        if (!part.locked && remove.disabled) remove.title = SHUTS_LOCKED;
         actions.append(lock, copy, remove);
         item.append(actions);
       }
@@ -761,7 +761,11 @@ const JOINT_ERRORS = {
   deg: 'Enter an angle from 1° to 270°.',
   open: 'Enter an angle from 0° up to how far it opens.',
   locked: 'That would swing a locked piece. Unlock it first.',
+  apart: 'These pieces no longer touch, so there are no sizes to suggest.',
 };
+
+const SHUTS_LOCKED = 'This would swing a locked door shut. Unlock the door first.';
+const removalBlocked = (id) => removePart(project, id) === project;
 
 function jointTitle(joint, part) {
   const other = partName(joint.part === part.id ? joint.to : joint.part);
@@ -918,6 +922,9 @@ function fillJointCard(card, joint, part) {
   if (size) size.hidden = joint.hingeType === 'concealed';
   for (const button of card.querySelectorAll('[data-jf-act="close"], [data-jf-act="open-full"]')) button.disabled = stuck;
   card.querySelector('[data-jf-act="suggest"]').hidden = !differsFromSuggestion(joint);
+  const remove = card.querySelector('[data-jf-act="remove"]');
+  remove.disabled = removeJoint(project, joint.id) === project;
+  remove.title = remove.disabled ? SHUTS_LOCKED : '';
 }
 
 let jointsShape = '';
@@ -1002,20 +1009,24 @@ function jointNote(control) {
 function showJointError(control, message) {
   const note = jointNote(control);
   if (!note) return;
-  note.textContent = message ?? '';
   if (message) {
+    control.dataset.error = message;
     control.setAttribute('aria-invalid', 'true');
     control.setAttribute('aria-describedby', note.id);
   } else {
+    delete control.dataset.error;
     control.removeAttribute('aria-invalid');
     control.removeAttribute('aria-describedby');
   }
+  const card = control.closest('[data-joint-card]');
+  const messages = [...card.querySelectorAll('[data-error]')].map((each) => each.dataset.error);
+  note.textContent = [...new Set(messages)].join(' ');
 }
 
-function jointRefusal(jointId, field, raw) {
-  const joint = jointById(project, jointId);
-  const valid = joint && jointFieldValue(joint.kind, field, raw) !== undefined;
-  return valid && joint.kind === 'hinge' && swingLocked(project, jointId) ? JOINT_ERRORS.locked : null;
+function refusalMessage(reason, control) {
+  if (reason === 'locked' || reason === 'apart') return JOINT_ERRORS[reason];
+  if (control.dataset.jf === 'open') return JOINT_ERRORS.open;
+  return JOINT_ERRORS[control.dataset.check] ?? JOINT_ERRORS.mm;
 }
 
 $('joints').addEventListener('input', (event) => {
@@ -1023,20 +1034,20 @@ $('joints').addEventListener('input', (event) => {
   const { jf: field, joint: jointId } = control.dataset;
   if (!field || !jointId) return;
   const raw = control.type === 'checkbox' ? control.checked : control.value;
-  const next = updateJoint(project, jointId, field, raw);
+  const result = changeJoint(project, jointId, field, raw);
   const typed = control.type === 'number' || control.type === 'range';
-  if (!next) {
-    const refusal = jointRefusal(jointId, field, raw);
+  if (result.refused) {
+    const message = refusalMessage(result.refused, control);
     if (typed) {
-      showJointError(control, refusal ?? (field === 'open' ? JOINT_ERRORS.open : JOINT_ERRORS[control.dataset.check]));
+      showJointError(control, message);
       return;
     }
     renderEditor();
-    if (refusal) jointNote(control).textContent = refusal;
+    jointNote(control).textContent = message;
     return;
   }
   showJointError(control, null);
-  commit(next, typed ? `${jointId}:${field}` : null);
+  commit(result.project, typed ? `${jointId}:${field}` : null);
 });
 
 $('joints').addEventListener('click', keepingFocus((event) => {
@@ -1046,17 +1057,22 @@ $('joints').addEventListener('click', keepingFocus((event) => {
   if (!joint) return;
   const act = button.dataset.jfAct;
   if (act === 'remove') {
-    commit(removeJoint(project, joint.id));
+    const next = removeJoint(project, joint.id);
+    if (next === project) {
+      jointNote(button).textContent = SHUTS_LOCKED;
+      return;
+    }
+    commit(next);
     $('joint-add-open').hidden ? $('editor').querySelector('[name="name"]').focus() : $('joint-add-open').focus();
     return;
   }
   if (act === 'suggest') {
-    const next = applySuggestedSizes(project, joint.id);
-    if (!next) {
-      if (swingLocked(project, joint.id)) jointNote(button).textContent = JOINT_ERRORS.locked;
+    const result = suggestSizes(project, joint.id);
+    if (result.refused) {
+      jointNote(button).textContent = JOINT_ERRORS[result.refused];
       return;
     }
-    commit(next);
+    commit(result.project);
     if (!usable(button)) button.closest('[data-joint-card]')?.querySelector('summary').focus();
     return;
   }
@@ -1128,7 +1144,9 @@ function renderButtons() {
   $('redo').disabled = redoStack.length === 0;
   $('duplicate').disabled = !selectedId;
   const locked = Boolean(selectedPart()?.locked);
-  $('delete').disabled = !selectedId || locked;
+  const shuts = Boolean(selectedId) && !locked && removalBlocked(selectedId);
+  $('delete').disabled = !selectedId || locked || shuts;
+  $('delete').title = shuts ? SHUTS_LOCKED : '';
   const pinned = Boolean(selectedId) && assemblyPinned(selectedId);
   for (const button of document.querySelectorAll('.move-tools [data-mode]')) button.disabled = !selectedId;
   for (const button of document.querySelectorAll('.move-tools [data-rotate]')) button.disabled = !selectedId || locked || pinned;
@@ -1172,6 +1190,10 @@ $('editor').addEventListener('input', (event) => {
   const pending = pendingFields(input);
   if (next && ['x', 'y', 'z'].includes(input.name)) {
     const moved = moveAssembly(project, part.id, { [input.name]: next[input.name] });
+    if (moved === project && next[input.name] !== part[input.name]) {
+      showFieldError(input, `That would move a piece joined to it past ±${mm(MAX_SIZE_MM)} mm.`);
+      return;
+    }
     showFieldError(input, null);
     if (moved !== project) commit(moved, `${part.id}:${input.name}`);
   } else if (next) {
@@ -1307,10 +1329,12 @@ $('file-input').addEventListener('change', async (event) => {
 $('new-project').addEventListener('click', () => {
   commit({ name: 'Untitled project', parts: [], joints: [] });
   view.fit();
+  $('file-error').hidden = true;
 });
 $('starter').addEventListener('click', () => {
   commit(starterProject());
   view.fit();
+  $('file-error').hidden = true;
 });
 
 const ROTATE_KEYS = { r: 'y', t: 'x', l: 'z' };
