@@ -242,6 +242,27 @@ test('saw settings and stock choices load from a file, with defaults when missin
   assert.throws(() => cuttingFromFile({ stock: { 'pine:18': { length: 99, width: 244 } } }), /invalid stock size/);
 });
 
+test('a file whose cutting settings are not an object is refused like any other broken file', () => {
+  for (const cutting of [null, 3, 'plan', [], { stock: null }, { stock: [] }]) {
+    assert.throws(() => cuttingFromFile(cutting), { name: 'Error', message: 'This project has invalid cutting settings.' });
+  }
+  const file = JSON.stringify({ format: 'woodworking-planner', version: 4, parts: [], joints: [], cutting: null });
+  assert.throws(() => parseProject(file), { name: 'Error', message: 'This project has invalid cutting settings.' });
+});
+
+test('saving drops stock choices that no piece uses any more', () => {
+  const dowel = { ...makeShape('dowel'), species: 'oak' };
+  const [rod] = cutList([dowel]);
+  const project = {
+    ...starterProject(),
+    cutting: { kerf: 3, trim: 0, stock: { 'pine:18': own(3000, 244), 'oak:20': own(1234, 321), [`oak:${rod.thickness}`]: own(2000, 400) } },
+  };
+  project.parts = [...project.parts, dowel];
+  const saved = JSON.parse(serialize(project));
+  assert.deepEqual(Object.keys(saved.cutting.stock), ['pine:18']);
+  assert.deepEqual(project.cutting.stock['oak:20'], own(1234, 321));
+});
+
 test('a project saves its cutting settings and grain ticks in format version 4 and older files still open', () => {
   const project = { ...starterProject(), cutting: { kerf: 4, trim: 5, stock: { 'pine:18': own(3000, 244) } } };
   project.parts[1] = { ...project.parts[1], grain: false };
