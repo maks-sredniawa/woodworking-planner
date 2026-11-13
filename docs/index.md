@@ -29,6 +29,11 @@ anything.
   and a board can have rounded or cut corners.
 - **Place them by hand.** Drag a part along the floor or up and down, snap it flush against other
   parts, nudge it with the arrow keys, or turn it 90° at a time so it can face any way.
+- **Join parts like the real thing.** Screw, nail, glue or bracket two parts that touch, or hang
+  a door or lid on hinges. Joined parts move and turn together, and a hinged part swings open to
+  any angle when you drag it.
+- **Hardware list.** Hinges, angle brackets, screws and nails are counted and sized from the
+  parts they join, ready to take to the shop.
 - **Lock what's finished.** A locked part can't be moved, turned, resized or deleted by mistake.
 - **Catch mistakes.** Parts that overlap are flagged in the list.
 - **Cut list.** Identical parts of the same wood are grouped, each with the board size to cut it
@@ -44,7 +49,8 @@ It opens with an example bookshelf to look around in.
 ## Known limitations
 
 - Millimetres only, for now.
-- No joints yet (dados, tenons).
+- No cut joints yet (dados, tenons), and a swinging door is not stopped by parts in its way:
+  they are flagged as overlapping instead.
 - Overlaps and snapping use each part's bounding box, so round or angled parts can be flagged as
   overlapping when their boxes overlap even though the parts themselves don't touch.
 - No cutting plan that fits parts onto standard boards or plywood sheets.
