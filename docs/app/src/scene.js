@@ -61,6 +61,8 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
   const xray = new THREE.Group();
   xray.renderOrder = 2;
   scene.add(xray);
+  let stopperId = null;
+  let stopper = null;
   let placementOf = () => NO_PLACEMENT;
   const grain = new Map();
   let selectedId = null;
@@ -219,6 +221,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
       group.add(disc(piece.radius, piece.kind === 'cup' ? 1 : HEAD_MM, piece.centre, piece.normal));
       return group;
     }
+    if (piece.type === 'pocket') return pocketMesh(piece);
     if (piece.type === 'knuckle') {
       const from = new THREE.Vector3(...piece.from);
       const to = new THREE.Vector3(...piece.to);
@@ -230,6 +233,16 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     const size = piece.max.map((value, i) => value - piece.min[i]);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), steel());
     mesh.position.set(...piece.min.map((value, i) => value + size[i] / 2));
+    return mesh;
+  }
+
+  function pocketMesh(piece) {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1, potato ? 8 : 16), steel(COUNTERSINK));
+    const along = new THREE.Vector3(...piece.along);
+    const normal = new THREE.Vector3(...piece.normal);
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(along, normal, along.clone().cross(normal)));
+    mesh.scale.set(piece.length, 0.6, piece.width);
+    mesh.position.set(...piece.centre).addScaledVector(normal, 0.3);
     return mesh;
   }
 
@@ -319,6 +332,21 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     }
   }
 
+  function showStopper() {
+    if (stopper) {
+      stopper.parent?.remove(stopper);
+      disposeTree(stopper);
+      stopper = null;
+    }
+    const mesh = stopperId && boards.children.find((each) => each.userData.partId === stopperId);
+    if (!mesh) return;
+    const threshold = mesh.children[0].geometry.parameters.thresholdAngle;
+    stopper = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, threshold), new THREE.LineBasicMaterial({ color: theme.select, depthTest: false }));
+    stopper.renderOrder = 2;
+    stopper.raycast = () => {};
+    mesh.add(stopper);
+  }
+
   function place(parts, extras = {}) {
     lastParts = parts;
     lastExtras = extras;
@@ -331,6 +359,8 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     buildHardware(extras.hardware ?? []);
     showHingeLine(extras.hingeLine ?? null);
     showXray(extras.xray ?? []);
+    stopperId = extras.stopper ?? null;
+    showStopper();
     invalidate();
   }
 
@@ -406,6 +436,8 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     buildHardware(extras.hardware ?? []);
     showHingeLine(extras.hingeLine ?? null);
     showXray(extras.xray ?? []);
+    stopperId = extras.stopper ?? null;
+    showStopper();
     paintSelection();
     const box = projectBounds(parts) ?? { min: { x: -500, y: 0, z: -500 }, max: { x: 500, y: 500, z: 500 } };
     placeGroundAndLight(box);
@@ -443,6 +475,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     if (lastBox) placeGroundAndLight(lastBox);
     if (hingeLine) hingeLine.material.color.set(theme.select);
     for (const lines of xray.children) lines.material.color.set(theme.select);
+    if (stopper) stopper.material.color.set(theme.select);
     paintSelection();
   }
 
