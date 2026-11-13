@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart, projectBounds, rotatePart } from '../src/model.js';
+import { legacyPose, makePart, projectBounds, rotatePart, updatePart } from '../src/model.js';
 import {
   applySuggestedSizes,
   assemblyOverlaps,
   changeJoint,
+  changePart,
+  jointRemoval,
+  partRemoval,
   removeJoint,
   removePart,
   suggestSizes,
@@ -341,4 +344,43 @@ test('removing the hinge or the frame of a locked open door is refused, since it
   assert.equal(removeJoint(open, joint.id).joints.length, 0);
   const shut = { ...closed, parts: locked.parts };
   assert.equal(removePart(shut, joint.to).parts.length, 1);
+});
+
+const lockPart = (state, id) => ({ ...state, parts: state.parts.map((part) => (part.id === id ? { ...part, locked: true } : part)) });
+const resized = (state, id, field, raw) => updatePart(state.parts.find((part) => part.id === id), field, raw);
+
+test('resizing or reshaping the frame of a locked open door is refused and names the door; other part edits go through', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  const locked = lockPart(open, joint.part);
+  const narrow = resized(locked, joint.to, 'width', 100);
+  const refused = changePart(locked, narrow);
+  assert.equal(refused.refused, 'locked');
+  assert.equal(refused.piece.name, 'Door');
+  assert.equal(refused.project, undefined);
+  assert.equal(changePart(locked, resized(locked, joint.to, 'shape', 'disc')).refused, 'locked');
+  assert.equal(changePart(locked, resized(locked, joint.to, 'name', 'Frame')).project.parts[0].name, 'Frame');
+  assert.equal(changePart(open, resized(open, joint.to, 'width', 100)).project.parts[0].width, 100);
+  assert.equal(changePart(lockPart(closed, joint.part), resized(closed, joint.to, 'width', 100)).project.parts[0].width, 100);
+});
+
+test('a locked piece fixed to an open door also keeps the door from swinging, and is the one named', () => {
+  const { project: closed, joint } = hung();
+  const knob = makePart({ name: 'Knob', length: 100, width: 30, thickness: 18, pose: legacyPose('yxz'), x: 300, y: 300, z: 262 });
+  const glued = joinParts({ ...closed, parts: [...closed.parts, knob] }, 'glue', knob.id, joint.part).project;
+  const open = lockPart(updateJoint(glued, joint.id, 'open', 90), knob.id);
+  assert.equal(changePart(open, resized(open, joint.to, 'width', 100)).piece.name, 'Knob');
+  assert.equal(jointRemoval(open, joint.id).piece.name, 'Knob');
+  assert.equal(partRemoval(open, joint.to).piece.name, 'Knob');
+  assert.equal(removeJoint(open, joint.id), open);
+});
+
+test('a refused removal says which locked piece it would swing; an allowed one returns the new project', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  const locked = lockPart(open, joint.part);
+  assert.deepEqual(Object.keys(jointRemoval(locked, joint.id)), ['refused', 'piece']);
+  assert.equal(partRemoval(locked, joint.to).piece.name, 'Door');
+  assert.equal(jointRemoval(open, joint.id).project.joints.length, 0);
+  assert.equal(partRemoval(open, joint.to).project.parts.length, 1);
 });

@@ -23,6 +23,7 @@ import {
   HINGE_TYPES,
   JOINT_KINDS,
   changeJoint,
+  changePart,
   assemblyOverlaps,
   dragMode,
   hardwareList,
@@ -32,9 +33,10 @@ import {
   joinParts,
   joinedTo,
   jointProblem,
+  jointRemoval,
   moveAssembly,
+  partRemoval,
   placements,
-  removeJoint,
   removePart,
   rotateAssembly,
   suggestedSizes,
@@ -269,7 +271,9 @@ function selectedPart() {
 }
 
 function replacePart(next, mergeKey = null) {
-  commit({ ...project, parts: project.parts.map((part) => (part.id === next.id ? next : part)) }, mergeKey && `${next.id}:${mergeKey}`);
+  const result = changePart(project, next);
+  if (result.project) commit(result.project, mergeKey && `${next.id}:${mergeKey}`);
+  return result;
 }
 
 function addPart(shape = 'board') {
@@ -288,11 +292,39 @@ function duplicateSelected() {
   select(copy.id);
 }
 
-const deleteSelected = keepingFocus(() => {
-  if (!selectedId || selectedPart()?.locked || removalBlocked(selectedId)) return;
+const deleteSelected = keepingFocus((origin) => {
+  if (!selectedId) return;
+  const refusal = deleteRefusal(selectedId);
+  if (refusal) {
+    showDeleteRefusal(refusal, origin);
+    return;
+  }
   commit(removePart(project, selectedId));
   select(null);
 });
+
+function deleteRefusal(id) {
+  if (project.parts.find((part) => part.id === id)?.locked) return `${partName(id)} is locked. Unlock it first to delete it.`;
+  const removal = partRemoval(project, id);
+  return removal.refused ? lockedMoveMessage(removal.piece) : null;
+}
+
+function showDeleteRefusal(message, origin) {
+  const notes = [$('editor-note'), $('parts-note')];
+  if (origin?.closest('#parts')) notes.reverse();
+  const shown = notes.find(visible) ?? notes[0];
+  for (const note of notes) note.textContent = note === shown ? message : '';
+}
+
+function offWithReason(button, reason) {
+  if (reason) {
+    button.setAttribute('aria-disabled', 'true');
+    button.title = reason;
+  } else {
+    button.removeAttribute('aria-disabled');
+    button.removeAttribute('title');
+  }
+}
 
 function toggleLock() {
   const part = selectedPart();
@@ -452,9 +484,8 @@ function renderParts() {
         const remove = element('button', 'danger', 'Delete');
         remove.type = 'button';
         remove.dataset.focus = `delete:${part.id}`;
-        remove.addEventListener('click', deleteSelected);
-        remove.disabled = part.locked || removalBlocked(part.id);
-        if (!part.locked && remove.disabled) remove.title = SHUTS_LOCKED;
+        remove.addEventListener('click', () => deleteSelected(remove));
+        offWithReason(remove, deleteRefusal(part.id));
         actions.append(lock, copy, remove);
         item.append(actions);
       }
@@ -503,12 +534,9 @@ function renderEditor() {
   if (!part) return;
   showPose(part.pose);
   for (const input of form.querySelectorAll('[name]')) {
-    if (input.type === 'radio') {
-      input.checked = part[input.name] === input.value;
-      continue;
-    }
-    if (input.type === 'checkbox') {
-      input.checked = Boolean(part[input.name]);
+    if (input.type === 'radio' || input.type === 'checkbox') {
+      input.checked = input.type === 'radio' ? part[input.name] === input.value : Boolean(part[input.name]);
+      showFieldError(input, null);
       continue;
     }
     if (input.tagName === 'INPUT' && document.activeElement === input && input.dataset.partId === part.id) continue;
@@ -708,12 +736,12 @@ function recheckPendingFields(pending) {
       continue;
     }
     const next = updatePart(part, field.name, typed);
-    if (next) replacePart(next, field.name);
-    else stillInvalid.push({ field, typed });
+    const result = next && replacePart(next, field.name);
+    if (!result?.project) stillInvalid.push({ field, typed, refusal: result?.refused && lockedMoveMessage(result.piece) });
   }
-  for (const { field, typed } of stillInvalid) {
+  for (const { field, typed, refusal } of stillInvalid) {
     field.value = typed;
-    showFieldError(field, fieldError(selectedPart(), field));
+    showFieldError(field, refusal || fieldError(selectedPart(), field));
   }
 }
 
@@ -764,8 +792,7 @@ const JOINT_ERRORS = {
   apart: 'These pieces no longer touch, so there are no sizes to suggest.',
 };
 
-const SHUTS_LOCKED = 'This would swing a locked door shut. Unlock the door first.';
-const removalBlocked = (id) => removePart(project, id) === project;
+const lockedMoveMessage = (piece) => `That would swing ${piece.name || 'Unnamed'}, which is locked. Unlock ${piece.name || 'Unnamed'} first.`;
 
 function jointTitle(joint, part) {
   const other = partName(joint.part === part.id ? joint.to : joint.part);
@@ -922,9 +949,8 @@ function fillJointCard(card, joint, part) {
   if (size) size.hidden = joint.hingeType === 'concealed';
   for (const button of card.querySelectorAll('[data-jf-act="close"], [data-jf-act="open-full"]')) button.disabled = stuck;
   card.querySelector('[data-jf-act="suggest"]').hidden = !differsFromSuggestion(joint);
-  const remove = card.querySelector('[data-jf-act="remove"]');
-  remove.disabled = removeJoint(project, joint.id) === project;
-  remove.title = remove.disabled ? SHUTS_LOCKED : '';
+  const removal = jointRemoval(project, joint.id);
+  offWithReason(card.querySelector('[data-jf-act="remove"]'), removal.refused && lockedMoveMessage(removal.piece));
 }
 
 let jointsShape = '';
@@ -1057,12 +1083,12 @@ $('joints').addEventListener('click', keepingFocus((event) => {
   if (!joint) return;
   const act = button.dataset.jfAct;
   if (act === 'remove') {
-    const next = removeJoint(project, joint.id);
-    if (next === project) {
-      jointNote(button).textContent = SHUTS_LOCKED;
+    const removal = jointRemoval(project, joint.id);
+    if (removal.refused) {
+      jointNote(button).textContent = lockedMoveMessage(removal.piece);
       return;
     }
-    commit(next);
+    commit(removal.project);
     $('joint-add-open').hidden ? $('editor').querySelector('[name="name"]').focus() : $('joint-add-open').focus();
     return;
   }
@@ -1144,9 +1170,9 @@ function renderButtons() {
   $('redo').disabled = redoStack.length === 0;
   $('duplicate').disabled = !selectedId;
   const locked = Boolean(selectedPart()?.locked);
-  const shuts = Boolean(selectedId) && !locked && removalBlocked(selectedId);
-  $('delete').disabled = !selectedId || locked || shuts;
-  $('delete').title = shuts ? SHUTS_LOCKED : '';
+  $('delete').disabled = !selectedId;
+  offWithReason($('delete'), selectedId && deleteRefusal(selectedId));
+  for (const note of [$('editor-note'), $('parts-note')]) note.textContent = '';
   const pinned = Boolean(selectedId) && assemblyPinned(selectedId);
   for (const button of document.querySelectorAll('.move-tools [data-mode]')) button.disabled = !selectedId;
   for (const button of document.querySelectorAll('.move-tools [data-rotate]')) button.disabled = !selectedId || locked || pinned;
@@ -1197,14 +1223,24 @@ $('editor').addEventListener('input', (event) => {
     showFieldError(input, null);
     if (moved !== project) commit(moved, `${part.id}:${input.name}`);
   } else if (next) {
+    const result = replacePart(next, typed ? input.name : null);
+    if (result.refused) {
+      refusePartEdit(input, lockedMoveMessage(result.piece), typed);
+      return;
+    }
     showFieldError(input, null);
-    replacePart(next, typed ? input.name : null);
   } else {
     renderEditor();
   }
   recheckPendingFields(pending);
 });
 $('editor').addEventListener('submit', (event) => event.preventDefault());
+
+function refusePartEdit(input, message, typed) {
+  if (!typed) renderEditor();
+  if ($(`${input.name}-error`)) showFieldError(input, message);
+  else $('editor-note').textContent = message;
+}
 
 $('project-name').addEventListener('change', (event) => {
   const name = event.target.value.trim().slice(0, 80) || 'Untitled project';
@@ -1307,7 +1343,7 @@ document.addEventListener('pointerdown', (event) => {
 });
 $('duplicate').addEventListener('click', duplicateSelected);
 $('lock').addEventListener('click', toggleLock);
-$('delete').addEventListener('click', deleteSelected);
+$('delete').addEventListener('click', () => deleteSelected($('delete')));
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 $('fit').addEventListener('click', () => view.fit());
@@ -1399,7 +1435,7 @@ document.addEventListener('keydown', (event) => {
     select(null);
   } else if ((event.key === 'Delete' || event.key === 'Backspace') && !inField && selectedId) {
     event.preventDefault();
-    deleteSelected();
+    deleteSelected(event.target);
   }
 });
 

@@ -54,8 +54,8 @@ button {
   cursor: pointer;
   white-space: nowrap;
 }
-button:hover:not(:disabled) { border-color: var(--muted); }
-button:disabled { opacity: 0.45; cursor: default; }
+button:hover:not(:disabled, [aria-disabled="true"]) { border-color: var(--muted); }
+button:disabled, button[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 button.danger { color: var(--danger); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -423,3 +423,6 @@ main {
   .view { position: relative; height: min(300px, 70vh); }
   .tabs { position: static; }
 }
+.fields > .field-error { margin-top: -10px; }
+.fields > .field-error:empty { margin-top: -14px; }
+.parts-note:not(:empty) { padding: 4px 16px 10px; }
