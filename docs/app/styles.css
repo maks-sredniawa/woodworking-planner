@@ -120,7 +120,7 @@ main {
 }
 .parts-h { display: block; padding: 0 12px 10px 16px; }
 .parts-h h2 { min-height: 44px; display: flex; align-items: center; }
-.add-shapes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.add-shapes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; }
 .add-label { grid-column: 1 / -1; font-size: 12px; line-height: 16px; color: var(--muted); }
 .add-shapes button {
   display: grid;
@@ -131,6 +131,7 @@ main {
   padding: 4px 0;
   font-size: 11px;
   line-height: 1.2;
+  letter-spacing: -0.02em;
   background: var(--panel);
   border: 1px solid var(--field-line);
   border-radius: 6px;
@@ -467,6 +468,11 @@ main {
   .outline-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .outline-actions button { height: 44px; }
   .outline-discard p { grid-column: 1 / -1; margin: 0; }
+}
+
+@media (max-width: 360px) {
+  .add-bar .add-shapes { gap: 4px; }
+  .add-bar .add-shapes button { font-size: 11px; }
 }
 
 @media (max-width: 520px) {

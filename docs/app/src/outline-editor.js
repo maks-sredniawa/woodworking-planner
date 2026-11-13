@@ -454,6 +454,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
       drag.uncaptured = true;
     }
     render({ refit: false });
+    if (drag.kind === 'point') list.children[drag.index]?.scrollIntoView({ block: 'nearest' });
   });
 
   svg.addEventListener('pointermove', (event) => {
