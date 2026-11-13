@@ -499,7 +499,7 @@ test('a version 1 file loads every part as a board with square corners, and bad 
   assert.throws(() => parseProject(file({ corners: 'cut', cutWidth: 150 })), /invalid cutWidth/);
   assert.throws(() => parseProject(file({ cornerTopLeft: 1 })), /invalid cornerTopLeft/);
   assert.throws(() => parseProject(file({ outerRadius: 6000 })), /invalid outerRadius/);
-  assert.throws(() => parseProject('{"format":"woodworking-planner","version":4,"parts":[]}'), /newer version/);
+  assert.throws(() => parseProject('{"format":"woodworking-planner","version":5,"parts":[]}'), /newer version/);
 });
 
 const WORLD = ['x', 'y', 'z'];
