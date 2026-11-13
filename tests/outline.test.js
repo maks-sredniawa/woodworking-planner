@@ -151,3 +151,10 @@ test('snapping against a swung door uses where the door is now', () => {
   const placementOf = (id) => (id === door.id ? mechanismPlacement(open, id) : null);
   assert.equal(snapPosition(moving, { x: -75 }, open.parts.filter((part) => part.id !== frame.id), { placementOf }).x, -68);
 });
+
+test('the smallest round pieces still have a solid to test', () => {
+  const thin = { ...makeShape('dowel'), dowelDiameter: 0.2 };
+  assert.equal(overlaps([thin, { ...thin, id: 'twin' }]).length, 1);
+  const tight = { ...makePart({ length: 1, width: 1 }), corners: 'rounded', cornerRadius: 0.1 };
+  assert.equal(overlaps([tight, { ...tight, id: 'twin' }]).length, 1);
+});

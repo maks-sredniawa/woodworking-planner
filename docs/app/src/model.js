@@ -152,7 +152,7 @@ export const CURVE_TOLERANCE_MM = 0.4;
 
 // Curves bulging out of the piece are sampled on the curve and curves bulging into it on tangents, so the polygon never reaches past the true piece.
 function finePoints(cx, cy, radius, from, to, concave = false) {
-  const halfStep = concave ? Math.acos(radius / (radius + CURVE_TOLERANCE_MM)) : Math.acos(1 - CURVE_TOLERANCE_MM / radius);
+  const halfStep = concave ? Math.acos(radius / (radius + CURVE_TOLERANCE_MM)) : Math.acos(Math.max(0, 1 - CURVE_TOLERANCE_MM / radius));
   const tangents = arcAngles(from, to, (2 * halfStep * 180) / Math.PI);
   const at = (degrees, reach = radius) => [cx + reach * Math.cos(radians(degrees)), cy + reach * Math.sin(radians(degrees))];
   if (!concave) return tangents.map((degrees) => at(degrees));
