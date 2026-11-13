@@ -274,15 +274,43 @@ function withOutline(part, points) {
   return { ...part, points, length: roundMm(size.maxX - size.minX), width: roundMm(size.maxY - size.minY) };
 }
 
-function stretched(part, field, value) {
-  const ratio = value / part[field];
-  const points = scale(part.points, field === 'length' ? ratio : 1, field === 'width' ? ratio : 1);
-  return { ...part, points, [field]: value };
+const FIT_TRIES = 12;
+
+// Bent edges bulge past their points, so the scale is refined until the outline's blank lands on the asked sizes.
+function fitTo(part, points, length, width) {
+  const exact = withOutline(part, rebase(points));
+  if (exact.length === length && exact.width === width) return exact;
+  let [sx, sy] = [length / exact.length, width / exact.width];
+  let best = null;
+  for (let tries = 0; tries < FIT_TRIES && Number.isFinite(sx * sy) && sx * sy > 0; tries++) {
+    const next = withOutline(part, rebase(scale(points, sx, sy)));
+    const miss = Math.abs(next.length - length) + Math.abs(next.width - width);
+    if (!best || miss < best.miss) best = { next, miss };
+    if (miss < 0.05 || !next.length || !next.width) break;
+    [sx, sy] = [(sx * length) / next.length, (sy * width) / next.width];
+  }
+  return best?.next ?? exact;
 }
 
+const stretched = (part, field, value) => fitTo(part, part.points, field === 'length' ? value : part.length, field === 'width' ? value : part.width);
+
+const fullRing = (part) => part.shape === 'arc' && part.sweep >= MAX_SWEEP_DEG;
+
 function toFree(part, next) {
-  if (part.shape === 'arc' && part.sweep >= MAX_SWEEP_DEG) return null;
+  const kept = part.points && fitTo(next, part.points, next.length, next.width);
+  if (kept && !shapeProblem(kept)) return kept;
+  if (fullRing(part)) return null;
   return withOutline(next, rebase(freePointsOf(part)));
+}
+
+export function freeSwitchProblem(part) {
+  if (fullRing(part)) return 'ring';
+  return outlineProblem(rebase(freePointsOf(part)), MAX_SIZE_MM)?.kind ?? null;
+}
+
+export function stretchProblem(part, field, value) {
+  if (part.shape !== 'free') return null;
+  return outlineProblem(stretched(part, field, value).points, MAX_SIZE_MM)?.kind ?? null;
 }
 
 export function cornerCount(part) {
@@ -530,7 +558,6 @@ export function updatePart(part, field, raw) {
   if (field === 'shape' && part.name === SHAPES[part.shape]) next.name = SHAPES[value];
   if (field === 'shape' && value === 'free' && part.shape !== 'free') next = toFree(part, next);
   if (!next) return null;
-  if (field === 'shape' && value !== 'free') delete next.points;
   if (field === 'points') next = part.shape === 'free' ? withOutline(next, rebase(value)) : null;
   if (part.shape === 'free' && (field === 'length' || field === 'width')) next = stretched(part, field, value);
   if (!next) return null;
@@ -570,15 +597,16 @@ export function partFromFile(raw, index) {
     part.pose = legacyPose(raw.orientation);
   }
   for (const field of ['name', ...GEOMETRY, 'species', 'locked']) {
-    if (raw?.[field] === undefined || (field === 'points' && part.shape !== 'free')) continue;
+    if (raw?.[field] === undefined) continue;
     const value = fieldValue(field, raw[field]);
+    if (value === NOT_ALLOWED && field === 'points' && part.shape !== 'free') continue;
     if (value === NOT_ALLOWED) throw new Error(`Part ${index + 1} has an invalid ${FILE_NAMES[field] ?? field}.`);
     part[field] = value;
   }
-  if (part.shape === 'free') part.points ??= rebase(boardPoints({ ...part, shape: 'board' }));
-  const problem = shapeProblem(part);
+  const loaded = part.shape === 'free' ? withOutline(part, rebase(part.points ?? boardPoints({ ...part, shape: 'board' }))) : part;
+  const problem = shapeProblem(loaded);
   if (problem) throw new Error(`Part ${index + 1} has an invalid ${FILE_NAMES[problem] ?? problem}.`);
-  return part;
+  return loaded;
 }
 
 export const SNAP_GRID_MM = 10;

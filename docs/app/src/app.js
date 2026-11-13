@@ -9,11 +9,13 @@ import {
   cornerLayout,
   cutList,
   describePose,
+  freeSwitchProblem,
   poseHalfTurn,
   duplicatePart,
   newPartBeside,
   outline,
   projectBounds,
+  stretchProblem,
   totals,
   updatePart,
 } from './model.js';
@@ -764,14 +766,29 @@ const FIELD_ERRORS = {
   z: () => POSITION_ERROR,
 };
 
+const STRETCH_ERRORS = {
+  together: (side) => `Enter a bigger ${side}: at this one, points of the outline come within 1 mm of each other.`,
+  flat: (side) => `Enter a bigger ${side}: at this one, the outline has no area.`,
+  crossing: (side) => `At this ${side} the outline crosses itself. Enter another ${side} or change the outline.`,
+  big: (side) => `At this ${side} the outline is over ${mm(MAX_SIZE_MM)} mm across.`,
+};
+
 function sideError(part, side, value) {
-  if (part.shape === 'free' && value > 0 && value <= MAX_SIZE_MM) return `Enter a bigger ${side}: at this one, points of the outline meet.`;
+  if (part.shape === 'free' && value > 0 && value <= MAX_SIZE_MM) {
+    return STRETCH_ERRORS[stretchProblem(part, side, value)]?.(side) ?? `This ${side} can’t be used for this outline.`;
+  }
   const need = cornersNeed(part, side);
   if (value > 0 && value <= MAX_SIZE_MM && value < need) {
     return `Enter at least ${mm(need)} mm: twice the corner ${part.corners === 'rounded' ? 'radius' : 'cut'}.`;
   }
   return SIZE_ERROR;
 }
+
+const FREE_SWITCH_ERRORS = {
+  ring: 'A full ring has a hole, and a free shape can’t. Make the sweep less than 360° first.',
+  together: 'This piece is too small for a free shape: points of its outline would be less than 1 mm apart.',
+  flat: 'This piece has no area to make a free shape from.',
+};
 
 const fieldError = (part, input) => FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.';
 
@@ -1272,7 +1289,7 @@ $('editor').addEventListener('input', (event) => {
   const next = updatePart(part, input.name, input.type === 'checkbox' ? input.checked : input.value);
   if (!next && input.name === 'shape' && input.value === 'free' && !part.locked) {
     renderEditor();
-    announce($('shape-error'), 'A full ring has a hole, and a free shape can’t. Make the sweep less than 360° first.');
+    announce($('shape-error'), FREE_SWITCH_ERRORS[freeSwitchProblem(part)] ?? 'This piece can’t become a free shape.');
     return;
   }
   if (!next && typed) {

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SHAPES, blank, cutList, extents, faceArea, makePart, makeShape, outline, pieceVolume, updatePart } from '../docs/app/src/model.js';
+import { SHAPES, blank, cutList, extents, faceArea, freeSwitchProblem, makePart, makeShape, outline, pieceVolume, roundMm, stretchProblem, updatePart } from '../docs/app/src/model.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
-import { addPoint, area, insertPoint, bendToward, fromStroke, movePoint, outlineProblem, removePoint, winding } from '../docs/app/src/free.js';
+import { addPoint, area, box, insertPoint, bendToward, fromStroke, movePoint, outlineProblem, removePoint, winding } from '../docs/app/src/free.js';
 
 const close = (actual, expected, tolerance = 1e-6) =>
   assert.ok(Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected)), `${actual} is not ${expected}`);
@@ -25,7 +25,8 @@ test('switching to a free shape keeps its outline as points, and switching back 
   assert.equal(free.name, 'Free shape');
   assert.deepEqual(free.points.map(({ x, y, bend }) => [x, y, bend]), [[0, 0, 0], [720, 0, 0], [720, 330, 0], [0, 330, 0]]);
   assert.deepEqual(blank(free), { length: 720, width: 330, thickness: 22 });
-  assert.deepEqual(updatePart(free, 'shape', 'board'), board);
+  const back = updatePart(free, 'shape', 'board');
+  assert.deepEqual({ ...back, points: undefined }, { ...board, points: undefined });
   assert.equal(updatePart({ ...board, locked: true }, 'shape', 'free'), null);
 
   const rounded = { ...board, corners: 'rounded', cornerRadius: 40, cornerTopLeft: false };
@@ -57,6 +58,47 @@ test('a disc becomes four points with bends and an arc keeps its curves, both wi
     assert.ok(free.points.some((each) => each.bend < 0), 'the inner edge bends inward');
   }
   assert.equal(updatePart({ ...makeShape('arc'), sweep: 360 }, 'shape', 'free'), null, 'a full ring has a hole');
+});
+
+test('a free shape keeps its outline while it is another shape, so switching back to Free restores it', () => {
+  const drawn = updatePart(makeShape('free'), 'points', pts([0, 0], [400, 0, 40], [400, 300], [100, 300], [0, 200]));
+  for (const other of ['board', 'disc', 'dowel', 'arc', 'triangle']) {
+    const away = updatePart(drawn, 'shape', other);
+    const again = updatePart(away, 'shape', 'free');
+    assert.deepEqual(again.points, drawn.points, `Free → ${other} → Free`);
+    assert.deepEqual([again.length, again.width], [drawn.length, drawn.width]);
+  }
+  const ring = updatePart(updatePart(drawn, 'shape', 'arc'), 'sweep', '360');
+  assert.deepEqual(updatePart(ring, 'shape', 'free').points, drawn.points, 'a full ring that was a free shape gets its outline back');
+
+  const longer = updatePart(updatePart(updatePart(drawn, 'shape', 'board'), 'length', '880'), 'shape', 'free');
+  assert.deepEqual([longer.length, longer.width], [880, 300], 'a board made longer meanwhile stretches the outline');
+  assert.equal(longer.points.length, drawn.points.length);
+
+  const board = updatePart(drawn, 'shape', 'board');
+  const loaded = parseProject(serialize({ name: 'Kept', parts: [board], joints: [] })).parts[0];
+  assert.deepEqual(updatePart(loaded, 'shape', 'free').points, drawn.points, 'the outline is saved with the board too');
+});
+
+test('stretching an outline with bent edges keeps its blank on its points', () => {
+  const disc = updatePart(makeShape('disc'), 'shape', 'free');
+  for (const [side, size] of [['length', 800], ['length', 100], ['width', 800], ['width', 100]]) {
+    const stretched = updatePart(disc, side, String(size));
+    const span = box(stretched.points);
+    assert.equal(stretched[side], size, `${side} ${size} lands as typed`);
+    assert.equal(stretched[side === 'length' ? 'width' : 'length'], 400, `${side} ${size} keeps the other side`);
+    assert.deepEqual(blank(stretched), { length: roundMm(span.maxX - span.minX), width: roundMm(span.maxY - span.minY), thickness: 18 }, `${side} ${size}`);
+    assert.ok(Math.abs(span.minX) < 0.1 && Math.abs(span.minY) < 0.1, `${side} ${size} starts at the blank's corner`);
+  }
+});
+
+test('a refused switch to Free or stretch of a free shape names what is wrong', () => {
+  assert.equal(freeSwitchProblem({ ...makeShape('arc'), sweep: 360 }), 'ring');
+  assert.equal(freeSwitchProblem(makePart({ width: 0.5 })), 'together');
+  assert.equal(freeSwitchProblem(makePart()), null);
+  const piece = makeShape('free');
+  assert.equal(stretchProblem(piece, 'length', 0.1), 'together');
+  assert.equal(stretchProblem(piece, 'length', 900), null);
 });
 
 const pts = (...list) => list.map(([x, y, bend = 0]) => ({ x, y, bend }));
@@ -100,6 +142,13 @@ test('a free shape is saved with its outline, in format version 4, and older fil
   const plain = parseProject(file({ shape: 'free', length: 500, width: 250 })).parts[0];
   assert.deepEqual(plain.points.map(({ x, y }) => [x, y]), [[0, 0], [500, 0], [500, 250], [0, 250]], 'no outline saved: its blank');
   assert.equal('points' in parseProject(file({ shape: 'board', points: [] }, 3)).parts[0], false);
+  const rectangle = pts([0, 0], [400, 0], [400, 300], [0, 300]);
+  for (const sizes of [{}, { length: 1000, width: 1000 }, { length: 600, width: 200 }]) {
+    const loaded = parseProject(file({ shape: 'free', points: rectangle, ...sizes })).parts[0];
+    assert.deepEqual([loaded.length, loaded.width], [400, 300], `the blank comes from the points, not ${JSON.stringify(sizes)}`);
+  }
+  const moved = parseProject(file({ shape: 'free', points: pts([-50, 20], [350, 20], [350, 320], [-50, 320]) })).parts[0];
+  assert.deepEqual(moved.points, rectangle, 'saved points away from the corner are re-based');
   assert.throws(() => parseProject(file({ shape: 'free', points: pts([0, 0], [100, 100], [100, 0], [0, 100]) })), /Part 1 has an invalid outline/);
   assert.throws(() => parseProject(file({ shape: 'free', points: [{ x: 'a', y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] })), /Part 1 has an invalid outline/);
   assert.throws(() => parseProject(file({ shape: 'free', points: [{ x: null, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 100 }] })), /Part 1 has an invalid outline/);
