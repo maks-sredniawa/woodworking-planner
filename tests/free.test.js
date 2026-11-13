@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SHAPES, blank, cutList, extents, faceArea, makePart, makeShape, outline, pieceVolume, updatePart } from '../docs/app/src/model.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
+import { addPoint, area, bendToward, fromStroke, movePoint, outlineProblem, removePoint, winding } from '../docs/app/src/free.js';
 
 const close = (actual, expected, tolerance = 1e-6) =>
   assert.ok(Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected)), `${actual} is not ${expected}`);
@@ -111,4 +112,50 @@ test('the cut list groups free shapes only when their outlines match', () => {
   const rows = cutList([one, two, other]).filter((row) => row.shape === 'free');
   assert.deepEqual(rows.map((row) => row.count), [2, 1]);
   assert.deepEqual(rows[0].names, ['Free shape', 'Leg']);
+});
+
+test('an outline that crosses itself, has points together, has no area or is too big is named', () => {
+  const crossed = pts([0, 0], [300, 0], [300, 200], [200, 200], [200, -100], [0, 100]);
+  assert.deepEqual(outlineProblem(crossed, 10000), { kind: 'crossing', edges: [0, 3] });
+  assert.deepEqual(outlineProblem(pts([0, 0], [300, 0], [300, 0.5], [0, 200]), 10000), { kind: 'together', points: [1, 2] });
+  assert.deepEqual(outlineProblem(pts([0, 0], [100, 0], [200, 0]), 10000), { kind: 'flat' });
+  assert.deepEqual(outlineProblem(pts([0, 0], [10001, 0], [0, 10]), 10000), { kind: 'big' });
+  assert.deepEqual(outlineProblem(pts([0, 0], [100, 0], [100, 300], [0, 300, -150]), 10000), { kind: 'crossing', edges: [1, 3] }, 'an edge bent in far enough to cross the opposite one');
+  assert.equal(outlineProblem(pts([0, 0], [400, 0], [400, 300], [0, 300, -150]), 10000), null);
+  assert.deepEqual(outlineProblem(pts([0, 0], [400, 0], [100, 0], [0, 300]), 10000), { kind: 'crossing', edges: [0, 1] }, 'an edge folding back over the one before');
+});
+
+test('moving, adding and removing points keeps every bend within half its edge', () => {
+  const square = pts([0, 0], [400, 0, 150], [400, 300], [0, 300]);
+  const moved = movePoint(square, 2, 400, 100);
+  assert.deepEqual([moved[2].x, moved[2].y], [400, 100]);
+  assert.equal(moved[1].bend, 50, 'the bend of the shortened edge shrinks to half of it');
+  const added = addPoint(pts([0, 0], [400, 0], [400, 300], [0, 300]), 1);
+  assert.deepEqual(added.map(({ x, y }) => [x, y]), [[0, 0], [400, 0], [400, 150], [400, 300], [0, 300]]);
+  const disc = updatePart(makeShape('disc'), 'shape', 'free').points;
+  const split = addPoint(disc, 0);
+  assert.equal(split.length, 5);
+  close(area(split), area(disc), 1e-3);
+  assert.deepEqual(removePoint(added, 2), pts([0, 0], [400, 0], [400, 300], [0, 300]));
+  assert.equal(bendToward(square, 1, [1000, 150]), 150, 'a dragged bend stops at half its edge');
+  assert.equal(bendToward(square, 1, [380, 150]), -20, 'dragged inward it bends inward');
+});
+
+test('a hand-drawn stroke becomes a few points, with bends where it curves', () => {
+  const circle = Array.from({ length: 120 }, (_, i) => [200 * Math.cos((i / 120) * 2 * Math.PI), 200 * Math.sin((i / 120) * 2 * Math.PI)]);
+  const round = fromStroke(circle);
+  assert.ok(round.length >= 3 && round.length <= 8, `${round.length} points for a circle`);
+  assert.ok(round.every((each) => each.bend > 0), 'a circle is drawn as outward arcs');
+  close(area(round), Math.PI * 200 ** 2, 0.03);
+  const square = [];
+  for (let i = 0; i < 50; i++) square.push([i * 6, 0]);
+  for (let i = 0; i < 50; i++) square.push([300, i * 6]);
+  for (let i = 0; i < 50; i++) square.push([300 - i * 6, 300]);
+  for (let i = 0; i < 50; i++) square.push([0, 300 - i * 6]);
+  const box = fromStroke(square.reverse());
+  assert.deepEqual(box.map(({ bend }) => bend), [0, 0, 0, 0]);
+  assert.ok(area(box) > 0 && winding(box) === 1, 'a clockwise stroke is turned round');
+  const zigzag = Array.from({ length: 400 }, (_, i) => [i * 5, i % 2 ? 40 + i : i]);
+  assert.ok(fromStroke(zigzag).length <= 24);
+  assert.equal(fromStroke([[0, 0], [5, 0], [5, 40], [0, 40]]), null, 'too small to be an outline');
 });
