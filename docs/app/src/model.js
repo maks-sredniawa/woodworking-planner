@@ -1,3 +1,5 @@
+import { TOUCH_MM, convexParts, moveSolid, placeSolid, prism, solidsClash, sweepSpans } from './geometry.js';
+
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
 export const MAX_SWEEP_DEG = 360;
@@ -127,7 +129,7 @@ export function blank(part) {
   return { length: part.length, width: part.width, thickness: part.thickness };
 }
 
-function arcAngles(from, to) {
+function arcAngles(from, to, stepDeg = ARC_STEP_DEG) {
   const low = Math.min(from, to);
   const high = Math.max(from, to);
   const stops = [low];
@@ -136,7 +138,7 @@ function arcAngles(from, to) {
   const angles = stops.flatMap((stop, i) => {
     if (i === 0) return [stop];
     const start = stops[i - 1];
-    const steps = Math.max(1, Math.ceil((stop - start) / ARC_STEP_DEG));
+    const steps = Math.max(1, Math.ceil((stop - start) / stepDeg));
     return Array.from({ length: steps }, (_, step) => start + ((stop - start) * (step + 1)) / steps);
   });
   return from <= to ? angles : angles.reverse();
@@ -144,6 +146,21 @@ function arcAngles(from, to) {
 
 function arcPoints(cx, cy, radius, from, to) {
   return arcAngles(from, to).map((degrees) => [cx + radius * Math.cos(radians(degrees)), cy + radius * Math.sin(radians(degrees))]);
+}
+
+export const CURVE_TOLERANCE_MM = 0.4;
+
+// Curves bulging out of the piece are sampled on the curve and curves bulging into it on tangents, so the polygon never reaches past the true piece.
+function finePoints(cx, cy, radius, from, to, concave = false) {
+  const halfStep = concave ? Math.acos(radius / (radius + CURVE_TOLERANCE_MM)) : Math.acos(Math.max(0, 1 - CURVE_TOLERANCE_MM / radius));
+  const tangents = arcAngles(from, to, (2 * halfStep * 180) / Math.PI);
+  const at = (degrees, reach = radius) => [cx + reach * Math.cos(radians(degrees)), cy + reach * Math.sin(radians(degrees))];
+  if (!concave) return tangents.map((degrees) => at(degrees));
+  const corners = tangents.slice(1).map((degrees, i) => {
+    const half = (degrees - tangents[i]) / 2;
+    return at(tangents[i] + half, radius / Math.cos(radians(half)));
+  });
+  return [at(from), ...corners, at(to)];
 }
 
 const sweepRange = (part) => [90 - part.sweep / 2, 90 + part.sweep / 2];
@@ -172,7 +189,7 @@ const CORNER_WALK = [
   ['cornerTopLeft', -1, 1, 90],
 ];
 
-function boardOutline(part) {
+function boardOutline(part, curve) {
   const halfL = part.length / 2;
   const halfW = part.width / 2;
   const active = cornersActive(part);
@@ -180,7 +197,7 @@ function boardOutline(part) {
     if (!active || !part[corner]) return [[sx * halfL, sy * halfW]];
     if (part.corners === 'rounded') {
       const r = part.cornerRadius;
-      return arcPoints(sx * (halfL - r), sy * (halfW - r), r, start, start + 90);
+      return curve(sx * (halfL - r), sy * (halfW - r), r, start, start + 90);
     }
     const alongLength = [sx * (halfL - part.cutLength), sy * halfW];
     const alongWidth = [sx * halfL, sy * (halfW - part.cutWidth)];
@@ -189,30 +206,83 @@ function boardOutline(part) {
   return withoutRepeats(points);
 }
 
-function arcOutline(part) {
+function arcOutline(part, curve) {
   const box = arcBox(part);
   const cx = -(box.minX + box.maxX) / 2;
   const cy = -(box.minY + box.maxY) / 2;
   const inner = part.outerRadius - part.bandWidth;
   if (part.sweep >= MAX_SWEEP_DEG) {
     return {
-      points: withoutRepeats(arcPoints(cx, cy, part.outerRadius, 0, 360)),
-      holes: [withoutRepeats(arcPoints(cx, cy, inner, 360, 0))],
+      points: withoutRepeats(curve(cx, cy, part.outerRadius, 0, 360)),
+      holes: [withoutRepeats(curve(cx, cy, inner, 360, 0, true))],
     };
   }
   const [from, to] = sweepRange(part);
-  return { points: [...arcPoints(cx, cy, part.outerRadius, from, to), ...arcPoints(cx, cy, inner, to, from)], holes: [] };
+  return { points: withoutRepeats([...curve(cx, cy, part.outerRadius, from, to), ...curve(cx, cy, inner, to, from, true)]), holes: [] };
 }
 
-export function outline(part) {
+function shapeOutline(part, curve) {
   const size = blank(part);
   const halfL = size.length / 2;
   const halfW = size.width / 2;
-  if (part.shape === 'disc') return { points: withoutRepeats(arcPoints(0, 0, part.diameter / 2, 0, 360)), holes: [] };
-  if (part.shape === 'arc') return arcOutline(part);
+  if (part.shape === 'disc') return { points: withoutRepeats(curve(0, 0, part.diameter / 2, 0, 360)), holes: [] };
+  if (part.shape === 'arc') return arcOutline(part, curve);
   if (part.shape === 'triangle') return { points: [[-halfL, -halfW], [halfL, -halfW], [-halfL, halfW]], holes: [] };
-  if (part.shape === 'board') return { points: boardOutline(part), holes: [] };
+  if (part.shape === 'board') return { points: boardOutline(part, curve), holes: [] };
   return { points: [[-halfL, -halfW], [halfL, -halfW], [halfL, halfW], [-halfL, halfW]], holes: [] };
+}
+
+export function outline(part) {
+  return shapeOutline(part, arcPoints);
+}
+
+function crossSection(part) {
+  if (part.shape === 'dowel') {
+    return {
+      outline: { points: withoutRepeats(finePoints(0, 0, part.dowelDiameter / 2, 0, 360)), holes: [] },
+      axes: ['width', 'thickness', 'length'],
+    };
+  }
+  return { outline: shapeOutline(part, finePoints), axes: ['length', 'width', 'thickness'] };
+}
+
+const OUTLINE_FIELDS = ['shape', 'length', 'width', 'thickness', 'diameter', 'dowelDiameter', 'outerRadius', 'bandWidth', 'sweep', 'corners', ...Object.keys(CORNERS), 'cornerRadius', 'cutLength', 'cutWidth'];
+const crossSections = new Map();
+
+function convexCrossSection(part) {
+  const key = OUTLINE_FIELDS.map((field) => part[field]).join('|');
+  if (!crossSections.has(key)) {
+    if (crossSections.size > 500) crossSections.clear();
+    const { outline: shape, axes } = crossSection(part);
+    const depth = blank(part)[axes[2]];
+    crossSections.set(key, { pieces: convexParts(shape).map((polygon) => prism(polygon, depth)), axes });
+  }
+  return crossSections.get(key);
+}
+
+const placed = (placement, point) => placement.m.reduce((out, value, i) => {
+  out[Math.floor(i / 3)] += value * point[i % 3];
+  return out;
+}, [...placement.o]);
+const turned = (placement, vector) => placed({ ...placement, o: [0, 0, 0] }, vector);
+export const isIdentity = (placement) =>
+  !placement || (placement.m.every((value, i) => Math.abs(value - (i % 4 === 0 ? 1 : 0)) < 1e-9) && placement.o.every((value) => Math.abs(value) < 1e-9));
+const solids = new WeakMap();
+
+export function solidOf(part, placement = null) {
+  const still = isIdentity(placement);
+  if (still && solids.has(part)) return solids.get(part);
+  const { pieces, axes } = convexCrossSection(part);
+  const size = extents(part);
+  const pose = poseAxes(part.pose);
+  const [u, v, w] = axes.map((side) => vector(pose[side]));
+  const centre = AXES.map((axis) => part[axis] + size[axis] / 2);
+  const frame = still
+    ? { origin: centre, u, v, w }
+    : { origin: placed(placement, centre), u: turned(placement, u), v: turned(placement, v), w: turned(placement, w) };
+  const result = placeSolid(pieces, frame);
+  if (still) solids.set(part, result);
+  return result;
 }
 
 export function cornerCount(part) {
@@ -276,12 +346,12 @@ function crosses(a, b) {
   return POSITION.every((axis) => a.min[axis] < b.max[axis] && b.min[axis] < a.max[axis]);
 }
 
-export function overlaps(parts) {
-  const boxes = parts.map(bounds);
+export function overlaps(parts, placementOf = () => null) {
+  const shapes = parts.map((part) => solidOf(part, placementOf(part.id)));
   const pairs = [];
   for (let i = 0; i < parts.length; i++) {
     for (let j = i + 1; j < parts.length; j++) {
-      if (crosses(boxes[i], boxes[j])) pairs.push([parts[i].id, parts[j].id]);
+      if (solidsClash(shapes[i], shapes[j])) pairs.push([parts[i].id, parts[j].id]);
     }
   }
   return pairs;
@@ -492,35 +562,87 @@ export function partFromFile(raw, index) {
 export const SNAP_GRID_MM = 10;
 export const SNAP_REACH_MM = 15;
 
-export function snapPosition(part, proposed, others, options) {
-  const fixed = others.filter((other) => other.id !== part.id).map(bounds);
-  return snapBoxes(part, [bounds(part)], proposed, fixed, options);
+const boxOfSolid = (solid) =>
+  Object.fromEntries(['min', 'max'].map((side) => [side, Object.fromEntries(AXES.map((axis, i) => [axis, solid.box[side][i]]))]));
+
+export function bodyOf(part, placement = null) {
+  const solid = solidOf(part, placement);
+  return { solid, box: isIdentity(placement) ? bounds(part) : boxOfSolid(solid) };
 }
 
-export function snapBoxes(at, moving, proposed, fixed, { snap = true } = {}) {
-  const onFloor = roundMm(at.y - Math.min(...moving.map((box) => box.min.y)));
-  const result = {};
-  for (const axis of POSITION) {
-    if (!(axis in proposed)) continue;
-    const value = proposed[axis];
-    if (!snap) {
-      result[axis] = roundMm(value);
-      continue;
-    }
-    let best = null;
-    const consider = (target) => {
-      const distance = Math.abs(target - value);
-      if (distance <= SNAP_REACH_MM && (best === null || distance < Math.abs(best - value))) best = target;
-    };
-    if (axis === 'y') consider(onFloor);
-    for (const other of fixed) {
-      for (const face of [other.min[axis], other.max[axis]]) {
-        for (const box of moving) for (const own of [box.min[axis], box.max[axis]]) consider(face - (own - at[axis]));
+function faceTargets(at, moving, axis, proposed, fixed, floor) {
+  const value = proposed[axis];
+  const near = [];
+  const consider = (target) => {
+    if (Math.abs(target - value) <= SNAP_REACH_MM) near.push({ target });
+  };
+  if (axis === 'y') consider(floor);
+  const across = AXES.filter((each) => each !== axis);
+  const shift = (each) => (proposed[each] ?? at[each]) - at[each];
+  for (const { box: own } of moving) {
+    const lead = own.min[axis] - at[axis];
+    const tail = own.max[axis] - at[axis];
+    for (const { box } of fixed) {
+      const inPath = across.every((each) => Math.min(own.max[each] + shift(each), box.max[each]) - Math.max(own.min[each] + shift(each), box.min[each]) > TOUCH_MM);
+      consider(box.min[axis] - lead);
+      consider(box.max[axis] - tail);
+      if (!inPath) {
+        consider(box.max[axis] - lead);
+        consider(box.min[axis] - tail);
       }
     }
-    result[axis] = roundMm(best ?? Math.round(value / SNAP_GRID_MM) * SNAP_GRID_MM);
   }
-  if ('y' in result && snap) result.y = Math.max(result.y, onFloor);
+  return near;
+}
+
+function meetingTargets(at, moving, axis, position, fixed) {
+  const index = AXES.indexOf(axis);
+  const offset = AXES.map((each) => (position[each] ?? at[each]) - at[each]);
+  const near = [];
+  for (const { solid } of moving) {
+    const placedNow = moveSolid(solid, offset);
+    for (const other of fixed) {
+      for (const span of sweepSpans(placedNow, other.solid, index, SNAP_REACH_MM)) {
+        span.forEach((travel, end) => {
+          if (Math.abs(travel) <= SNAP_REACH_MM) near.push({ target: position[axis] + travel, side: end ? 1 : -1 });
+        });
+      }
+    }
+  }
+  return near;
+}
+
+const roundClear = ({ target, side }) => (side < 0 ? Math.floor(target * 10 + 1e-6) : Math.ceil(target * 10 - 1e-6)) / 10 + 0;
+const nearest = (value, targets) => targets.reduce((best, each) => (best && Math.abs(best.target - value) <= Math.abs(each.target - value) ? best : each), null);
+
+export function snapPosition(part, proposed, others, options) {
+  const fixed = others.filter((other) => other.id !== part.id).map((other) => bodyOf(other));
+  return snapBodies(part, [bodyOf(part)], proposed, fixed, options);
+}
+
+// Meetings are settled one axis at a time, nearest first, each with the axes already settled in place: an axis tested before its neighbour moved would meet the wrong face, or none.
+export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
+  const axes = POSITION.filter((axis) => axis in proposed);
+  if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundMm(proposed[axis])]));
+  const floor = roundMm(at.y - Math.min(...moving.map(({ box }) => box.min.y)));
+  const result = {};
+  const plain = {};
+  for (const axis of axes) {
+    plain[axis] = nearest(proposed[axis], faceTargets(at, moving, axis, proposed, fixed, floor));
+    result[axis] = roundMm(plain[axis]?.target ?? Math.round(proposed[axis] / SNAP_GRID_MM) * SNAP_GRID_MM);
+  }
+  let unsettled = axes;
+  while (unsettled.length) {
+    const beatsPlain = ({ axis, meet }) => meet && (!plain[axis] || Math.abs(meet.target - proposed[axis]) <= Math.abs(plain[axis].target - proposed[axis]));
+    const meetings = unsettled
+      .map((axis) => ({ axis, meet: nearest(proposed[axis], meetingTargets(at, moving, axis, { ...result, [axis]: proposed[axis] }, fixed)) }))
+      .filter(beatsPlain);
+    const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
+    if (!closest) break;
+    result[closest.axis] = roundClear(closest.meet);
+    unsettled = unsettled.filter((axis) => axis !== closest.axis);
+  }
+  if ('y' in result) result.y = Math.max(result.y, floor);
   return result;
 }
 

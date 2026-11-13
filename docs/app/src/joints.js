@@ -1,27 +1,31 @@
 import {
   MAX_SIZE_MM,
+  bodyOf,
   bounds,
   extents,
+  isIdentity,
   movePart,
   newId,
+  overlaps,
   poseAxes,
   projectBounds,
   recentre,
   rotatePart,
   roundMm,
-  snapBoxes,
+  snapBodies,
+  solidOf,
   turnAxis,
 } from './model.js';
+import { TOUCH_MM, meetingRegion } from './geometry.js';
 
 const AXES = ['x', 'y', 'z'];
-const TOUCH_MM = 0.05;
 
 const near = (a, b) => Math.abs(a - b) < TOUCH_MM;
 const findPart = (project, id) => project.parts.find((part) => part.id === id);
 const jointsOf = (project) => project.joints ?? [];
 const nameOf = (part) => part?.name || 'Unnamed';
 
-export function contact(a, b) {
+function boxContact(a, b) {
   const boxA = bounds(a);
   const boxB = bounds(b);
   for (const axis of AXES) {
@@ -39,6 +43,30 @@ export function contact(a, b) {
     return { axis, sign, at: sign > 0 ? boxA.max[axis] : boxA.min[axis], region };
   }
   return null;
+}
+
+const keepOr = (box, met) => (Math.abs(box - met) < TOUCH_MM ? box : roundMm(met));
+
+function trueContact(a, b) {
+  const touch = boxContact(a, b);
+  if (!touch) return null;
+  const met = meetingRegion(solidOf(a), solidOf(b), AXES.indexOf(touch.axis), touch.at);
+  if (!met) return null;
+  const region = {};
+  for (const [axis, [low, high]] of Object.entries(touch.region)) {
+    const [from, to] = met[AXES.indexOf(axis)];
+    region[axis] = [Math.max(low, keepOr(low, from)), Math.min(high, keepOr(high, to))];
+  }
+  return { ...touch, region };
+}
+
+const contacts = new WeakMap();
+
+export function contact(a, b) {
+  if (!contacts.has(a)) contacts.set(a, new WeakMap());
+  const known = contacts.get(a);
+  if (!known.has(b)) known.set(b, trueContact(a, b));
+  return known.get(b);
 }
 
 export function touchingParts(parts, id) {
@@ -314,8 +342,6 @@ export function mechanism(project) {
   };
 }
 
-const isIdentity = (placement) => placement.m.every((value, i) => Math.abs(value - IDENTITY.m[i]) < 1e-9) && placement.o.every((value) => Math.abs(value) < 1e-9);
-
 export function placements(project) {
   const mech = mechanism(project);
   return new Map(project.parts.map((part) => [part.id, mech.placement(part.id)]));
@@ -545,8 +571,10 @@ function actualBoxes(project, members) {
 }
 
 export function snapAssembly(project, id, proposed, options) {
-  const { moving, fixed } = actualBoxes(project, joinedTo(project, id));
-  return snapBoxes(findPart(project, id), moving, proposed, fixed, options);
+  const mech = mechanism(project);
+  const members = joinedTo(project, id);
+  const bodies = (joined) => project.parts.filter((part) => members.has(part.id) === joined).map((part) => bodyOf(part, mech.placement(part.id)));
+  return snapBodies(findPart(project, id), bodies(true), proposed, bodies(false), options);
 }
 
 function pieceOverLimit(before, after, members) {
@@ -647,37 +675,9 @@ export function insideCorner(to, part) {
   return candidates.sort((a, b) => rank(a) - rank(b) || b.span[1] - b.span[0] - (a.span[1] - a.span[0]))[0] ?? null;
 }
 
-function orientedBox(part, placement) {
-  const box = bounds(part);
-  const centre = transformPoint(placement, AXES.map((axis) => (box.min[axis] + box.max[axis]) / 2));
-  const half = AXES.map((axis) => (box.max[axis] - box.min[axis]) / 2);
-  const axes = [0, 1, 2].map((col) => [placement.m[col], placement.m[3 + col], placement.m[6 + col]]);
-  return { centre, half, axes };
-}
-
-function separated(a, b) {
-  const tests = [...a.axes, ...b.axes];
-  for (const first of a.axes) for (const second of b.axes) tests.push(cross(first, second));
-  const gap = b.centre.map((value, i) => value - a.centre[i]);
-  return tests.some((axis) => {
-    const size = Math.hypot(...axis);
-    if (size < 1e-6) return false;
-    const unitAxis = axis.map((value) => value / size);
-    const reach = (box) => box.axes.reduce((sum, each, i) => sum + box.half[i] * Math.abs(dot(each, unitAxis)), 0);
-    return Math.abs(dot(gap, unitAxis)) >= reach(a) + reach(b) - TOUCH_MM;
-  });
-}
-
 export function assemblyOverlaps(project) {
   const mech = mechanism(project);
-  const boxes = project.parts.map((part) => orientedBox(part, mech.placement(part.id)));
-  const pairs = [];
-  for (let i = 0; i < boxes.length; i++) {
-    for (let j = i + 1; j < boxes.length; j++) {
-      if (!separated(boxes[i], boxes[j])) pairs.push([project.parts[i].id, project.parts[j].id]);
-    }
-  }
-  return pairs;
+  return overlaps(project.parts, mech.placement);
 }
 
 const HARDWARE_ORDER = ['Butt hinge', 'Concealed hinge', 'Piano hinge', 'Angle bracket', 'Screw', 'Nail', 'Wood glue'];

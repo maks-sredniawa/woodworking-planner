@@ -1,0 +1,191 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { POSES, SHAPES, bounds, legacyPose, makePart, makeShape, overlaps, rotatePart, snapPosition } from '../docs/app/src/model.js';
+import { assemblyOverlaps, contact, joinParts, snapAssembly, touchingParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
+
+const block = (size, fields = {}) => makePart({ name: 'Block', length: size, width: size, thickness: size, ...fields });
+
+test('a block in the empty corner of a disc’s box does not overlap the disc; pushed into the rim it does', () => {
+  const disc = makeShape('disc');
+  assert.deepEqual(overlaps([disc, block(50)]), []);
+  const pushed = block(70);
+  assert.deepEqual(overlaps([disc, pushed]), [[disc.id, pushed.id]]);
+});
+
+const spun = (pose) => pose.slice(0, 4).replace(/[+-]/g, (sign) => (sign === '+' ? '-' : '+')) + pose.slice(4);
+
+test('two right triangles that make a rectangle meet on the slope and do not overlap, in every pose', () => {
+  for (const pose of POSES) {
+    const triangle = { ...makeShape('triangle'), length: 300, width: 200, pose, y: 1000 };
+    const other = { ...triangle, id: 'other', pose: spun(pose) };
+    assert.deepEqual(bounds(other), bounds(triangle), pose);
+    assert.deepEqual(overlaps([triangle, other]), [], pose);
+    const same = { ...triangle, id: 'same' };
+    assert.equal(overlaps([triangle, same]).length, 1, pose);
+  }
+});
+
+test('a disc set in the hole of a full ring fits it exactly without overlapping; a bigger one overlaps', () => {
+  const ring = { ...makeShape('arc'), outerRadius: 400, bandWidth: 60, sweep: 360 };
+  const inlay = { ...makeShape('disc'), diameter: 680, x: 60, z: 60 };
+  assert.deepEqual(overlaps([ring, inlay]), []);
+  const bigger = { ...inlay, diameter: 682, x: 59, z: 59 };
+  assert.equal(overlaps([ring, bigger]).length, 1);
+});
+
+test('a block in the corner of a dowel’s box clears the round dowel', () => {
+  const dowel = makeShape('dowel');
+  assert.deepEqual(overlaps([dowel, block(4, { x: 100 })]), []);
+  assert.equal(overlaps([dowel, block(6, { x: 100 })]).length, 1);
+  const standing = rotatePart(rotatePart(dowel, 'z'), 'x');
+  const corner = bounds(standing).min;
+  assert.deepEqual(overlaps([standing, block(4, { ...corner, y: 100 })]), []);
+});
+
+test('a block in a rounded or cut corner of a board clears it; at a square corner it overlaps', () => {
+  const rounded = { ...makePart({ length: 600, width: 300 }), corners: 'rounded', cornerRadius: 50 };
+  assert.deepEqual(overlaps([rounded, block(10)]), []);
+  const cut = { ...rounded, corners: 'cut', cutLength: 50, cutWidth: 50 };
+  assert.deepEqual(overlaps([cut, block(10)]), []);
+  const square = { ...rounded, corners: 'square' };
+  assert.equal(overlaps([square, block(10)]).length, 1);
+});
+
+test('a block inside the bend of an arc clears it, for sweeps up to a full turn', () => {
+  for (const sweep of [45, 90, 180, 270, 359, 360]) {
+    const arc = { ...makeShape('arc'), outerRadius: 400, bandWidth: 60, sweep, y: 500 };
+    const box = bounds(arc);
+    const middle = (axis) => (box.min[axis] + box.max[axis]) / 2;
+    const centre = { x: middle('x') - 10, y: 500, z: sweep >= 180 ? middle('z') - 10 : box.max.z - 20 };
+    assert.deepEqual(overlaps([arc, block(20, centre)]), [], `sweep ${sweep}`);
+    const onBand = { ...centre, z: box.min.z };
+    assert.equal(overlaps([arc, block(20, onBand)]).length, 1, `sweep ${sweep}`);
+  }
+});
+
+test('every shape lying on another flat piece only touches it', () => {
+  for (const shape of Object.keys(SHAPES)) {
+    const base = makePart({ length: 2000, width: 2000, thickness: 18 });
+    const piece = { ...makeShape(shape), x: 100, y: 18, z: 100 };
+    assert.deepEqual(overlaps([base, piece]), [], shape);
+    assert.equal(overlaps([base, { ...piece, y: 17 }]).length, 1, shape);
+  }
+});
+
+const side = () => makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
+
+test('a round door swung open clears a block in the corner of its turned box, and hits one on its rim', () => {
+  const frame = side();
+  const door = { ...makeShape('disc'), name: 'Round door', pose: legacyPose('yxz'), z: 244 };
+  const hung = joinParts({ name: 'Cabinet', parts: [frame, door], joints: [] }, 'hinge', door.id, frame.id);
+  assert.equal(hung.error, undefined);
+  const corner = block(50, { name: 'Corner', x: -30, z: 594 });
+  const rim = block(50, { name: 'Rim', x: -30, z: 419 });
+  const closed = { ...hung.project, parts: [...hung.project.parts, corner, rim] };
+  assert.deepEqual(assemblyOverlaps(closed), []);
+  const open = updateJoint(closed, hung.joint.id, 'open', 90);
+  assert.deepEqual(worldBounds(open, door.id), { min: { x: -18, y: 0, z: 244 }, max: { x: 0, y: 400, z: 644 } });
+  assert.deepEqual(assemblyOverlaps(open), [[door.id, rim.id]]);
+  const halfway = updateJoint(closed, hung.joint.id, 'open', 45);
+  const swept = block(20, { name: 'Swept', x: 125, y: 190, z: 382 });
+  assert.deepEqual(assemblyOverlaps({ ...halfway, parts: [...halfway.parts, swept] }), [[door.id, swept.id]]);
+});
+
+test('a disc against a side touches it only where its rim meets the side, and only there can it be joined', () => {
+  const wall = side();
+  const past = { ...makeShape('disc'), name: 'Past the end', x: 18, y: 300, z: 200 };
+  assert.equal(contact(wall, past), null);
+  assert.deepEqual(touchingParts([wall, past], wall.id), []);
+  assert.match(joinParts({ name: 'P', parts: [wall, past], joints: [] }, 'screws', past.id, wall.id).error, /don’t touch/);
+  const against = { ...past, name: 'Against', z: 0 };
+  const touch = contact(wall, against);
+  assert.equal(touch.axis, 'x');
+  assert.equal(touch.at, 18);
+  assert.deepEqual(touch.region.y, [300, 318]);
+  const [low, high] = touch.region.z;
+  assert.ok(low < 200 && high > 200 && high - low < 10, `rim meets the side around z 200, got ${low}–${high}`);
+  assert.deepEqual(touchingParts([wall, past, against], wall.id).map((part) => part.name), ['Against']);
+});
+
+test('a shelf with rounded front corners meets the side only along its straight end', () => {
+  const wall = side();
+  const shelf = makePart({ name: 'Shelf', length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 300, corners: 'rounded', cornerRadius: 50, cornerTopLeft: false, cornerTopRight: false });
+  const { region } = contact(wall, shelf);
+  assert.deepEqual(region.y, [300, 318]);
+  assert.equal(region.z[0], 0);
+  assert.ok(region.z[1] >= 194 && region.z[1] < 195, `straight end ends at z 194, got ${region.z[1]}`);
+});
+
+test('a disc dragged toward another disc snaps where the rims meet, not where the boxes would', () => {
+  const still = { ...makeShape('disc'), name: 'Still', x: 1000 };
+  const moving = { ...makeShape('disc'), name: 'Moving', z: 200 };
+  const { x } = snapPosition(moving, { x: 660 }, [still]);
+  assert.ok(Math.abs(x - 653.6) < 1, `rims meet near x 653.6, snapped to ${x}`);
+  assert.deepEqual(overlaps([{ ...moving, x }, still]), []);
+  assert.equal(overlaps([{ ...moving, x: x + 1 }, still]).length, 1);
+});
+
+test('a block slides past the open corner of a triangle and snaps against its slope', () => {
+  const triangle = { ...makeShape('triangle'), name: 'Triangle' };
+  const moving = block(20);
+  assert.equal(snapPosition(moving, { x: 207 }, [triangle]).x, 210);
+  assert.equal(snapPosition(moving, { x: 25 }, [triangle]).x, 20);
+  assert.equal(snapPosition(moving, { x: 25 }, [triangle], { snap: false }).x, 25);
+});
+
+test('snapping lines a piece up with the faces of a piece out of its path, as before', () => {
+  const disc = { ...makeShape('disc'), name: 'Disc', z: 1000 };
+  const moving = block(20);
+  assert.equal(snapPosition(moving, { x: 395 }, [disc]).x, 400);
+  assert.equal(snapPosition(moving, { x: 386 }, [disc]).x, 380);
+});
+
+test('snapping against a swung door uses where the door is now', () => {
+  const frame = side();
+  const door = makePart({ name: 'Door', length: 800, width: 400, thickness: 18, pose: legacyPose('yxz'), z: 244 });
+  const hung = joinParts({ name: 'Cabinet', parts: [frame, door], joints: [] }, 'hinge', door.id, frame.id);
+  const moving = block(50, { x: -100, z: 400 });
+  const open = updateJoint({ ...hung.project, parts: [...hung.project.parts, moving] }, hung.joint.id, 'open', 90);
+  assert.equal(snapAssembly(open, moving.id, { x: -75 }).x, -68);
+});
+
+test('dragging an assembly snaps where any of its pieces meets another by the true outline', () => {
+  const disc = { ...makeShape('disc'), name: 'Disc', z: 200 };
+  const still = { ...makeShape('disc'), name: 'Still', x: 1000 };
+  const holder = makePart({ name: 'Holder', length: 300, width: 400, thickness: 18, pose: legacyPose('yzx'), x: -18, z: 200 });
+  const glued = joinParts({ name: 'Rack', parts: [disc, holder, still], joints: [] }, 'glue', holder.id, disc.id).project;
+  const { x } = snapAssembly(glued, holder.id, { x: 642 });
+  assert.equal(x + 18, snapPosition(disc, { x: 660 }, [still]).x);
+  assert.deepEqual(overlaps([{ ...disc, x: x + 18 }, still]), []);
+});
+
+const corner = () => [
+  makePart({ name: 'Left wall', length: 1000, width: 600, thickness: 18, pose: legacyPose('yzx') }),
+  makePart({ name: 'Back wall', length: 582, width: 1000, thickness: 18, pose: legacyPose('xyz'), x: 18 }),
+];
+
+test('a block dragged into an inside corner sits flush against both walls', () => {
+  const walls = corner();
+  const moving = block(200, { x: 300, z: 300 });
+  assert.deepEqual(snapPosition(moving, { x: 21, z: 22 }, walls), { x: 18, z: 18 });
+});
+
+test('a block dragged into an inside corner never ends up inside a wall', () => {
+  const walls = corner();
+  const moving = block(200, { x: 300, z: 300 });
+  const snapped = snapPosition(moving, { x: 19, z: 12 }, walls);
+  assert.deepEqual(overlaps([{ ...moving, ...snapped }, ...walls]), [], `snapped to ${JSON.stringify(snapped)}`);
+  for (let x = 18; x <= 33; x += 1.5) {
+    for (let z = 18; z <= 33; z += 1.5) {
+      const near = snapPosition(moving, { x, z }, walls);
+      assert.deepEqual(overlaps([{ ...moving, ...near }, ...walls]), [], `dragged to ${x}, ${z} snapped to ${JSON.stringify(near)}`);
+    }
+  }
+});
+
+test('the smallest round pieces still have a solid to test', () => {
+  const thin = { ...makeShape('dowel'), dowelDiameter: 0.2 };
+  assert.equal(overlaps([thin, { ...thin, id: 'twin' }]).length, 1);
+  const tight = { ...makePart({ length: 1, width: 1 }), corners: 'rounded', cornerRadius: 0.1 };
+  assert.equal(overlaps([tight, { ...tight, id: 'twin' }]).length, 1);
+});

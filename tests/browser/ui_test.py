@@ -1092,6 +1092,32 @@ try:
         joined.evaluate('localStorage.clear()')
         joined.close()
 
+        disc = lambda name, **at: {'name': name, 'shape': 'disc', 'diameter': 400, 'thickness': 18, 'pose': '+x-z+y', **at}
+        rounded = json.dumps({'format': 'woodworking-planner', 'version': 3, 'name': 'Round pieces', 'joints': [], 'parts': [
+            board('Side', 1000, 244, '+y+z+x'), disc('Corner disc', x=18, y=300, z=200), disc('Rim disc', x=18, y=600),
+            {'name': 'Block', 'length': 50, 'width': 50, 'thickness': 50, 'pose': '+x-z+y', 'x': 18, 'y': 600}]})
+        outlined = browser.new_page(viewport={'width': 1280, 'height': 900})
+        outlined.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        outlined.on('pageerror', lambda e: errors.append(str(e)))
+        outlined.goto(URL)
+        outlined.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(rounded)})')
+        outlined.reload()
+        expect(outlined.locator('#parts li')).to_have_count(4)
+        expect(outlined.locator('.warn')).to_have_count(0)
+        outlined.locator('#parts li').first.locator('.row-main').click()
+        outlined.click('#joint-add-open')
+        expect(outlined.locator('#joint-other option')).to_have_text(['Rim disc', 'Block'])
+        outlined.click('#joint-add-cancel')
+        outlined.locator('#parts li').nth(1).locator('.row-main').click()
+        expect(outlined.locator('#joints-none')).to_be_visible()
+        expect(outlined.locator('#joint-add-open')).to_be_hidden()
+        outlined.locator('#parts li').nth(3).locator('.row-main').click()
+        outlined.fill('#editor [name=x]', '60')
+        expect(outlined.locator('#parts li').nth(3)).to_contain_text('Overlaps')
+        expect(outlined.locator('#parts li').nth(2)).to_contain_text('Overlaps')
+        outlined.evaluate('localStorage.clear()')
+        outlined.close()
+
         handset = browser.new_page(viewport={'width': 360, 'height': 800})
         handset.on('console', lambda m: m.type == 'error' and errors.append(m.text))
         handset.on('pageerror', lambda e: errors.append(str(e)))

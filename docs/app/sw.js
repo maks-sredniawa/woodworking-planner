@@ -1,5 +1,5 @@
-const CACHE = 'woodworking-planner-v3';
-const FILES = ['.', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'index.html', 'manifest.webmanifest', 'src/app.js', 'src/debug.js', 'src/joints.js', 'src/model.js', 'src/project.js', 'src/scene.js', 'src/storage.js', 'styles.css', 'vendor/three/addons/OrbitControls.js', 'vendor/three/LICENSE', 'vendor/three/three.core.js', 'vendor/three/three.module.js'];
+const CACHE = 'woodworking-planner-v4';
+const FILES = ['.', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'index.html', 'manifest.webmanifest', 'src/app.js', 'src/debug.js', 'src/geometry.js', 'src/joints.js', 'src/model.js', 'src/project.js', 'src/scene.js', 'src/storage.js', 'styles.css', 'vendor/three/addons/OrbitControls.js', 'vendor/three/LICENSE', 'vendor/three/three.core.js', 'vendor/three/three.module.js'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
