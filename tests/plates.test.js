@@ -46,6 +46,27 @@ test('two plates for a joint line over 300 long, and plates sized to fit the pie
   assert.deepEqual([joint.length, joint.width], [50, 12]);
 });
 
+test('two thin panels lying flat end to end take a plate on their wide face, with screws that fit', () => {
+  for (const thick of [6, 9]) {
+    const panel = (fields) => makePart({ name: 'Panel', length: 400, width: 300, thickness: thick, pose: legacyPose('xzy'), ...fields });
+    const a = panel({ x: 0 });
+    const b = panel({ name: 'Next', x: 400 });
+    const { project: state, joint, error } = joinParts(project([a, b]), 'mendingPlate', b.id, a.id);
+    assert.equal(error, undefined);
+    assert.deepEqual([joint.face, joint.length, joint.width, joint.count], ['-y', 80, 16, 1]);
+    assert.ok(joint.screwLength <= thick);
+    assert.equal(jointProblem(state, joint.id), null);
+    assert.deepEqual(suggestedSizes(state, joint).face, '-y');
+  }
+});
+
+test('a mending plate defaults to the widest flush face rather than a narrow edge', () => {
+  const panel = (fields) => makePart({ name: 'Panel', length: 400, width: 300, thickness: 18, pose: legacyPose('xzy'), ...fields });
+  const a = panel({ x: 0 });
+  const b = panel({ name: 'Next', x: 400 });
+  assert.equal(joinParts(project([a, b]), 'mendingPlate', b.id, a.id).joint.face, '-y');
+});
+
 test('a corner plate goes on a frame corner, and is refused on pieces in line or with no flush face', () => {
   const upright = stile();
   const bottom = rail();
