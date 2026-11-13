@@ -747,7 +747,7 @@ function recheckPendingFields(pending) {
   }
   for (const { field, typed, refusal } of stillInvalid) {
     field.value = typed;
-    showFieldError(field, refusal || fieldError(selectedPart(), field));
+    announceFieldError(field, refusal || fieldError(selectedPart(), field));
   }
 }
 
@@ -1249,8 +1249,12 @@ $('editor').addEventListener('submit', (event) => event.preventDefault());
 
 function refusePartEdit(input, message, typed) {
   if (!typed) renderEditor();
+  if (!$(`${input.name}-error`)) return announce($('editor-note'), message);
+  announceFieldError(input, message);
+}
+
+function announceFieldError(input, message) {
   const note = $(`${input.name}-error`);
-  if (!note) return announce($('editor-note'), message);
   announce(note, message);
   markInvalid(input, note, message);
 }
