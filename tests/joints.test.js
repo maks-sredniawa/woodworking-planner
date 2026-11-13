@@ -272,6 +272,16 @@ test('an angle bracket takes screws no longer than the thinner piece, and warns 
   assert.equal(jointProblem(updateJoint(state, joint.id, 'screwLength', 20), joint.id), 'The screws (20) are longer than Shelf is thick (12).');
 });
 
+test('an angle bracket on stock thinner than 12 gets screws short enough not to warn', () => {
+  for (const thick of [6, 9]) {
+    const left = side();
+    const board = shelf({ thickness: thick });
+    const { project: state, joint } = joinParts(project([left, board]), 'bracket', board.id, left.id);
+    assert.ok(joint.screwLength <= thick);
+    assert.equal(jointProblem(state, joint.id), null);
+  }
+});
+
 test('a door that swings through other pieces overlaps them; swung clear, it does not', () => {
   const { project: closed, joint } = hung();
   const box = makePart({ name: 'Box', length: 100, width: 100, thickness: 100, pose: legacyPose('xzy'), x: -150, y: 0, z: 250 });

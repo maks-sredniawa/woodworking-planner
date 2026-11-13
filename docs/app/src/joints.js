@@ -77,6 +77,7 @@ const CONCEALED_DOOR_MM = 16;
 const EDGE_PREFERENCE = ['-z', '-x', '+y', '+x', '-y', '+z'];
 const PLATES = [[40, 12], [50, 12], [63, 16], [80, 16]];
 const PLATE_SCREW_LENGTHS = [12, 16, 20];
+const SHORT_SCREW_LENGTHS = [6, 8, 10];
 
 function standard(sizes, wanted, most) {
   const fitting = sizes.filter((size) => size <= most);
@@ -84,6 +85,8 @@ function standard(sizes, wanted, most) {
 }
 
 const largestUpTo = (sizes, most) => sizes.filter((size) => size <= most).at(-1) ?? sizes[0];
+
+const fixingScrew = (sizes, depth) => largestUpTo([...SHORT_SCREW_LENGTHS, ...sizes], Math.max(depth - 2, Math.min(12, depth)));
 
 function meeting(part, to) {
   const touch = contact(to, part);
@@ -162,8 +165,15 @@ export function jointFaces(project, joint) {
 }
 
 function plateFace(joint, part, to, touch) {
-  const faces = facesFor(joint.kind, part, to, touch);
-  return faces.includes(joint.face) ? joint.face : faces[0] ?? null;
+  if (facesFor(joint.kind, part, to, touch).includes(joint.face)) return joint.face;
+  return roomiestPlate(joint.kind, part, to, touch)?.face ?? null;
+}
+
+function roomiestPlate(kind, part, to, touch) {
+  const rooms = facesFor(kind, part, to, touch)
+    .map((face) => ({ face, room: plateRoom(kind, part, to, touch, face) }))
+    .sort((a, b) => b.room.width - a.room.width);
+  return rooms.find(({ room }) => stockPlate(room)) ?? rooms[0];
 }
 
 function plateRefusal(kind, part, to, touch) {
@@ -196,7 +206,7 @@ const stockPlate = (room) => PLATES.filter((plate) => plateFits(room, plate)).at
 const plateSize = (kind, length, width) => (kind === 'mendingPlate' ? [length, width] : [length, length, width]).join(' × ');
 
 function plateMissing(kind, part, to, touch) {
-  const room = plateRoom(kind, part, to, touch, plateFace({ kind }, part, to, touch));
+  const { room } = roomiestPlate(kind, part, to, touch);
   if (stockPlate(room)) return null;
   const [length, width] = PLATES[0];
   const smallest = `Even the smallest ${JOINT_KINDS[kind].toLowerCase()} (${plateSize(kind, length, width)})`;
@@ -211,7 +221,7 @@ function screwsTooLong(length, holds) {
 
 function plateScrews(part, to, face) {
   const depth = Math.min(extents(part)[edgeAxis(face)], extents(to)[edgeAxis(face)]);
-  return { screwsEach: 4, screwDiameter: 3.5, screwLength: largestUpTo(PLATE_SCREW_LENGTHS, depth - 2) };
+  return { screwsEach: 4, screwDiameter: 3.5, screwLength: fixingScrew(PLATE_SCREW_LENGTHS, depth) };
 }
 
 function plateRoom(kind, part, to, touch, face) {
@@ -282,7 +292,7 @@ const DEFAULTS = {
       width: leg >= 60 ? 20 : 16,
       screwsEach: 4,
       screwDiameter: 3.5,
-      screwLength: largestUpTo(SCREW_LENGTHS, Math.max(12, depth - 2)),
+      screwLength: fixingScrew(SCREW_LENGTHS, depth),
       glued: false,
     };
   },
