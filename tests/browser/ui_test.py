@@ -17,6 +17,8 @@ URL = f'http://127.0.0.1:{PORT}/index.html'
 server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT), '--bind', '127.0.0.1'], cwd=ROOT / 'docs' / 'app',
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 errors = []
+WATCH_NOTE = '''(note) => { window.noteSeen = []; new MutationObserver(() => noteSeen.push(note.textContent)).observe(note, { childList: true, characterData: true, subtree: true }); }'''
+REREAD = 'noteSeen.includes("") && noteSeen.at(-1) !== ""'
 CORNERS_OUTSIDE = '''(() => {
     const path = document.querySelector("#corner-shape path"), toShape = path.getScreenCTM().inverse();
     return [...document.querySelectorAll("#corner-pick input")].filter((box) => {
@@ -741,6 +743,12 @@ try:
         expect(width).to_have_value('40')
         expect(width).to_have_attribute('aria-invalid', 'true')
         expect(shaped.locator('#width-error')).to_have_text('Enter at least 50 mm: twice the corner radius.')
+        shaped.locator('#width-error').evaluate(WATCH_NOTE)
+        name = shaped.input_value('#editor [name=name]')
+        shaped.fill('#editor [name=name]', 'Rounded')
+        shaped.wait_for_function(REREAD, timeout=5000)
+        expect(shaped.locator('#width-error')).to_have_text('Enter at least 50 mm: twice the corner radius.')
+        shaped.fill('#editor [name=name]', name)
         shaped.click('#corners-box .choice:has-text("Square")')
         expect(width).to_have_value('40')
         expect(shaped.locator('#width-error')).to_be_hidden()
@@ -956,10 +964,9 @@ try:
         expect(door_card.locator('.joint-error')).to_have_text(locked_door)
         expect(door_card.locator('.joint-error')).to_be_visible()
         assert joined.evaluate('woodworkingPlanner.project.joints.length') == 2, 'Remove joint took off the hinge of a locked open door'
-        watch_note = '''(note) => { window.noteSeen = []; new MutationObserver(() => noteSeen.push(note.textContent)).observe(note, { childList: true, characterData: true, subtree: true }); }'''
-        door_card.locator('.joint-error').evaluate(watch_note)
+        door_card.locator('.joint-error').evaluate(WATCH_NOTE)
         joined.keyboard.press('Enter')
-        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        joined.wait_for_function(REREAD)
         expect(door_card.locator('.joint-error')).to_have_text(locked_door)
         look = remove_hinge.evaluate('(b) => [getComputedStyle(b).opacity, getComputedStyle(b).color, getComputedStyle(b).borderTopStyle]')
         muted = joined.evaluate('getComputedStyle(document.querySelector(".help")).color')
@@ -972,10 +979,17 @@ try:
         joined.keyboard.press('Enter')
         expect(joined.locator('#editor-note')).to_have_text(locked_door)
         expect(joined.locator('#editor-note')).to_be_visible()
-        joined.locator('#editor-note').evaluate(watch_note)
+        joined.locator('#editor-note').evaluate(WATCH_NOTE)
         joined.keyboard.press('Enter')
-        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        joined.wait_for_function(REREAD)
         expect(joined.locator('#editor-note')).to_have_text(locked_door)
+        stale = joined.evaluate('''() => new Promise((done) => {
+            document.getElementById('delete').click();
+            woodworkingPlanner.select(woodworkingPlanner.project.parts.find((p) => p.name === 'Bottom').id);
+            requestAnimationFrame(() => requestAnimationFrame(() => done(['editor-note', 'parts-note'].map((id) => document.getElementById(id).textContent))));
+        })''')
+        assert stale == ['', ''], f'a refusal still on its way landed after picking another piece cleared the notes: {stale}'
+        row('Left side').locator('.row-main').click()
         row('Left side').locator('.row-acts .danger').click(force=True)
         expect(joined.locator('#parts-note')).to_have_text(locked_door)
         expect(joined.locator('#parts-note')).to_be_visible()
@@ -992,9 +1006,9 @@ try:
         expect(joined.locator('#width-error')).to_be_empty()
         joined.locator('#editor .choice', has_text='Disc').click()
         expect(joined.locator('#shape-error')).to_have_text(locked_door)
-        joined.locator('#shape-error').evaluate(watch_note)
+        joined.locator('#shape-error').evaluate(WATCH_NOTE)
         joined.locator('#editor .choice', has_text='Disc').click()
-        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        joined.wait_for_function(REREAD)
         expect(joined.locator('#shape-error')).to_have_text(locked_door)
         expect(joined.locator('#editor [name=shape][value=board]')).to_be_checked()
         assert hinge_open() == 180, f'reshaping the frame swung a locked door to {hinge_open()}'
