@@ -392,18 +392,28 @@ function openAngle(project, id) {
   return total;
 }
 
-export function removeJoint(project, jointId) {
-  const next = { ...project, joints: jointsOf(project).filter((joint) => joint.id !== jointId) };
-  return movesLockedPiece(project, next) ? project : next;
+export function jointRemoval(project, jointId) {
+  return unlessLockedPieceMoves(project, { ...project, joints: jointsOf(project).filter((joint) => joint.id !== jointId) });
 }
 
-export function removePart(project, partId) {
-  const next = {
+export function removeJoint(project, jointId) {
+  return jointRemoval(project, jointId).project ?? project;
+}
+
+export function partRemoval(project, partId) {
+  return unlessLockedPieceMoves(project, {
     ...project,
     parts: project.parts.filter((part) => part.id !== partId),
     joints: jointsOf(project).filter((joint) => joint.part !== partId && joint.to !== partId),
-  };
-  return movesLockedPiece(project, next) ? project : next;
+  });
+}
+
+export function removePart(project, partId) {
+  return partRemoval(project, partId).project ?? project;
+}
+
+export function changePart(project, next) {
+  return unlessLockedPieceMoves(project, { ...project, parts: project.parts.map((part) => (part.id === next.id ? next : part)) });
 }
 
 const whole = (most) => (raw) => {
@@ -480,15 +490,20 @@ const withJoint = (project, joint) => ({ ...project, joints: jointsOf(project).m
 
 const samePlacement = (a, b) => a.m.every((value, i) => Math.abs(value - b.m[i]) < 1e-9) && a.o.every((value, i) => Math.abs(value - b.o[i]) < 1e-6);
 
-function movesLockedPiece(before, after) {
+function lockedPieceMoved(before, after) {
   const was = mechanism(before);
   const now = mechanism(after);
-  return after.parts.some((part) => part.locked && !samePlacement(was.placement(part.id), now.placement(part.id)));
+  return after.parts.find((part) => part.locked && !samePlacement(was.placement(part.id), now.placement(part.id))) ?? null;
+}
+
+function unlessLockedPieceMoves(project, next) {
+  const piece = lockedPieceMoved(project, next);
+  return piece ? { refused: 'locked', piece } : { project: next };
 }
 
 function unlessLockedMoves(project, next) {
   const result = withJoint(project, next);
-  return movesLockedPiece(project, result) ? { refused: 'locked' } : { project: result };
+  return lockedPieceMoved(project, result) ? { refused: 'locked' } : { project: result };
 }
 
 export function changeJoint(project, jointId, field, raw) {
