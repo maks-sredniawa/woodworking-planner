@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { POSES, SHAPES, bounds, legacyPose, makePart, makeShape, overlaps, rotatePart } from '../docs/app/src/model.js';
-import { assemblyOverlaps, joinParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
+import { assemblyOverlaps, contact, joinParts, touchingParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
 
 const block = (size, fields = {}) => makePart({ name: 'Block', length: size, width: size, thickness: size, ...fields });
 
@@ -89,4 +89,29 @@ test('a round door swung open clears a block in the corner of its turned box, an
   const halfway = updateJoint(closed, hung.joint.id, 'open', 45);
   const swept = block(20, { name: 'Swept', x: 125, y: 190, z: 382 });
   assert.deepEqual(assemblyOverlaps({ ...halfway, parts: [...halfway.parts, swept] }), [[door.id, swept.id]]);
+});
+
+test('a disc against a side touches it only where its rim meets the side, and only there can it be joined', () => {
+  const wall = side();
+  const past = { ...makeShape('disc'), name: 'Past the end', x: 18, y: 300, z: 200 };
+  assert.equal(contact(wall, past), null);
+  assert.deepEqual(touchingParts([wall, past], wall.id), []);
+  assert.match(joinParts({ name: 'P', parts: [wall, past], joints: [] }, 'screws', past.id, wall.id).error, /don’t touch/);
+  const against = { ...past, name: 'Against', z: 0 };
+  const touch = contact(wall, against);
+  assert.equal(touch.axis, 'x');
+  assert.equal(touch.at, 18);
+  assert.deepEqual(touch.region.y, [300, 318]);
+  const [low, high] = touch.region.z;
+  assert.ok(low < 200 && high > 200 && high - low < 10, `rim meets the side around z 200, got ${low}–${high}`);
+  assert.deepEqual(touchingParts([wall, past, against], wall.id).map((part) => part.name), ['Against']);
+});
+
+test('a shelf with rounded front corners meets the side only along its straight end', () => {
+  const wall = side();
+  const shelf = makePart({ name: 'Shelf', length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 300, corners: 'rounded', cornerRadius: 50, cornerTopLeft: false, cornerTopRight: false });
+  const { region } = contact(wall, shelf);
+  assert.deepEqual(region.y, [300, 318]);
+  assert.equal(region.z[0], 0);
+  assert.ok(region.z[1] >= 194 && region.z[1] < 195, `straight end ends at z 194, got ${region.z[1]}`);
 });

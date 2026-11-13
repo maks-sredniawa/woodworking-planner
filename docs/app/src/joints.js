@@ -10,18 +10,19 @@ import {
   recentre,
   rotatePart,
   roundMm,
+  solidOf,
   turnAxis,
 } from './model.js';
+import { TOUCH_MM, meetingRegion } from './geometry.js';
 
 const AXES = ['x', 'y', 'z'];
-const TOUCH_MM = 0.05;
 
 const near = (a, b) => Math.abs(a - b) < TOUCH_MM;
 const findPart = (project, id) => project.parts.find((part) => part.id === id);
 const jointsOf = (project) => project.joints ?? [];
 const nameOf = (part) => part?.name || 'Unnamed';
 
-export function contact(a, b) {
+function boxContact(a, b) {
   const boxA = bounds(a);
   const boxB = bounds(b);
   for (const axis of AXES) {
@@ -39,6 +40,30 @@ export function contact(a, b) {
     return { axis, sign, at: sign > 0 ? boxA.max[axis] : boxA.min[axis], region };
   }
   return null;
+}
+
+const keepOr = (box, met) => (Math.abs(box - met) < TOUCH_MM ? box : roundMm(met));
+
+function trueContact(a, b) {
+  const touch = boxContact(a, b);
+  if (!touch) return null;
+  const met = meetingRegion(solidOf(a), solidOf(b), AXES.indexOf(touch.axis), touch.at);
+  if (!met) return null;
+  const region = {};
+  for (const [axis, [low, high]] of Object.entries(touch.region)) {
+    const [from, to] = met[AXES.indexOf(axis)];
+    region[axis] = [Math.max(low, keepOr(low, from)), Math.min(high, keepOr(high, to))];
+  }
+  return { ...touch, region };
+}
+
+const contacts = new WeakMap();
+
+export function contact(a, b) {
+  if (!contacts.has(a)) contacts.set(a, new WeakMap());
+  const known = contacts.get(a);
+  if (!known.has(b)) known.set(b, trueContact(a, b));
+  return known.get(b);
 }
 
 export function touchingParts(parts, id) {
