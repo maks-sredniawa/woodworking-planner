@@ -5,5 +5,5 @@ title: Woodworking planner
 description: A web app to plan a woodworking project and see it in 3D before you cut the first board.
 maksforge:
   icon: /assets/icons/woodworking-planner.webp
-  status: building
+  status: live
   kind: Web app

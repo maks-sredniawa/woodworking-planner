@@ -27,8 +27,8 @@ import {
   snapPosition,
   totals,
   updatePart,
-} from '../src/model.js';
-import { parseProject, serialize, starterProject } from '../src/project.js';
+} from '../docs/app/src/model.js';
+import { parseProject, serialize, starterProject } from '../docs/app/src/project.js';
 
 test('there are 24 poses and each maps length, width and thickness to three different axes', () => {
   assert.equal(POSES.length, 24);

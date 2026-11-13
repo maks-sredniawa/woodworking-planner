@@ -5,15 +5,15 @@ title: Privacy Policy
 
 # Privacy Policy
 
-_Last updated: 2026-11-12_
+_Last updated: 2026-11-13_
 
 Woodworking planner is a web app to plan a woodworking project and see it in 3D. This policy
 describes what it keeps and where. It is short because the app does very little with your data.
 
 ## The app collects nothing
 
-There is no account, no online server, no analytics and no advertising. The app makes no network requests
-of its own and sends nothing anywhere.
+There is no account, no analytics and no advertising, and no server of ours does any work for you. Apart from
+fetching its own files, the app makes no network requests and sends nothing anywhere.
 
 ## What it keeps, and where
 
@@ -30,9 +30,11 @@ of its own and sends nothing anywhere.
 
 ## The things that happen outside the app
 
-1. **Where you run it from.** While the app is in development, you run it from its source on your
-   own computer, and it is served only to your own browser. If it is hosted on maksforge.com later,
-   loading the page will be a request to that site, like any web page.
+1. **Loading the page.** The app's files come from maksforge.com, which is hosted by Cloudflare.
+   Opening it is a request to that site like any web page, and Cloudflare handles that request under
+   its own privacy policy. Your projects are not part of it: they never leave your browser. After the
+   first visit your browser keeps a copy of the app's files so it works offline; clearing the site's
+   data removes it.
 2. **A tip, if you choose to leave one.** Buy Me a Coffee handles the payment under its own privacy
    policy.
 3. **An issue you choose to open.** It is public on GitHub, under GitHub's privacy policy.
