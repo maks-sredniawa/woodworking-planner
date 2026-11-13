@@ -384,3 +384,26 @@ test('a refused removal says which locked piece it would swing; an allowed one r
   assert.equal(jointRemoval(open, joint.id).project.joints.length, 0);
   assert.equal(partRemoval(open, joint.to).project.parts.length, 1);
 });
+
+test('four turns about the same axis bring an assembly, or a lone piece, back exactly, tenths of a millimetre included', () => {
+  for (const [length, width, x, z] of [[244.1, 18, 0.1, 0], [300.3, 18.1, 0.3, 0.1], [764, 244.1, 18, 6.1]]) {
+    const loose = makePart({ length, width, thickness: 18, pose: legacyPose('xzy'), x, z });
+    for (const axis of ['x', 'y', 'z']) {
+      let turned = loose;
+      for (let i = 0; i < 4; i++) turned = rotatePart(turned, axis);
+      assert.deepEqual([turned.x, turned.y, turned.z, turned.pose], [loose.x, loose.y, loose.z, loose.pose], `${length}×${width} about ${axis}`);
+    }
+    const frame = side({ x, width: length });
+    const leaf = shelf({ x: x + 18, width: length, z: 0, thickness: width });
+    const state = joinParts(project([frame, leaf]), 'glue', leaf.id, frame.id).project;
+    for (const axis of ['x', 'y', 'z']) {
+      let turned = state;
+      for (let i = 0; i < 4; i++) turned = rotateAssembly(turned, frame.id, axis);
+      assert.deepEqual(
+        turned.parts.map((part) => [part.x, part.y, part.z, part.pose]),
+        state.parts.map((part) => [part.x, part.y, part.z, part.pose]),
+        `assembly ${length}×${width} about ${axis}`,
+      );
+    }
+  }
+});

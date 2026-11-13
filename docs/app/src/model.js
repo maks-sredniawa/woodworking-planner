@@ -534,6 +534,11 @@ export function movePart(part, position) {
   return next;
 }
 
+// Rounding toward zero in whole tenths makes a turn and the turn back shift by exactly opposite amounts.
+export function recentre(before, after) {
+  return Math.trunc(Math.round((before - after) * 10) / 2) / 10;
+}
+
 export function rotatePart(part, axis) {
   if (part.locked) return part;
   const { length, width, thickness } = poseAxes(part.pose);
@@ -541,6 +546,6 @@ export function rotatePart(part, axis) {
   const before = extents(part);
   const turned = { ...part, pose };
   const after = extents(turned);
-  for (const dim of ['x', 'z']) turned[dim] = roundMm(part[dim] + (before[dim] - after[dim]) / 2);
+  for (const dim of ['x', 'z']) turned[dim] = roundMm(part[dim] + recentre(before[dim], after[dim]));
   return fitsLimits(turned) ? turned : part;
 }
