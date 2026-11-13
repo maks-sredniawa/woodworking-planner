@@ -6,6 +6,7 @@ import {
   assemblyOverlaps,
   changeJoint,
   changePart,
+  changePosition,
   jointRemoval,
   partRemoval,
   removeJoint,
@@ -22,6 +23,7 @@ import {
   joinParts,
   moveAssembly,
   rotateAssembly,
+  snapAssembly,
   swingLocked,
   swingingHinge,
   touchingParts,
@@ -139,6 +141,52 @@ test('moving the frame carries the open door with it, dragging the door swings i
   assert.deepEqual(worldBounds(moved, joint.part).min, { x: 82, y: 0, z: 244 });
   assert.equal(swingingHinge(open, joint.part)?.id, joint.id);
   assert.equal(swingingHinge(open, joint.to), null);
+});
+
+test('dragging an assembly snaps to where its open door stands, not where the door would be closed', () => {
+  const { project: closed, joint } = hung();
+  const wall = shelf({ name: 'Wall', x: -500, z: 660 });
+  const withWall = (state) => ({ ...state, parts: [...state.parts, wall] });
+  const open = withWall(updateJoint(closed, joint.id, 'open', 90));
+  assert.deepEqual(snapAssembly(open, joint.to, { z: 10 }), { z: 16 });
+  assert.deepEqual(snapAssembly(withWall(closed), joint.to, { z: 10 }), { z: 10 });
+  assert.deepEqual(snapAssembly(open, wall.id, { z: 640 }), { z: 644 });
+  assert.deepEqual(snapAssembly(withWall(closed), wall.id, { z: 640 }), { z: 640 });
+  assert.deepEqual(snapAssembly(open, joint.to, { z: 10 }, { snap: false }), { z: 10 });
+});
+
+test('lifting an assembly with snapping stops its lowest piece on the floor', () => {
+  const left = side();
+  const board = shelf();
+  const glued = joinParts(project([left, board]), 'glue', board.id, left.id).project;
+  assert.equal(snapAssembly(glued, board.id, { y: -40 }).y, 300);
+  assert.equal(snapAssembly(glued, board.id, { y: 309 }).y, 300);
+  assert.equal(snapAssembly(glued, board.id, { y: -40 }, { snap: false }).y, -40);
+});
+
+test('the ±10,000 mm limit on moving or turning an assembly counts where an open door stands', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  assert.equal(moveAssembly(open, joint.to, { x: -9990 }), open);
+  assert.equal(moveAssembly(closed, joint.to, { x: -9990 }).parts[0].x, -9990);
+  const pastEdge = updateJoint(moveAssembly(closed, joint.to, { x: -9990 }), joint.id, 'open', 90);
+  assert.equal(worldBounds(pastEdge, joint.part).min.x, -10008);
+  assert.equal(moveAssembly(pastEdge, joint.to, { x: -9980 }).parts[0].x, -9980);
+  assert.equal(moveAssembly(pastEdge, joint.to, { x: -9995 }), pastEdge);
+  const low = moveAssembly(open, joint.to, { y: -9990 });
+  assert.equal(rotateAssembly(low, joint.to, 'z'), low);
+  const closedLow = moveAssembly(closed, joint.to, { y: -9990 });
+  assert.notEqual(rotateAssembly(closedLow, joint.to, 'z'), closedLow);
+});
+
+test('a typed move refused at the ±10,000 mm limit names the piece that would cross it', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  assert.equal(changePosition(open, joint.part, { x: -9990 }).piece.id, joint.part);
+  assert.equal(changePosition(open, joint.to, { x: -9990 }).piece.id, joint.part);
+  const farFrame = moveAssembly(closed, joint.to, { x: -9990 });
+  assert.equal(changePosition(farFrame, joint.part, { x: -10020 }).piece.id, joint.to);
+  assert.equal(changePosition(open, joint.part, { x: 100 }).project.parts[0].x, 100);
 });
 
 test('a piece swings on only one hinge and nothing joins a piece while its hinge is open', () => {
@@ -268,6 +316,31 @@ test('hardware is placed where it sits: hinge knuckles on the hinge line, screw 
     assert.equal(head.owner, left.id);
     assert.deepEqual([head.centre[0], head.centre[1], head.normal], [0, 309, [-1, 0, 0]]);
   }
+});
+
+test('a concealed hinge marks the hinge line on the frame beside each cup, like the other hinges', () => {
+  const { project: butt, joint } = hung();
+  const concealed = updateJoint(butt, joint.id, 'hingeType', 'concealed');
+  const pieces = hardwarePieces(concealed);
+  const cups = pieces.filter((piece) => piece.kind === 'cup');
+  const knuckles = pieces.filter((piece) => piece.type === 'knuckle');
+  assert.equal(cups.length, 2);
+  assert.equal(knuckles.length, 2);
+  knuckles.forEach((knuckle, i) => {
+    assert.equal(knuckle.owner, joint.to);
+    assert.deepEqual([knuckle.from[0], knuckle.from[2], knuckle.to[0], knuckle.to[2]], [0, 244, 0, 244]);
+    assert.equal(Math.abs(knuckle.to[1] - knuckle.from[1]), 35);
+    assert.equal((knuckle.from[1] + knuckle.to[1]) / 2, cups[i].centre[1]);
+  });
+});
+
+test('a concealed hinge on a hinge line shorter than two cups keeps its knuckles on the line', () => {
+  const frame = side();
+  const short = door({ length: 60 });
+  const { project: hinged, joint } = joinParts(project([frame, short]), 'hinge', short.id, frame.id);
+  const concealed = updateJoint(updateJoint(hinged, joint.id, 'hingeType', 'concealed'), joint.id, 'count', 2);
+  const knuckles = hardwarePieces(concealed).filter((piece) => piece.type === 'knuckle');
+  assert.deepEqual(knuckles.map((knuckle) => [knuckle.from[1], knuckle.to[1]]), [[0, 35], [25, 60]]);
 });
 
 test('the hinge line follows the frame, and a locked door or assembly is pinned', () => {
