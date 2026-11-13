@@ -857,13 +857,21 @@ try:
         expect(card.locator('summary')).to_contain_text('Screws · to Left side')
         card.locator('[data-jf=count]').fill('0')
         expect(card.locator('.joint-error')).to_contain_text('whole number')
+        expect(card.locator('.joint-error')).to_have_attribute('aria-live', 'polite')
+        error_id = card.locator('.joint-error').get_attribute('id')
+        assert error_id, 'a joint error needs an id for aria-describedby'
+        expect(card.locator('[data-jf=count]')).to_have_attribute('aria-describedby', error_id)
         card.locator('[data-jf=count]').fill('4')
         expect(card.locator('.joint-error')).to_be_empty()
+        expect(card.locator('[data-jf=count]')).not_to_have_attribute('aria-describedby', re.compile('.'))
         card.locator('[data-jf=glued]').check()
         expect(joined.locator('#hardware-rows')).to_contain_text('Wood glue')
         expect(card.locator('[data-jf-act=suggest]')).to_be_visible()
         card.locator('[data-jf-act=suggest]').click()
         expect(joined.locator('#totals')).to_contain_text('2 hardware items')
+        expect(card.locator('[data-jf-act=suggest]')).to_be_hidden()
+        assert joined.evaluate('document.activeElement.matches("details.joint[open] summary")'), \
+            f'Use suggested sizes dropped focus to {joined.evaluate("document.activeElement.tagName")}'
         joined.click('#joint-add-open')
         expect(joined.locator('#joint-other option', has_text='Left side')).to_be_disabled()
         joined.click('#joint-add-cancel')
@@ -927,6 +935,7 @@ try:
         joined.click('#lock')
         row('Bottom').locator('.row-main').click()
         expect(joined.locator('#editor [name=x]')).to_be_disabled()
+        expect(joined.locator('#field-pose')).to_be_disabled()
         expect(joined.locator('[data-rotate=y]')).to_be_disabled()
         row('Door').locator('.row-main').click()
         joined.locator('details.joint[open] [data-jf-act=close]').click()
@@ -934,8 +943,27 @@ try:
         row('Left side').locator('.row-main').click()
         joined.click('#lock')
 
+        row('Door').locator('.row-main').click()
+        door_card = joined.locator('details.joint[open]')
+        door_card.locator('[data-jf-act=open-full]').click()
+        joined.click('#lock')
+        door_card.locator('[data-jf=opensTo]').fill('30')
+        expect(door_card.locator('.joint-error')).to_contain_text('locked')
+        expect(door_card.locator('[data-jf=opensTo]')).to_have_attribute('aria-describedby', door_card.locator('.joint-error').get_attribute('id'))
+        assert hinge_open() == 180, f'lowering Opens up to swung a locked door to {hinge_open()}'
+        door_card.locator('[data-jf=hingeType]').select_option('concealed')
+        expect(door_card.locator('.joint-error')).to_contain_text('locked')
+        expect(door_card.locator('[data-jf=hingeType]')).to_have_value('butt')
+        assert hinge_open() == 180, f'changing the hinge type swung a locked door to {hinge_open()}'
+        joined.click('#lock')
+        door_card.locator('[data-jf-act=close]').click()
+        assert hinge_open() == 0
+        row('Left side').locator('.row-main').click()
+
         carries = joined.locator('details.joint', has_text='carries Door')
         expect(carries).to_have_attribute('open', '')
+        error_ids = joined.evaluate('[...document.querySelectorAll("#joints .joint-error")].map((note) => note.id)')
+        assert len(error_ids) == 2 and len(set(error_ids)) == 2 and all(error_ids), f'each joint needs its own error id: {error_ids}'
         carries.locator('[data-jf-act=remove]').click()
         expect(row('Door').locator('.tag')).to_have_count(0)
         expect(joined.locator('#hardware-rows')).not_to_contain_text('hinge')
