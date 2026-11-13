@@ -9,6 +9,7 @@ import {
   recentre,
   rotatePart,
   roundMm,
+  snapBoxes,
   turnAxis,
 } from './model.js';
 
@@ -534,6 +535,23 @@ export function applySuggestedSizes(project, jointId) {
   return suggestSizes(project, jointId).project ?? null;
 }
 
+function actualBoxes(project, members) {
+  const mech = mechanism(project);
+  const box = (part) => worldBounds(project, part.id, mech.placement(part.id));
+  return {
+    moving: project.parts.filter((part) => members.has(part.id)).map(box),
+    fixed: project.parts.filter((part) => !members.has(part.id)).map(box),
+  };
+}
+
+export function snapAssembly(project, id, proposed, options) {
+  const { moving, fixed } = actualBoxes(project, joinedTo(project, id));
+  return snapBoxes(findPart(project, id), moving, proposed, fixed, options);
+}
+
+const pushedPast = (before, after) =>
+  AXES.some((axis) => Math.abs(after.min[axis]) > MAX_SIZE_MM && Math.abs(after.min[axis]) > Math.abs(before.min[axis]));
+
 export function moveAssembly(project, id, position) {
   const piece = findPart(project, id);
   if (!piece) return project;
@@ -548,7 +566,10 @@ export function moveAssembly(project, id, position) {
     if (next === part && Object.values(delta).some(Boolean)) return project;
     moved.set(part.id, next);
   }
-  return { ...project, parts: project.parts.map((part) => moved.get(part.id) ?? part) };
+  const next = { ...project, parts: project.parts.map((part) => moved.get(part.id) ?? part) };
+  const before = actualBoxes(project, members).moving;
+  const after = actualBoxes(next, members).moving;
+  return after.some((box, i) => pushedPast(before[i], box)) ? project : next;
 }
 
 function turnVector(vector, axis) {
