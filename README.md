@@ -2,7 +2,7 @@
 
 Tool. A web app to plan a woodworking project and see it as a 3D render, all worked out on your own computer, before you cut the first board.
 
-Live at https://maksforge.com/woodworking-planner/app/ (the app's page is https://maksforge.com/woodworking-planner/). Workbench layout, direction A in `design/DESIGN.md`.
+In development: the first version works locally, in the Workbench layout (direction A in `design/DESIGN.md`).
 
 ## What it's for
 
@@ -41,7 +41,7 @@ npm start
 
 Then open http://127.0.0.1:8777/. There is no build step. The app lives in `docs/app/`, which maksforge.com serves at `/woodworking-planner/app/`; the rest of `docs/` is its page there. three.js is vendored in `docs/app/vendor/three/` (0.180.0, MIT), with one change: `addons/OrbitControls.js` imports `../three.module.js` instead of the bare name `three`, because the site's Content-Security-Policy blocks an inline import map.
 
-A service worker (`docs/app/sw.js`) keeps a copy of every app file so it works offline after the first visit, and `manifest.webmanifest` makes it installable. `tests/offline.test.js` fails when a file is added without being listed in `sw.js`; bump its `CACHE` name whenever the app changes, so visitors get the new files.
+A service worker (`docs/app/sw.js`) keeps a copy of every app file so it works offline after the first visit, and `manifest.webmanifest` makes it installable. `tests/offline.test.js` fails when a file is added without being listed in `sw.js`; bump its `CACHE` name whenever the app changes. The worker fetches from the network first, so visitors online already get new files; the bump refreshes the offline copy and clears files that were removed.
 
 ## Tests
 

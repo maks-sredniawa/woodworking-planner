@@ -10,6 +10,6 @@ through any app store or other channel, without prior written permission.
 Viewing and forking within GitHub, as permitted by the GitHub Terms of
 Service, is not a grant of any of the rights above.
 
-The files in vendor/three/ are three.js, copyright 2010-2025 three.js authors,
-used under the MIT licence in vendor/three/LICENSE. They are not covered by the
-terms above.
+The files in docs/app/vendor/three/ are three.js, copyright 2010-2025 three.js
+authors, used under the MIT licence in docs/app/vendor/three/LICENSE. They are not
+covered by the terms above.
