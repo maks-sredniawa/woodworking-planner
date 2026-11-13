@@ -223,7 +223,7 @@ function hingeTypeDefaults(type, edgeLength, depth) {
 function hingeDefaults(meet, part, to) {
   const edge = defaultEdge(part, to, meet);
   const edgeLength = extents(part)[hingeAxisOf(meet, edge)];
-  return { hingeType: 'butt', edge, open: 0, ...hingeTypeDefaults('butt', edgeLength, Math.min(thickness(part), thickness(to))) };
+  return { hingeType: 'butt', edge, open: 0, stops: true, ...hingeTypeDefaults('butt', edgeLength, Math.min(thickness(part), thickness(to))) };
 }
 
 const DEFAULTS = {
@@ -460,6 +460,11 @@ export function jointProblem(project, jointId) {
   if (joint.kind === 'hinge') {
     const jammed = mechanism(project).hinges.get(jointId)?.jammed;
     if (jammed) return jammed;
+    const stop = swingStop(project, jointId);
+    if (stop && joint.open > stop.angle) {
+      const by = nameOf(findPart(project, stop.by));
+      return `${nameOf(findPart(project, joint.part))} is open ${roundBox(joint.open)}°, past ${by} at ${stop.angle}°. Close it to ${stop.angle}° or move ${by}.`;
+    }
     const door = findPart(project, joint.part);
     const touch = door && findPart(project, joint.to) && contact(findPart(project, joint.to), door);
     if (joint.hingeType === 'concealed' && touch && thickness(door) < CONCEALED_DOOR_MM) {
@@ -608,6 +613,7 @@ export const JOINT_FIELDS = {
     opensTo: degrees(1, 270),
     open: degrees(0, 270),
     edge: (raw) => (Object.hasOwn(EDGES, raw) ? raw : undefined),
+    stops: yesNo,
   },
   mendingPlate: {
     count: counted(100),
@@ -630,6 +636,8 @@ export const JOINT_FIELDS = {
     glued: yesNo,
   },
 };
+
+export const JOINT_FIELD_DEFAULTS = { hinge: { stops: true } };
 
 export function jointFieldValue(kind, field, raw) {
   return JOINT_FIELDS[kind]?.[field]?.(raw);
@@ -688,6 +696,11 @@ export function changeJoint(project, jointId, field, raw) {
   if (value === undefined) return { refused: 'invalid' };
   let next = { ...joint, [field]: value };
   if (field === 'open' && value > joint.opensTo) return { refused: 'limit' };
+  const stop = field === 'open' ? swingStop(project, jointId) : null;
+  if (stop && value > stop.angle) {
+    const result = unlessLockedMoves(project, { ...next, open: stop.angle });
+    return result.project ? { ...result, stopped: stop } : result;
+  }
   if (field === 'edge' && !hingeEdges(project, joint).includes(value)) return { refused: 'invalid' };
   if (field === 'face' && !jointFaces(project, joint).includes(value)) return { refused: 'invalid' };
   if (field === 'opensTo') next.open = Math.min(next.open, value);
@@ -810,6 +823,84 @@ function separated(a, b) {
     const reach = (box) => box.axes.reduce((sum, each, i) => sum + box.half[i] * Math.abs(dot(each, unitAxis)), 0);
     return Math.abs(dot(gap, unitAxis)) >= reach(a) + reach(b) - TOUCH_MM;
   });
+}
+
+function boxCorners(box) {
+  const corners = [];
+  for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) {
+    corners.push(box.centre.map((value, i) => value + [a, b, c].reduce((sum, sign, k) => sum + sign * box.half[k] * box.axes[k][i], 0)));
+  }
+  return corners;
+}
+
+function aroundLine(point, origin, direction) {
+  const offset = point.map((value, i) => value - origin[i]);
+  const along = dot(offset, direction);
+  return { along, distance: Math.hypot(...offset.map((value, i) => value - along * direction[i])) };
+}
+
+const STOP_TRAVEL_MM = 0.5;
+const STOP_REFINE_STEPS = 30;
+const knownStops = new WeakMap();
+
+export function swingStop(project, jointId) {
+  if (!knownStops.has(project)) knownStops.set(project, new Map());
+  const known = knownStops.get(project);
+  if (!known.has(jointId)) known.set(jointId, findStop(project, jointId));
+  return known.get(jointId);
+}
+
+function findStop(project, jointId) {
+  const joint = jointsOf(project).find((each) => each.id === jointId);
+  if (joint?.kind !== 'hinge' || joint.stops === false) return null;
+  const mech = mechanism(project);
+  const info = mech.hinges.get(jointId);
+  if (!info?.line || info.jammed) return null;
+  const frame = mech.frameOf(info);
+  const origin = transformPoint(frame, info.line.origin);
+  const direction = apply(frame.m, info.line.direction);
+  const shut = mechanism(withJoint(project, { ...joint, open: 0 }));
+  const moving = new Set(movingParts(project, jointId).map((part) => part.id));
+  const doors = project.parts.filter((part) => moving.has(part.id)).map((part) => ({ part, placement: shut.placement(part.id) }));
+  const swung = (angle) => {
+    const turn = rotationAbout(origin, direction, angle);
+    return doors.map(({ part, placement }) => orientedBox(part, compose(turn, placement)));
+  };
+  const closed = swung(0);
+  const reach = closed.flatMap(boxCorners).map((corner) => aroundLine(corner, origin, direction));
+  const radius = Math.max(...reach.map((each) => each.distance));
+  const [low, high] = [Math.min(...reach.map((each) => each.along)), Math.max(...reach.map((each) => each.along))];
+  const inSwing = (box) => {
+    const size = Math.hypot(...box.half);
+    const centre = aroundLine(box.centre, origin, direction);
+    return centre.distance <= radius + size && centre.along >= low - size && centre.along <= high + size;
+  };
+  const obstacles = project.parts
+    .filter((part) => !moving.has(part.id) && part.id !== joint.to)
+    .map((part) => ({ part, box: orientedBox(part, mech.placement(part.id)) }))
+    .filter(({ box }) => inSwing(box) && closed.every((each) => separated(each, box)));
+  if (!obstacles.length) return null;
+  const blocker = (angle) => {
+    const boxes = swung(angle);
+    return obstacles.find(({ box }) => boxes.some((each) => !separated(each, box))) ?? null;
+  };
+  const step = Math.min(1, (STOP_TRAVEL_MM / Math.max(radius, 1)) * (180 / Math.PI));
+  let clear = 0;
+  for (let angle = step; clear < joint.opensTo; angle += step) {
+    const at = Math.min(angle, joint.opensTo);
+    if (!blocker(at)) {
+      clear = at;
+      continue;
+    }
+    let hit = at;
+    for (let i = 0; i < STOP_REFINE_STEPS; i++) {
+      const middle = (clear + hit) / 2;
+      if (blocker(middle)) hit = middle;
+      else clear = middle;
+    }
+    return { angle: Math.floor(clear + 1e-6), by: blocker(hit).part.id };
+  }
+  return null;
 }
 
 export function assemblyOverlaps(project) {

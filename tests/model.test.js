@@ -489,7 +489,7 @@ test('a version 1 file loads every part as a board with square corners, and bad 
   assert.equal(old.shape, 'board');
   assert.equal(old.corners, 'square');
   assert.deepEqual(blank(old), { length: 900, width: 250, thickness: 18 });
-  assert.match(serialize({ name: 'n', parts: [old] }), /"version": 3/);
+  assert.match(serialize({ name: 'n', parts: [old] }), /"version": 4/);
   const file = (part) => JSON.stringify({ format: 'woodworking-planner', version: 2, parts: [part] });
   assert.throws(() => parseProject(file({ shape: 'hexagon' })), /Part 1 has an invalid shape/);
   assert.throws(() => parseProject(file({ shape: 'arc', bandWidth: 500 })), /invalid bandWidth/);
