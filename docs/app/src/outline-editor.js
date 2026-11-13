@@ -29,6 +29,10 @@ const EDGE_HIT_PX = 10;
 const LABEL_PX = 15;
 const hitRadius = (pointerType) => (pointerType === 'mouse' ? 10 : 22);
 const PICK_FIRST = 'Pick a point first.';
+const HISTORY = {
+  undo: { hint: 'Undo (Ctrl+Z)', empty: 'Nothing to undo.' },
+  redo: { hint: 'Redo (Ctrl+Shift+Z)', empty: 'Nothing to redo.' },
+};
 const AXES = [
   ['x', 'from left'],
   ['y', 'from bottom'],
@@ -262,8 +266,11 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
     offWithReason(buttons.add, none ? PICK_FIRST : points.length >= MAX_POINTS ? `An outline can have at most ${MAX_POINTS} points.` : null);
     offWithReason(buttons.remove, none ? PICK_FIRST : points.length <= MIN_POINTS ? `An outline needs at least ${MIN_POINTS} points.` : null);
     offWithReason(buttons.straighten, none ? PICK_FIRST : points[picked].bend ? null : 'That edge is already straight.');
-    buttons.undo.disabled = !state.undo.length;
-    buttons.redo.disabled = !state.redo.length;
+    for (const name of Object.keys(HISTORY)) {
+      const steps = state[name];
+      offWithReason(buttons[name], steps.length ? null : HISTORY[name].empty);
+      if (steps.length) buttons[name].title = HISTORY[name].hint;
+    }
     buttons.draw.setAttribute('aria-pressed', String(state.drawing));
     buttons.snap.setAttribute('aria-pressed', String(snap.get()));
     const problem = problemText(points);
@@ -280,8 +287,19 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
 
   function refused(button) {
     if (button.getAttribute('aria-disabled') !== 'true') return false;
-    announce(button === buttons.done ? problemNote : note, button.title);
+    tell(button === buttons.done ? problemNote : note, button.title);
     return true;
+  }
+
+  function tell(target, message, status = false) {
+    target.classList.toggle('status', status);
+    announce(target, message);
+  }
+
+  function describe(index) {
+    const { x, y, bend } = state.points[index];
+    const curve = bend ? `, its edge bent ${mm(bend)}` : '';
+    return `Point ${index + 1} of ${state.points.length}, ${mm(x)} from left, ${mm(y)} from bottom${curve}.`;
   }
 
   function removePicked() {
@@ -319,9 +337,14 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
     state.drawing = !state.drawing;
     state.stroke = null;
     render({ refit: false });
+    tell(note, state.drawing ? 'Draw is on. Draw the outline in one stroke and lift to finish.' : 'Draw is off.', true);
   });
-  buttons.undo.addEventListener('click', () => step(state.undo, state.redo));
-  buttons.redo.addEventListener('click', () => step(state.redo, state.undo));
+  buttons.undo.addEventListener('click', () => {
+    if (!refused(buttons.undo)) step(state.undo, state.redo);
+  });
+  buttons.redo.addEventListener('click', () => {
+    if (!refused(buttons.redo)) step(state.redo, state.undo);
+  });
   buttons.snap.addEventListener('click', () => {
     snap.set(!snap.get());
     renderTools();
@@ -332,7 +355,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
   buttons.done.addEventListener('click', () => {
     if (refused(buttons.done)) return;
     const refusal = onDone(state.points);
-    if (refusal) announce(note, refusal);
+    if (refusal) tell(note, refusal);
     else close();
   });
 
@@ -340,14 +363,15 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
     if (!state) return;
     const key = event.key.toLowerCase();
     const mod = event.ctrlKey || event.metaKey;
+    const typing = event.target instanceof HTMLInputElement;
     if (event.key === 'Escape') {
       event.preventDefault();
       cancel();
-    } else if (mod && key === 'z') {
+    } else if (mod && key === 'z' && !typing) {
       event.preventDefault();
       if (event.shiftKey) step(state.redo, state.undo);
       else step(state.undo, state.redo);
-    } else if (mod && key === 'y') {
+    } else if (mod && key === 'y' && !typing) {
       event.preventDefault();
       step(state.redo, state.undo);
     }
@@ -357,7 +381,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
     if (state) cancel();
   });
   dialog.addEventListener('close', () => {
-    if (state) close();
+    if (state && !dialog.open) close();
   });
 
   const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
@@ -367,15 +391,17 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
     const { points, picked } = state;
     if (event.key in ARROWS) {
       event.preventDefault();
-      if (picked === null) return announce(note, PICK_FIRST);
+      if (picked === null) return tell(note, PICK_FIRST);
       const [dx, dy] = ARROWS[event.key];
       const amount = event.shiftKey ? FINE_NUDGE_MM : NUDGE_MM;
       const point = points[picked];
       change(movePoint(points, picked, point.x + dx * amount, point.y + dy * amount), `nudge:${picked}`);
+      tell(note, describe(picked), true);
     } else if (event.key === 'PageDown' || event.key === 'PageUp') {
       event.preventDefault();
       const next = picked === null ? 0 : picked + (event.key === 'PageDown' ? 1 : -1);
       pick(Math.max(0, Math.min(points.length - 1, next)));
+      tell(note, describe(state.picked), true);
     } else if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();
       removePicked();
@@ -490,12 +516,14 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
       const points = stroke && fromStroke(stroke);
       if (!points) {
         render({ refit: false });
-        announce(note, 'That was too small to be an outline. Draw a bigger one.');
+        tell(note, 'That was too small to be an outline. Draw a bigger one.');
         return;
       }
       state.drawing = false;
       state.picked = null;
       change(points);
+      const bent = points.filter((each) => each.bend).length;
+      tell(note, `Outline drawn with ${points.length} points${bent ? `, ${bent} of its edges bent` : ''}. Draw is off.`, true);
       return;
     }
     const after = state.points;

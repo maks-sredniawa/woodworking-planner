@@ -1,4 +1,5 @@
 import json
+import math
 import re
 import socket
 import subprocess
@@ -1180,6 +1181,7 @@ try:
         expect(free.locator('#outline-svg .edge-bad')).to_have_count(2)
         free.click('#outline-done', force=True)
         expect(dialog).to_be_visible()
+        free.focus('#outline-svg')
         free.keyboard.press('Control+z')
         expect(free.locator('#outline-problem')).to_have_text('')
         expect(free.locator('#outline-done')).not_to_have_attribute('aria-disabled', 'true')
@@ -1238,7 +1240,6 @@ try:
         expect(free.locator('#outline-svg circle.pt')).to_have_count(0)
         svg = free.locator('#outline-svg').bounding_box()
         cx, cy, r = svg['x'] + svg['width'] / 2, svg['y'] + svg['height'] / 2, min(svg['width'], svg['height']) / 3
-        import math
         free.mouse.move(cx + r, cy)
         free.mouse.down()
         for k in range(1, 73):
@@ -1292,6 +1293,9 @@ try:
         free.fill('#editor [name=length]', '800')
         assert outline_of()[1][0] == 800, outline_of()
         expect(free.locator('.row.sel .dim')).to_have_text('Free 800 × 300 × 18')
+        free.fill('#editor [name=length]', '0.1')
+        expect(free.locator('#length-error')).to_have_text('Enter a bigger length: at this one, points of the outline come within 1 mm of each other.')
+        free.fill('#editor [name=length]', '800')
 
         free.click('#lock')
         expect(free.locator('#edit-outline')).to_have_attribute('aria-disabled', 'true')
@@ -1305,15 +1309,107 @@ try:
         expect(dialog).to_be_hidden()
         assert free.evaluate('woodworkingPlanner.project.parts[4].points.length') == 4
         expect(free.locator('#editor [name=length]')).to_have_value('764')
+        kept = free.evaluate('woodworkingPlanner.project.parts[4].points')
+        free.click('.shape-pick .choice:has-text("Arc")')
+        free.fill('#editor [name=sweep]', '360')
+        free.click('.shape-pick .choice:has-text("Free")')
+        expect(free.locator('#editor input[name=shape][value=free]')).to_be_checked()
+        assert free.evaluate('woodworkingPlanner.project.parts[4].points') == kept, 'switching back to Free lost the outline'
+        free.locator('#parts li').nth(5).locator('.row-main').click()
         free.click('.shape-pick .choice:has-text("Arc")')
         free.fill('#editor [name=sweep]', '360')
         free.click('.shape-pick .choice:has-text("Free")')
         expect(free.locator('#shape-error')).to_have_text('A full ring has a hole, and a free shape can’t. Make the sweep less than 360° first.')
         expect(free.locator('#editor input[name=shape][value=arc]')).to_be_checked()
+        free.click('.shape-pick .choice:has-text("Board")')
+        free.fill('#editor [name=width]', '0.5')
+        free.click('.shape-pick .choice:has-text("Free")')
+        expect(free.locator('#shape-error')).to_have_text('This piece is too small for a free shape: points of its outline would be less than 1 mm apart.')
+        expect(free.locator('#editor input[name=shape][value=board]')).to_be_checked()
         free.reload()
         expect(free.locator('#parts li')).to_have_count(8)
         expect(free.locator('#parts li').last.locator('.dim')).to_have_text('Free 800 × 300 × 18')
         free.close()
+
+        keys = browser.new_page(viewport={'width': 1280, 'height': 900})
+        keys.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        keys.on('pageerror', lambda e: errors.append(str(e)))
+        keys.goto(URL)
+        point = lambda n, axis: keys.get_by_label(f'Point {n}, {axis}', exact=True)
+        note = keys.locator('#outline-note')
+        keys.get_by_role('button', name='Add free shape').click()
+        point(3, 'from left').fill('450')
+        keys.focus('#outline-undo')
+        keys.keyboard.press('Enter')
+        expect(point(3, 'from left')).to_have_value('400')
+        expect(keys.locator('#outline-undo')).to_be_focused()
+        expect(keys.locator('#outline-undo')).to_have_attribute('aria-disabled', 'true')
+        keys.keyboard.press('Enter')
+        expect(note).to_have_text('Nothing to undo.')
+        keys.focus('#outline-redo')
+        keys.keyboard.press('Enter')
+        expect(point(3, 'from left')).to_have_value('450')
+        expect(keys.locator('#outline-redo')).to_be_focused()
+        keys.keyboard.press('Control+z')
+        expect(point(3, 'from left')).to_have_value('400')
+
+        keys.focus('#outline-svg')
+        for _ in range(5):
+            keys.keyboard.press('PageUp')
+        keys.keyboard.press('PageDown')
+        expect(note).to_have_text('Point 2 of 5, 400 from left, 0 from bottom.')
+        keys.keyboard.press('ArrowUp')
+        expect(note).to_have_text('Point 2 of 5, 400 from left, 10 from bottom.')
+        keys.click('#outline-draw')
+        expect(note).to_have_text('Draw is on. Draw the outline in one stroke and lift to finish.')
+        svg = keys.locator('#outline-svg').bounding_box()
+        cx, cy, r = svg['x'] + svg['width'] / 2, svg['y'] + svg['height'] / 2, min(svg['width'], svg['height']) / 3
+        keys.mouse.move(cx + r, cy)
+        keys.mouse.down()
+        for k in range(1, 73):
+            keys.mouse.move(cx + r * math.cos(k * math.pi / 36), cy + r * math.sin(k * math.pi / 36))
+        keys.mouse.up()
+        expect(note).to_contain_text('Outline drawn with ')
+
+        keys.keyboard.press('Control+z')
+        point(3, 'from left').fill('450')
+        bend = point(1, 'bend')
+        bend.click()
+        keys.keyboard.press('Control+a')
+        keys.keyboard.type('500')
+        expect(bend).to_have_attribute('aria-invalid', 'true')
+        keys.keyboard.press('Control+z')
+        expect(point(3, 'from left')).to_have_value('450')
+        expect(bend).not_to_have_value('500')
+
+        keys.click('#outline-cancel')
+        question = keys.get_by_role('group', name='Discard the changes to this outline?')
+        expect(question).to_be_visible()
+        expect(question.get_by_role('button', name='Keep editing')).to_be_focused()
+        keys.click('#outline-discard-yes')
+        expect(keys.locator('#outline-dialog')).to_be_hidden()
+        keys.close()
+
+        for width, height in [(320, 256), (667, 375)]:
+            short = browser.new_page(viewport={'width': width, 'height': height}, has_touch=True)
+            short.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+            short.on('pageerror', lambda e: errors.append(str(e)))
+            short.goto(URL)
+            short.locator('[data-add-shape=free]:visible').first.click()
+            expect(short.locator('#outline-dialog')).to_be_visible()
+            for label in ['Point 1, from left', 'Point 5, bend']:
+                cell = short.get_by_label(label, exact=True)
+                cell.click(timeout=5000)
+                expect(cell).to_be_focused()
+            assert short.locator('#outline-points').bounding_box()['height'] > 80, f'at {width} × {height} the points table has collapsed'
+            short.screenshot(path=str(HERE / f'outline-{width}x{height}.png'))
+            short.click('#outline-done', timeout=5000)
+            expect(short.locator('#outline-dialog')).to_be_hidden()
+            short.evaluate('document.getElementById("edit-outline").click()')
+            expect(short.locator('#outline-dialog')).to_be_visible()
+            short.click('#outline-cancel', timeout=5000)
+            expect(short.locator('#outline-dialog')).to_be_hidden()
+            short.close()
 
         for width, scheme in [(360, 'light'), (360, 'dark'), (320, 'light'), (1280, 'dark')]:
             small = browser.new_page(viewport={'width': width, 'height': 740}, color_scheme=scheme, has_touch=width < 1280)
