@@ -1,5 +1,5 @@
 import { MAX_POINTS, MIN_POINTS, area, arcBend, box, halfEdge, outlineProblem, point, polygon, rebase, scale } from './free.js';
-import { convexParts, prism, solid, solidsClash } from './geometry.js';
+import { TOUCH_MM, convexParts, moveSolid, prism, solid, solidsClash, sweepSpans } from './geometry.js';
 
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
@@ -276,7 +276,7 @@ const placed = (placement, point) => placement.m.reduce((out, value, i) => {
 }, [...placement.o]);
 const turned = (placement, vector) => placed({ ...placement, o: [0, 0, 0] }, vector);
 const isIdentity = (placement) =>
-  !placement || (placement.m.every((value, i) => Math.abs(value - (i % 4 === 0 ? 1 : 0)) < 1e-12) && placement.o.every((value) => Math.abs(value) < 1e-12));
+  !placement || (placement.m.every((value, i) => Math.abs(value - (i % 4 === 0 ? 1 : 0)) < 1e-9) && placement.o.every((value) => Math.abs(value) < 1e-9));
 const solids = new WeakMap();
 
 export function solidOf(part, placement = null) {
@@ -682,35 +682,81 @@ export function partFromFile(raw, index) {
 export const SNAP_GRID_MM = 10;
 export const SNAP_REACH_MM = 15;
 
-export function snapPosition(part, proposed, others, options) {
-  const fixed = others.filter((other) => other.id !== part.id).map(bounds);
-  return snapBoxes(part, [bounds(part)], proposed, fixed, options);
+const boxOfSolid = (solid) =>
+  Object.fromEntries(['min', 'max'].map((side) => [side, Object.fromEntries(AXES.map((axis, i) => [axis, solid.box[side][i]]))]));
+
+export function bodyOf(part, placement = null) {
+  const solid = solidOf(part, placement);
+  return { solid, box: isIdentity(placement) ? bounds(part) : boxOfSolid(solid) };
 }
 
-export function snapBoxes(at, moving, proposed, fixed, { snap = true } = {}) {
-  const onFloor = roundMm(at.y - Math.min(...moving.map((box) => box.min.y)));
-  const result = {};
-  for (const axis of POSITION) {
-    if (!(axis in proposed)) continue;
-    const value = proposed[axis];
-    if (!snap) {
-      result[axis] = roundMm(value);
-      continue;
-    }
-    let best = null;
-    const consider = (target) => {
-      const distance = Math.abs(target - value);
-      if (distance <= SNAP_REACH_MM && (best === null || distance < Math.abs(best - value))) best = target;
-    };
-    if (axis === 'y') consider(onFloor);
-    for (const other of fixed) {
-      for (const face of [other.min[axis], other.max[axis]]) {
-        for (const box of moving) for (const own of [box.min[axis], box.max[axis]]) consider(face - (own - at[axis]));
+function faceTargets(at, moving, axis, proposed, fixed, floor) {
+  const value = proposed[axis];
+  const near = [];
+  const consider = (target) => {
+    if (Math.abs(target - value) <= SNAP_REACH_MM) near.push({ target });
+  };
+  if (axis === 'y') consider(floor);
+  const across = AXES.filter((each) => each !== axis);
+  const shift = (each) => (proposed[each] ?? at[each]) - at[each];
+  for (const { box: own } of moving) {
+    const lead = own.min[axis] - at[axis];
+    const tail = own.max[axis] - at[axis];
+    for (const { box } of fixed) {
+      const inPath = across.every((each) => Math.min(own.max[each] + shift(each), box.max[each]) - Math.max(own.min[each] + shift(each), box.min[each]) > TOUCH_MM);
+      consider(box.min[axis] - lead);
+      consider(box.max[axis] - tail);
+      if (!inPath) {
+        consider(box.max[axis] - lead);
+        consider(box.min[axis] - tail);
       }
     }
-    result[axis] = roundMm(best ?? Math.round(value / SNAP_GRID_MM) * SNAP_GRID_MM);
   }
-  if ('y' in result && snap) result.y = Math.max(result.y, onFloor);
+  return near;
+}
+
+function meetingTargets(at, moving, axis, position, fixed) {
+  const index = AXES.indexOf(axis);
+  const offset = AXES.map((each) => (position[each] ?? at[each]) - at[each]);
+  const near = [];
+  for (const { solid } of moving) {
+    const placedNow = moveSolid(solid, offset);
+    for (const other of fixed) {
+      for (const span of sweepSpans(placedNow, other.solid, index)) {
+        span.forEach((travel, end) => {
+          if (Math.abs(travel) <= SNAP_REACH_MM) near.push({ target: position[axis] + travel, side: end ? 1 : -1 });
+        });
+      }
+    }
+  }
+  return near;
+}
+
+const roundClear = ({ target, side }) => (side < 0 ? Math.floor(target * 10 + 1e-6) : Math.ceil(target * 10 - 1e-6)) / 10 + 0;
+const nearest = (value, targets) => targets.reduce((best, each) => (best && Math.abs(best.target - value) <= Math.abs(each.target - value) ? best : each), null);
+
+export function snapPosition(part, proposed, others, options) {
+  const fixed = others.filter((other) => other.id !== part.id).map((other) => bodyOf(other));
+  return snapBodies(part, [bodyOf(part)], proposed, fixed, options);
+}
+
+// Each axis first snaps to grid and faces; then the one axis nearest a true meeting snaps there, with the others already in place, so the pieces touch without overlapping.
+export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
+  const axes = POSITION.filter((axis) => axis in proposed);
+  if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundMm(proposed[axis])]));
+  const floor = roundMm(at.y - Math.min(...moving.map(({ box }) => box.min.y)));
+  const result = {};
+  const plain = {};
+  for (const axis of axes) {
+    plain[axis] = nearest(proposed[axis], faceTargets(at, moving, axis, proposed, fixed, floor));
+    result[axis] = roundMm(plain[axis]?.target ?? Math.round(proposed[axis] / SNAP_GRID_MM) * SNAP_GRID_MM);
+  }
+  const meetings = axes
+    .map((axis) => ({ axis, meet: nearest(proposed[axis], meetingTargets(at, moving, axis, { ...result, [axis]: proposed[axis] }, fixed)) }))
+    .filter(({ axis, meet }) => meet && (!plain[axis] || Math.abs(meet.target - proposed[axis]) <= Math.abs(plain[axis].target - proposed[axis])));
+  const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
+  if (closest) result[closest.axis] = roundClear(closest.meet);
+  if ('y' in result) result.y = Math.max(result.y, floor);
   return result;
 }
 

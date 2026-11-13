@@ -1,5 +1,6 @@
 import {
   MAX_SIZE_MM,
+  bodyOf,
   bounds,
   extents,
   movePart,
@@ -10,7 +11,7 @@ import {
   recentre,
   rotatePart,
   roundMm,
-  snapBoxes,
+  snapBodies,
   solidOf,
   turnAxis,
 } from './model.js';
@@ -571,8 +572,10 @@ function actualBoxes(project, members) {
 }
 
 export function snapAssembly(project, id, proposed, options) {
-  const { moving, fixed } = actualBoxes(project, joinedTo(project, id));
-  return snapBoxes(findPart(project, id), moving, proposed, fixed, options);
+  const mech = mechanism(project);
+  const members = joinedTo(project, id);
+  const bodies = (joined) => project.parts.filter((part) => members.has(part.id) === joined).map((part) => bodyOf(part, mech.placement(part.id)));
+  return snapBodies(findPart(project, id), bodies(true), proposed, bodies(false), options);
 }
 
 function pieceOverLimit(before, after, members) {

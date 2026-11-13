@@ -113,6 +113,17 @@ export function solid(pieces) {
   return { pieces, box: boxOf(pieces.flatMap((piece) => [piece.box.min, piece.box.max])) };
 }
 
+export function moveSolid(solid, offset) {
+  if (offset.every((value) => value === 0)) return solid;
+  const shift = (point) => point.map((value, k) => value + offset[k]);
+  const pieces = solid.pieces.map((piece) => ({
+    ...piece,
+    corners: piece.corners.map(shift),
+    box: { min: shift(piece.box.min), max: shift(piece.box.max) },
+  }));
+  return { pieces, box: { min: shift(solid.box.min), max: shift(solid.box.max) } };
+}
+
 function reach(corners, axis) {
   let low = Infinity;
   let high = -Infinity;
@@ -229,4 +240,44 @@ export function meetingRegion(a, b, axis, at) {
     }
   }
   return region;
+}
+
+function pieceSweep(a, b, axis) {
+  let [low, high] = [-Infinity, Infinity];
+  for (const normal of testAxes(a, b)) {
+    const [fromA, toA] = reach(a.corners, normal);
+    const [fromB, toB] = reach(b.corners, normal);
+    const rate = normal[axis];
+    if (Math.abs(rate) < 1e-9) {
+      if (overlapOf([fromA, toA], [fromB, toB]) <= TOUCH_MM) return null;
+      continue;
+    }
+    const ends = [(fromB - toA) / rate, (toB - fromA) / rate];
+    low = Math.max(low, Math.min(...ends));
+    high = Math.min(high, Math.max(...ends));
+    if (high - low <= TOUCH_MM) return null;
+  }
+  return [low, high];
+}
+
+// The stretches of travel along the axis over which a would overlap b.
+export function sweepSpans(a, b, axis) {
+  const across = [0, 1, 2].filter((k) => k !== axis);
+  const passes = (one, two) => across.every((k) => overlapOf([one.min[k], one.max[k]], [two.min[k], two.max[k]]) > TOUCH_MM);
+  if (!passes(a.box, b.box)) return [];
+  const spans = [];
+  for (const piece of a.pieces) {
+    if (!passes(piece.box, b.box)) continue;
+    for (const other of b.pieces) {
+      const span = passes(piece.box, other.box) && pieceSweep(piece, other, axis);
+      if (span) spans.push(span);
+    }
+  }
+  spans.sort((one, two) => one[0] - two[0]);
+  return spans.reduce((merged, span) => {
+    const last = merged.at(-1);
+    if (last && span[0] <= last[1] + EPS) last[1] = Math.max(last[1], span[1]);
+    else merged.push([...span]);
+    return merged;
+  }, []);
 }
