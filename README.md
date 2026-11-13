@@ -29,8 +29,9 @@ For anyone building furniture or other projects from boards and sheet goods: lay
 - Workbench layout: parts on the left, the 3D view with the cut list under it in the middle, the selected board on the right. On a phone the 3D view stays on top with Parts, Edit and Cut list tabs below.
 - Parts that overlap are flagged in the list. Overlaps and snapping use each part's box (the rectangular blank around it), not its true outline, so a disc in the corner of another part's box counts as touching it.
 - Cut list: identical parts of the same wood and shape are grouped. A shaped part lists the rectangular blank to cut it from, with its shape named under it (for example `Disc ⌀400` or `2 corners cut 50 × 80`); a dowel lists the rod, `⌀30 × 450`. Totals give the part count, volume, face area and approximate weight from the true shape, plus the overall size.
+- Cutting plan: a List / Plan switch in the Cut list pane (remembered per browser) lays each piece's rectangular blank, at its cut-list size, onto stock of the same wood and thickness: sheets for birch plywood and MDF, boards for the other woods. Saw kerf (default 3 mm) is left between pieces and edge trim (default 0) comes off every edge first; both are saved with the project. Each wood and thickness picks a stock size from presets (sheets 2,440 × 1,220 by default; boards default to the smallest preset every piece fits on, with glued panels as well) or its own size. Each piece keeps its grain along the stock's length unless Keep the grain along the length is unticked (unticked by default for MDF), which lets the plan turn it a quarter turn. The plan says how many sheets and boards to buy and the waste, and draws each sheet or board to scale with its pieces, kerf, trim and offcuts worth keeping (both sides at least 100 mm); identical layouts are drawn once. Pressing a piece in a drawing or its key button picks it. A piece too big for its stock is named with what to do and flagged in the Parts list. Dowels are listed as rod, not laid out. The same input always gives the same layout.
 - Undo and redo (Ctrl+Z, Ctrl+Shift+Z). Rapid typing in one field counts as one step; each tick, choice or list pick is a step of its own.
-- Autosaves in the browser. Save and open a project as a `.woodplan.json` file. Files are format version 3, which adds joints; version 1 and 2 files and autosaves still open, with no joints, and version 1 parts as boards with square corners lying exactly as they did.
+- Autosaves in the browser. Save and open a project as a `.woodplan.json` file. Files are format version 4, which adds the cutting plan's saw kerf, edge trim and stock sizes, and each piece's grain tick, all optional; version 3 added joints. Version 1 to 3 files and autosaves still open with the cutting plan's defaults, version 1 and 2 with no joints, and version 1 parts as boards with square corners lying exactly as they did.
 - Opens with an example bookshelf; New starts an empty project and Example brings the bookshelf back.
 
 ## Run it
@@ -58,7 +59,6 @@ uv run --with playwright python tests/browser/ui_test.py
 - Units: millimetres only, or inches and fractions as well?
 - Cut joinery: should parts know about dados, tenons and dowel joints so lengths and the cut list account for them?
 - Joints: mending and corner plates, pocket screws, and a door stopped by what it swings into?
-- Sheet goods: a cutting plan that nests parts onto standard boards or plywood sheets, with saw kerf?
 - Shapes: overlaps and snapping by the true outline instead of the box? Free polygons, or curves drawn by hand?
 
 ## Contributing

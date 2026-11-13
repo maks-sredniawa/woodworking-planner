@@ -46,8 +46,23 @@ import {
   updateJoint,
 } from './joints.js';
 import { starterProject } from './project.js';
+import { cuttingOf, misfitIds, planPieces } from './cutplan.js';
+import { createPlanView } from './planview.js';
 import { createScene } from './scene.js';
-import { download, loadDebug, loadPotato, loadSaved, loadSnap, readFile, save, saveDebug, savePotato, saveSnap } from './storage.js';
+import {
+  download,
+  loadCutView,
+  loadDebug,
+  loadPotato,
+  loadSaved,
+  loadSnap,
+  readFile,
+  save,
+  saveCutView,
+  saveDebug,
+  savePotato,
+  saveSnap,
+} from './storage.js';
 import { createDebugPanel } from './debug.js';
 
 const HISTORY_LIMIT = 100;
@@ -228,6 +243,7 @@ const select = keepingFocus((id) => {
   renderEditor();
   renderSelectionChip();
   renderButtons();
+  renderPlan();
   if (id) $(`part-${id}`)?.scrollIntoView({ block: 'nearest' });
 });
 
@@ -460,6 +476,7 @@ function jointWarnings(part) {
 
 function renderParts() {
   const clashing = new Set(assemblyOverlaps(project).flat());
+  const misfits = misfitIds(planPieces(cutList(project.parts)), cuttingOf(project));
   const focusKey = $('parts').contains(document.activeElement) ? document.activeElement.dataset.focus : null;
   $('parts').replaceChildren(
     ...project.parts.map((part) => {
@@ -474,7 +491,7 @@ function renderParts() {
       main.append(silhouette(part), element('span', 'nm', part.name || 'Unnamed'), element('span', 'dim', sizeText(part)));
       const tags = [part.locked && '🔒 Locked', jointTag(part)].filter(Boolean);
       if (tags.length) main.append(element('span', 'tag', tags.join(' · ')));
-      const warnings = [clashing.has(part.id) && 'Overlaps another piece', ...jointWarnings(part)].filter(Boolean);
+      const warnings = [clashing.has(part.id) && 'Overlaps another piece', ...jointWarnings(part), misfits.has(part.id) && 'Doesn’t fit its stock'].filter(Boolean);
       if (warnings.length) main.append(element('span', 'warn', warnings.join(' · ')));
       item.append(main);
       if (selected) {
@@ -558,6 +575,7 @@ function renderEditor() {
   $('lock').textContent = part.locked ? '🔒 Locked · unlock' : 'Lock in place';
   $('locked-note').hidden = !part.locked;
   $('wood-swatch').style.background = SPECIES[part.species].color;
+  $('grain-box').hidden = part.shape === 'dowel';
   renderShapeFields(part);
   renderJoints(part);
   const focused = document.activeElement;
@@ -1174,9 +1192,38 @@ function renderAll() {
   renderSelectionChip();
   renderCutList();
   renderHardware();
+  renderPlan();
   renderButtons();
   describeView();
 }
+
+const planView = createPlanView({
+  root: $('plan'),
+  mm,
+  element,
+  visible,
+  getProject: () => project,
+  onPick: (id) => select(id),
+  onChange: (cutting, field) => commit({ ...project, cutting }, field && `cutting:${field}`),
+});
+
+function renderPlan() {
+  planView.render(project, selectedId);
+}
+
+let cutView = loadCutView();
+
+function setCutView(view) {
+  cutView = view;
+  saveCutView(view);
+  $('view-list').setAttribute('aria-pressed', String(view === 'list'));
+  $('view-plan').setAttribute('aria-pressed', String(view === 'plan'));
+  document.querySelector('.cut').classList.toggle('plan-open', view === 'plan');
+  $('plan').hidden = view !== 'plan';
+  renderPlan();
+}
+$('view-list').addEventListener('click', () => setCutView('list'));
+$('view-plan').addEventListener('click', () => setCutView('plan'));
 
 function renderButtons() {
   $('undo').disabled = undoStack.length === 0;
@@ -1275,6 +1322,7 @@ for (const shapes of document.querySelectorAll('.add-shapes')) {
 function showTab(name) {
   $('main').dataset.tab = name;
   for (const tab of document.querySelectorAll('.tabs [data-tab]')) tab.setAttribute('aria-pressed', String(tab.dataset.tab === name));
+  renderPlan();
 }
 for (const tab of document.querySelectorAll('.tabs [data-tab]')) tab.addEventListener('click', () => showTab(tab.dataset.tab));
 
@@ -1414,6 +1462,7 @@ applyTheme();
 view.canvas.tabIndex = 0;
 view.canvas.setAttribute('role', 'application');
 view.canvas.setAttribute('aria-roledescription', '3D view');
+setCutView(cutView);
 render();
 setPotato(loadPotato());
 if (saved.error) showUnreadableSave(saved.error, saved.kept);

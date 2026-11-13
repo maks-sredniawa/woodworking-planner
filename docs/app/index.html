@@ -86,6 +86,10 @@
   <section class="cut" aria-labelledby="cut-title">
     <div class="pane-h">
       <h2 id="cut-title">Cut list</h2>
+      <div class="tool-group cut-view" role="group" aria-label="Show">
+        <button type="button" id="view-list" aria-pressed="true" title="Cut list and hardware">List</button>
+        <button type="button" id="view-plan" aria-pressed="false" title="Cutting plan: pieces laid out on sheets and boards">Plan</button>
+      </div>
       <span id="overall" class="overall"></span>
     </div>
     <div class="table-wrap">
@@ -107,6 +111,19 @@
       </table>
     </div>
     <p id="hardware-empty" class="empty">No hardware yet. Join two pieces that touch, and their hinges, screws and other fixings are listed here.</p>
+    <div id="plan" class="fields plan" hidden>
+      <p id="plan-empty" class="empty">No pieces yet. Add a piece and its cutting plan shows here.</p>
+      <p id="plan-totals" class="totals"></p>
+      <div class="plan-saw">
+        <div class="duo">
+          <div class="field"><label>Saw kerf (mm) <input id="kerf" class="num" type="number" min="0" max="10" step="any" inputmode="decimal" data-length></label><p id="kerf-error" class="field-error" aria-live="polite"></p></div>
+          <div class="field"><label>Edge trim (mm) <input id="trim" class="num" type="number" min="0" max="100" step="any" inputmode="decimal" data-length></label><p id="trim-error" class="field-error" aria-live="polite"></p></div>
+        </div>
+        <p class="help">Kerf is the width of the saw cut, left between pieces. Edge trim is cut off every edge of a sheet or board before anything is laid out.</p>
+      </div>
+      <div id="plan-groups" class="plan-groups"></div>
+      <p id="plan-rods" class="help" hidden></p>
+    </div>
   </section>
 
   <aside class="inspector" aria-labelledby="editor-title">
@@ -175,6 +192,10 @@
       <label>Wood
         <span class="wood"><i id="wood-swatch" class="sw"></i><select name="species" id="field-species"></select></span>
       </label>
+      <div id="grain-box" class="grain-box">
+        <label class="check"><input type="checkbox" name="grain" aria-describedby="grain-help">Keep the grain along the length</label>
+        <p id="grain-help" class="help">Unticked, the cutting plan may turn this piece a quarter turn to waste less.</p>
+      </div>
       <fieldset id="joints-box" class="joints-box">
         <legend>Joints</legend>
         <p id="joints-empty" class="help">Not joined to anything.</p>
