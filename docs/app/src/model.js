@@ -620,6 +620,7 @@ export function snapPosition(part, proposed, others, options) {
   return snapBodies(part, [bodyOf(part)], proposed, fixed, options);
 }
 
+// Meetings are settled one axis at a time, nearest first, each with the axes already settled in place: an axis tested before its neighbour moved would meet the wrong face, or none.
 export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
   const axes = POSITION.filter((axis) => axis in proposed);
   if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundMm(proposed[axis])]));
@@ -639,7 +640,7 @@ export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
     const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
     if (!closest) break;
     result[closest.axis] = roundClear(closest.meet);
-    break;
+    unsettled = unsettled.filter((axis) => axis !== closest.axis);
   }
   if ('y' in result) result.y = Math.max(result.y, floor);
   return result;
