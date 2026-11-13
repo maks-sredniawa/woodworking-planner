@@ -15,7 +15,6 @@ import {
   newPartBeside,
   outline,
   projectBounds,
-  snapPosition,
   totals,
   updatePart,
 } from './model.js';
@@ -26,6 +25,7 @@ import {
   JOINT_KINDS,
   changeJoint,
   changePart,
+  changePosition,
   assemblyOverlaps,
   cutAllowances,
   cutJoint,
@@ -44,6 +44,7 @@ import {
   placements,
   removePart,
   rotateAssembly,
+  snapAssembly,
   suggestedSizes,
   suggestSizes,
   swingingHinge,
@@ -134,9 +135,7 @@ const handleDrag = timed(({ phase, id, delta, vertical, invertSnap, swing }) => 
     showDragModes(vertical, snapOn !== invertSnap);
     const from = dragStart.part;
     const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
-    const members = joinedTo(dragStart.base, id);
-    const others = project.parts.filter((part) => !members.has(part.id));
-    const target = snapPosition(from, proposed, others, { snap: snapOn !== invertSnap });
+    const target = snapAssembly(dragStart.base, id, proposed, { snap: snapOn !== invertSnap });
     const next = moveAssembly(dragStart.base, id, target);
     const same = next.parts.every((part, i) => ['x', 'y', 'z'].every((axis) => part[axis] === project.parts[i][axis]));
     if (same) return;
@@ -744,7 +743,7 @@ function sideError(part, side, value) {
 const fieldError = (part, input) => FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.';
 
 function pendingFields(changed) {
-  return [...$('editor').querySelectorAll('[aria-invalid="true"]')]
+  return [...$('editor').querySelectorAll('[name][aria-invalid="true"]')]
     .filter((field) => field !== changed)
     .map((field) => ({ field, typed: field.value }));
 }
@@ -765,7 +764,7 @@ function recheckPendingFields(pending) {
   }
   for (const { field, typed, refusal } of stillInvalid) {
     field.value = typed;
-    showFieldError(field, refusal || fieldError(selectedPart(), field));
+    announceFieldError(field, refusal || fieldError(selectedPart(), field));
   }
 }
 
@@ -1260,7 +1259,7 @@ function renderButtons() {
   const locked = Boolean(selectedPart()?.locked);
   $('delete').disabled = !selectedId;
   offWithReason($('delete'), selectedId && deleteRefusal(selectedId));
-  for (const note of [$('editor-note'), $('parts-note')]) note.textContent = '';
+  for (const note of [$('editor-note'), $('parts-note')]) announce(note, '');
   const pinned = Boolean(selectedId) && assemblyPinned(selectedId);
   for (const button of document.querySelectorAll('.move-tools [data-mode]')) button.disabled = !selectedId;
   for (const button of document.querySelectorAll('.move-tools [data-rotate]')) button.disabled = !selectedId || locked || pinned;
@@ -1315,13 +1314,14 @@ $('editor').addEventListener('input', (event) => {
   }
   const pending = pendingFields(input);
   if (next && ['x', 'y', 'z'].includes(input.name)) {
-    const moved = moveAssembly(project, part.id, { [input.name]: next[input.name] });
-    if (moved === project && next[input.name] !== part[input.name]) {
-      showFieldError(input, `That would move a piece joined to it past ±${mm(MAX_SIZE_MM)} mm.`);
+    const move = changePosition(project, part.id, { [input.name]: next[input.name] });
+    if (move.refused) {
+      const name = move.piece.name || 'Unnamed';
+      showFieldError(input, `That would move ${move.piece.id === part.id ? name : `${name}, joined to it,`} past ±${mm(MAX_SIZE_MM)} mm.`);
       return;
     }
     showFieldError(input, null);
-    if (moved !== project) commit(moved, `${part.id}:${input.name}`);
+    commit(move.project, `${part.id}:${input.name}`);
   } else if (next) {
     const result = replacePart(next, typed ? input.name : null);
     if (result.refused) {
@@ -1338,8 +1338,13 @@ $('editor').addEventListener('submit', (event) => event.preventDefault());
 
 function refusePartEdit(input, message, typed) {
   if (!typed) renderEditor();
+  if (!$(`${input.name}-error`)) return announce($('editor-note'), message);
+  announceFieldError(input, message);
+}
+
+function announceFieldError(input, message) {
   const note = $(`${input.name}-error`);
-  if (!note) return announce($('editor-note'), message);
+  if (!note) return;
   announce(note, message);
   markInvalid(input, note, message);
 }
@@ -1515,7 +1520,7 @@ function showUnreadableSave(reason, kept) {
   $('file-error').textContent = `The project saved in this browser could not be opened. ${reason} ${copy}`;
   $('file-error').hidden = false;
 }
-window.woodworkingPlanner = { get project() { return project; }, select, framesDrawn: () => view.framesDrawn() };
+window.woodworkingPlanner = { get project() { return project; }, select, framesDrawn: () => view.framesDrawn(), drawn: () => view.drawn() };
 
 if ('serviceWorker' in navigator && isSecureContext) {
   navigator.serviceWorker.register('sw.js').catch((error) => console.warn('Working offline is not available:', error));

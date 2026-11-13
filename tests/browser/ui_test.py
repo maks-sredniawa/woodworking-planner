@@ -17,6 +17,8 @@ URL = f'http://127.0.0.1:{PORT}/index.html'
 server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT), '--bind', '127.0.0.1'], cwd=ROOT / 'docs' / 'app',
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 errors = []
+WATCH_NOTE = '''(note) => { window.noteSeen = []; new MutationObserver(() => noteSeen.push(note.textContent)).observe(note, { childList: true, characterData: true, subtree: true }); }'''
+REREAD = 'noteSeen.includes("") && noteSeen.at(-1) !== ""'
 CORNERS_OUTSIDE = '''(() => {
     const path = document.querySelector("#corner-shape path"), toShape = path.getScreenCTM().inverse();
     return [...document.querySelectorAll("#corner-pick input")].filter((box) => {
@@ -741,6 +743,12 @@ try:
         expect(width).to_have_value('40')
         expect(width).to_have_attribute('aria-invalid', 'true')
         expect(shaped.locator('#width-error')).to_have_text('Enter at least 50 mm: twice the corner radius.')
+        shaped.locator('#width-error').evaluate(WATCH_NOTE)
+        name = shaped.input_value('#editor [name=name]')
+        shaped.fill('#editor [name=name]', 'Rounded')
+        shaped.wait_for_function(REREAD, timeout=5000)
+        expect(shaped.locator('#width-error')).to_have_text('Enter at least 50 mm: twice the corner radius.')
+        shaped.fill('#editor [name=name]', name)
         shaped.click('#corners-box .choice:has-text("Square")')
         expect(width).to_have_value('40')
         expect(shaped.locator('#width-error')).to_be_hidden()
@@ -849,6 +857,11 @@ try:
         expect(card.locator('summary')).to_contain_text('Screws · to Left side')
         card.locator('[data-jf=count]').fill('0')
         expect(card.locator('.joint-error')).to_contain_text('whole number')
+        before_rename = len(errors)
+        joined.fill('#editor [name=name]', 'Bottom board')
+        joined.fill('#editor [name=name]', 'Bottom')
+        assert len(errors) == before_rename, f'editing Name with a joint field still invalid threw: {errors[before_rename:]}'
+        card.locator('[data-jf=count]').fill('0')
         expect(card.locator('.joint-error')).to_have_attribute('aria-live', 'polite')
         error_id = card.locator('.joint-error').get_attribute('id')
         assert error_id, 'a joint error needs an id for aria-describedby'
@@ -956,10 +969,9 @@ try:
         expect(door_card.locator('.joint-error')).to_have_text(locked_door)
         expect(door_card.locator('.joint-error')).to_be_visible()
         assert joined.evaluate('woodworkingPlanner.project.joints.length') == 2, 'Remove joint took off the hinge of a locked open door'
-        watch_note = '''(note) => { window.noteSeen = []; new MutationObserver(() => noteSeen.push(note.textContent)).observe(note, { childList: true, characterData: true, subtree: true }); }'''
-        door_card.locator('.joint-error').evaluate(watch_note)
+        door_card.locator('.joint-error').evaluate(WATCH_NOTE)
         joined.keyboard.press('Enter')
-        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        joined.wait_for_function(REREAD)
         expect(door_card.locator('.joint-error')).to_have_text(locked_door)
         look = remove_hinge.evaluate('(b) => [getComputedStyle(b).opacity, getComputedStyle(b).color, getComputedStyle(b).borderTopStyle]')
         muted = joined.evaluate('getComputedStyle(document.querySelector(".help")).color')
@@ -972,10 +984,17 @@ try:
         joined.keyboard.press('Enter')
         expect(joined.locator('#editor-note')).to_have_text(locked_door)
         expect(joined.locator('#editor-note')).to_be_visible()
-        joined.locator('#editor-note').evaluate(watch_note)
+        joined.locator('#editor-note').evaluate(WATCH_NOTE)
         joined.keyboard.press('Enter')
-        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        joined.wait_for_function(REREAD)
         expect(joined.locator('#editor-note')).to_have_text(locked_door)
+        stale = joined.evaluate('''() => new Promise((done) => {
+            document.getElementById('delete').click();
+            woodworkingPlanner.select(woodworkingPlanner.project.parts.find((p) => p.name === 'Bottom').id);
+            requestAnimationFrame(() => requestAnimationFrame(() => done(['editor-note', 'parts-note'].map((id) => document.getElementById(id).textContent))));
+        })''')
+        assert stale == ['', ''], f'a refusal still on its way landed after picking another piece cleared the notes: {stale}'
+        row('Left side').locator('.row-main').click()
         row('Left side').locator('.row-acts .danger').click(force=True)
         expect(joined.locator('#parts-note')).to_have_text(locked_door)
         expect(joined.locator('#parts-note')).to_be_visible()
@@ -992,9 +1011,9 @@ try:
         expect(joined.locator('#width-error')).to_be_empty()
         joined.locator('#editor .choice', has_text='Disc').click()
         expect(joined.locator('#shape-error')).to_have_text(locked_door)
-        joined.locator('#shape-error').evaluate(watch_note)
+        joined.locator('#shape-error').evaluate(WATCH_NOTE)
         joined.locator('#editor .choice', has_text='Disc').click()
-        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        joined.wait_for_function(REREAD)
         expect(joined.locator('#shape-error')).to_have_text(locked_door)
         expect(joined.locator('#editor [name=shape][value=board]')).to_be_checked()
         assert hinge_open() == 180, f'reshaping the frame swung a locked door to {hinge_open()}'
@@ -1009,11 +1028,34 @@ try:
         expect(door_card.locator('.joint-error')).to_be_empty()
         expect(door_card.locator('[data-jf=count]')).to_have_value('3')
         expect(door_card.locator('[data-jf=count]')).not_to_have_attribute('aria-invalid', 'true')
+        door_card.locator('input[type=number][data-jf=open]').fill('90')
+        row('Bottom').locator('.row-main').click()
+        joined.fill('#editor [name=x]', '-9982')
+        expect(joined.locator('#x-error')).to_contain_text('move Door, joined to it, past')
+        assert spots('Bottom') == '[[18,0,0]]', f'a move that takes the open door past the limit moved the bottom: {spots("Bottom")}'
+        joined.fill('#editor [name=x]', '18')
+        expect(joined.locator('#x-error')).to_be_empty()
+        row('Door').locator('.row-main').click()
+        door_spot = spots('Door')
+        joined.fill('#editor [name=x]', '-10000')
+        expect(joined.locator('#x-error')).to_have_text('That would move Door past ±10,000 mm.')
+        assert spots('Door') == door_spot, f'a move that takes the open door itself past the limit moved it: {spots("Door")}'
+        joined.fill('#editor [name=x]', '0')
+        expect(joined.locator('#x-error')).to_be_empty()
         door_card.locator('[data-jf-act=close]').click()
         assert hinge_open() == 0
+        door_card.locator('[data-jf=hingeType]').select_option('concealed')
+        expect(joined.locator('#hardware-rows')).to_contain_text('Concealed hinge')
+        frame_id = joined.evaluate('woodworkingPlanner.project.parts.find((p) => p.name === "Left side").id')
+        drawn = joined.evaluate('woodworkingPlanner.drawn()')
+        frame_knuckles = [piece for piece in drawn['hardware'] if piece['type'] == 'knuckle' and piece['owner'] == frame_id]
+        hinges = joined.evaluate('woodworkingPlanner.project.joints.find((j) => j.kind === "hinge").count')
+        assert len(frame_knuckles) == hinges, f'a concealed hinge draws no hinge line on the frame: {drawn["hardware"]}'
+        assert drawn['hingeLine'] == '0f766e', f'the picked door on a concealed hinge shows no accent hinge line: {drawn["hingeLine"]}'
+        door_card.locator('[data-jf=hingeType]').select_option('butt')
         row('Bottom').locator('.row-main').click()
         joined.fill('#editor [name=x]', '-9995')
-        expect(joined.locator('#x-error')).to_contain_text('joined to it past')
+        expect(joined.locator('#x-error')).to_contain_text('move Left side, joined to it, past')
         assert spots('Bottom') == '[[18,0,0]]', f'an assembly move past the limit moved the bottom: {spots("Bottom")}'
         joined.fill('#editor [name=x]', '18')
         expect(joined.locator('#x-error')).to_be_empty()

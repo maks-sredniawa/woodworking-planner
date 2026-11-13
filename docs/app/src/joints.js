@@ -12,6 +12,7 @@ import {
   recentre,
   rotatePart,
   roundMm,
+  snapBoxes,
   turnAxis,
 } from './model.js';
 
@@ -676,21 +677,52 @@ export function applySuggestedSizes(project, jointId) {
   return suggestSizes(project, jointId).project ?? null;
 }
 
-export function moveAssembly(project, id, position) {
+function actualBoxes(project, members) {
+  const mech = mechanism(project);
+  const box = (part) => worldBounds(project, part.id, mech.placement(part.id));
+  return {
+    moving: project.parts.filter((part) => members.has(part.id)).map(box),
+    fixed: project.parts.filter((part) => !members.has(part.id)).map(box),
+  };
+}
+
+export function snapAssembly(project, id, proposed, options) {
+  const { moving, fixed } = actualBoxes(project, joinedTo(project, id));
+  return snapBoxes(findPart(project, id), moving, proposed, fixed, options);
+}
+
+function pieceOverLimit(before, after, members) {
+  const was = actualBoxes(before, members).moving;
+  const moving = before.parts.filter((part) => members.has(part.id));
+  return moving[
+    actualBoxes(after, members).moving.findIndex((box, i) =>
+      AXES.some((axis) => Math.abs(box.min[axis]) > MAX_SIZE_MM && Math.abs(box.min[axis]) > Math.abs(was[i].min[axis])),
+    )
+  ];
+}
+
+export function changePosition(project, id, position) {
   const piece = findPart(project, id);
-  if (!piece) return project;
+  if (!piece) return { refused: 'missing' };
   const members = joinedTo(project, id);
   const parts = project.parts.filter((part) => members.has(part.id));
-  if (parts.some((part) => part.locked)) return project;
+  const locked = parts.find((part) => part.locked);
+  if (locked) return { refused: 'locked', piece: locked };
   const delta = Object.fromEntries(Object.entries(position).map(([axis, value]) => [axis, value - piece[axis]]));
   const moved = new Map();
   for (const part of parts) {
     const target = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, part[axis] + change]));
     const next = movePart(part, target);
-    if (next === part && Object.values(delta).some(Boolean)) return project;
+    if (next === part && Object.values(delta).some(Boolean)) return { refused: 'limit', piece: part };
     moved.set(part.id, next);
   }
-  return { ...project, parts: project.parts.map((part) => moved.get(part.id) ?? part) };
+  const next = { ...project, parts: project.parts.map((part) => moved.get(part.id) ?? part) };
+  const past = pieceOverLimit(project, next, members);
+  return past ? { refused: 'limit', piece: past } : { project: next };
+}
+
+export function moveAssembly(project, id, position) {
+  return changePosition(project, id, position).project ?? project;
 }
 
 function turnVector(vector, axis) {
@@ -733,7 +765,8 @@ export function rotateAssembly(project, id, axis) {
   const joints = jointsOf(project).map((joint) =>
     joint.kind === 'hinge' && members.has(joint.part) ? { ...joint, edge: turnAxis(joint.edge, axis) } : joint,
   );
-  return { ...project, parts: project.parts.map((part) => byId.get(part.id) ?? part), joints };
+  const next = { ...project, parts: project.parts.map((part) => byId.get(part.id) ?? part), joints };
+  return pieceOverLimit(project, next, members) ? project : next;
 }
 
 export function insideCorner(to, part) {
@@ -924,26 +957,29 @@ function hingePieces(project, joint, part, info) {
   const index = AXES.indexOf(axis);
   const low = Math.min(origin[index], origin[index] + direction[index] * length);
   const along = (value) => origin.map((coordinate, i) => (AXES[i] === axis ? value : coordinate));
-  if (joint.hingeType === 'concealed') {
-    const touch = contact(findPart(project, joint.to), part);
-    const inward = -edgeSign(info.edge);
-    const cupFromEdge = 22;
-    return spread(joint.count, low, low + length, KNUCKLE_INSET_MM).map((value) => {
-      const centre = along(value);
-      centre[AXES.indexOf(edgeAxis(info.edge))] += inward * cupFromEdge;
-      return { type: 'head', kind: 'cup', joint: joint.id, owner: part.id, centre, normal: unit(touch.axis, -touch.sign), radius: CONCEALED_CUP_MM / 2 };
-    });
-  }
-  const size = Math.min(joint.size, length);
-  const centres = joint.hingeType === 'piano' ? [low + length / 2] : spread(joint.count, low + size / 2, low + length - size / 2, KNUCKLE_INSET_MM);
-  return centres.map((centre) => ({
+  const knuckle = (centre, size, radius) => ({
     type: 'knuckle',
     joint: joint.id,
     owner: joint.to,
     from: along(centre - size / 2),
     to: along(centre + size / 2),
-    radius: joint.hingeType === 'piano' ? 3 : 5,
-  }));
+    radius,
+  });
+  if (joint.hingeType === 'concealed') {
+    const touch = contact(findPart(project, joint.to), part);
+    const inward = -edgeSign(info.edge);
+    const cupFromEdge = 22;
+    return spread(joint.count, low, low + length, KNUCKLE_INSET_MM).flatMap((value) => {
+      const centre = along(value);
+      centre[AXES.indexOf(edgeAxis(info.edge))] += inward * cupFromEdge;
+      const cup = { type: 'head', kind: 'cup', joint: joint.id, owner: part.id, centre, normal: unit(touch.axis, -touch.sign), radius: CONCEALED_CUP_MM / 2 };
+      const size = Math.min(CONCEALED_CUP_MM, length);
+      return [cup, knuckle(Math.min(Math.max(value, low + size / 2), low + length - size / 2), size, 3)];
+    });
+  }
+  const size = Math.min(joint.size, length);
+  if (joint.hingeType === 'piano') return [knuckle(low + length / 2, size, 3)];
+  return spread(joint.count, low + size / 2, low + length - size / 2, KNUCKLE_INSET_MM).map((centre) => knuckle(centre, size, 5));
 }
 
 function bracketPieces(joint, corner, part, to) {
