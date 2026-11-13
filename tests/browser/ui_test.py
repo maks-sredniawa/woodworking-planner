@@ -881,7 +881,7 @@ try:
         joined.locator('details.joint[open] input[type=number][data-jf=open]').fill('90')
         expect(joined.locator('#view-sel')).to_contain_text('open 90°')
         expect(row('Door').locator('.tag')).to_have_text('Swings on Left side · open 90°')
-        expect(joined.locator('.warn:visible')).to_have_count(0)
+        expect(joined.locator('.warn:visible', has_not_text='Doesn’t fit its stock')).to_have_count(0)
         joined.locator('details.joint[open] input[type=number][data-jf=open]').fill('200')
         expect(joined.locator('details.joint[open] .joint-error')).to_contain_text('up to how far it opens')
         assert hinge_open() == 90
@@ -1097,6 +1097,188 @@ try:
             edge = dark.evaluate(f'getComputedStyle(document.querySelector("{field}")).borderTopColor')
             assert contrast(edge, panel) >= 3, f'dark {field} border {edge} is {contrast(edge, panel):.2f}:1'
         dark.screenshot(path=str(HERE / 'dark-1280.png'))
+        dark.close()
+
+        planner = browser.new_page(viewport={'width': 1280, 'height': 900})
+        planner.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        planner.on('pageerror', lambda e: errors.append(str(e)))
+        planner.goto(URL)
+        expect(planner.locator('#parts li')).to_have_count(7)
+        expect(planner.locator('#view-list')).to_have_attribute('aria-pressed', 'true')
+        expect(planner.locator('#plan')).to_be_hidden()
+        planner.click('#view-plan')
+        expect(planner.locator('#view-plan')).to_have_attribute('aria-pressed', 'true')
+        expect(planner.locator('#plan')).to_be_visible()
+        expect(planner.locator('#cut-rows')).to_be_hidden()
+        expect(planner.locator('#hardware-empty')).to_be_hidden()
+        expect(planner.locator('#overall')).to_be_visible()
+        expect(planner.locator('#plan-totals')).to_contain_text('Buy 1 sheet and 3 boards')
+        expect(planner.locator('#plan-totals')).to_contain_text('% waste')
+        expect(planner.locator('#plan-totals')).not_to_contain_text('fit')
+        groups = planner.locator('section.stock-group')
+        expect(groups).to_have_count(2)
+        expect(groups.nth(0).locator('.jn')).to_have_text('Birch plywood · 6 mm')
+        expect(groups.nth(0).locator('.dim').first).to_have_text(re.compile(r'^Buy 1 sheet · 2,440 × 1,220 · \d+% waste$'))
+        expect(groups.nth(1).locator('.jn')).to_have_text('Pine · 18 mm')
+        expect(groups.nth(1).locator('.dim').first).to_have_text(re.compile(r'^Buy 3 boards · 2,400 × 244 · \d+% waste$'))
+        expect(planner.locator('figure.stock-sheet')).to_have_count(4)
+        expect(planner.locator('figure.stock-sheet figcaption').first).to_have_text(re.compile(r'^Sheet 1 of 1 · 2,440 × 1,220 · 1 piece · \d+% waste$'))
+        expect(groups.nth(1).locator('figcaption').first).to_have_text(re.compile(r'^Board 1 of 3 · 2,400 × 244 · \d pieces? · \d+% waste$'))
+        expect(planner.locator('.stock-key button')).to_have_count(7)
+        expect(planner.locator('.stock-key button').first).to_have_text('1 Back panel 1,000 × 800')
+        assert planner.evaluate('[...document.querySelectorAll("figure.stock-sheet svg")].every((svg) => svg.getAttribute("aria-hidden") === "true")')
+        sizes = planner.evaluate('[...new Set([...document.querySelectorAll("figure.stock-sheet svg text")].map((t) => getComputedStyle(t).fontSize))]')
+        assert sizes == ['11px'], f'diagram text is not all 11 px: {sizes}'
+        widths = planner.evaluate('[...document.querySelectorAll("figure.stock-sheet")].map((f) => [Math.round(f.querySelector("svg").getBoundingClientRect().width), Math.round(f.getBoundingClientRect().width)])')
+        assert all(abs(a - b) <= 1 for a, b in widths), f'diagrams are not as wide as the pane: {widths}'
+        hex_in_svg = planner.evaluate('[...document.querySelectorAll("figure.stock-sheet svg *")].filter((n) => /#/.test(n.getAttribute("stroke") ?? "")).length')
+        assert hex_in_svg == 0, 'a diagram stroke uses a fixed colour'
+        expect(planner.locator('figure.stock-sheet .piece-label')).not_to_have_count(0)
+        expect(planner.locator('figure.stock-sheet text', has_text='→ grain')).to_have_count(4)
+
+        side = planner.locator('.stock-key button', has_text='Side').first
+        side.focus()
+        planner.keyboard.press('Enter')
+        expect(planner.locator('.row.sel .nm')).to_have_text('Side')
+        expect(planner.locator('#view-sel')).to_contain_text('Side')
+        expect(planner.locator('.stock-key button[aria-pressed=true]')).to_have_count(1)
+        expect(planner.locator('.stock-key button[aria-pressed=true]')).to_be_focused()
+        expect(planner.locator('figure.stock-sheet rect.sel')).to_have_count(1)
+        planner.locator('figure.stock-sheet rect.piece[data-id]').first.click()
+        expect(planner.locator('.row.sel .nm')).to_have_text('Back panel')
+
+        planner.fill('#kerf', '12')
+        expect(planner.locator('#kerf')).to_have_attribute('aria-invalid', 'true')
+        expect(planner.locator('#kerf-error')).to_have_text('Enter a kerf from 0 to 10.')
+        planner.fill('#kerf', '0')
+        expect(planner.locator('#kerf')).not_to_have_attribute('aria-invalid', 'true')
+        assert planner.evaluate('woodworkingPlanner.project.cutting.kerf') == 0
+        planner.fill('#trim', '101')
+        expect(planner.locator('#trim-error')).to_have_text('Enter a trim from 0 to 100.')
+        planner.fill('#trim', '10')
+        assert planner.evaluate('woodworkingPlanner.project.cutting.trim') == 10
+        expect(planner.locator('figure.stock-sheet rect.trim')).to_have_count(4)
+        planner.click('#undo')
+        assert planner.evaluate('woodworkingPlanner.project.cutting.trim') == 0
+        expect(planner.locator('#trim')).to_have_value('0')
+        planner.click('#redo')
+        planner.fill('#trim', '0')
+
+        pine = groups.nth(1)
+        expect(pine.locator('select')).to_have_value('2400x244')
+        assert pine.locator('optgroup').evaluate_all('(groups) => groups.map((g) => g.label)') == ['Boards', 'Glued panels']
+        assert groups.nth(0).locator('optgroup').evaluate_all('(groups) => groups.map((g) => g.label)') == ['Sheets']
+        expect(pine.locator('.own')).to_be_hidden()
+        pine.locator('select').select_option('own')
+        expect(pine.locator('.own')).to_be_visible()
+        expect(pine.locator('.own input').nth(0)).to_have_value('2400')
+        expect(pine.locator('.own input').nth(1)).to_have_value('244')
+        assert planner.evaluate('woodworkingPlanner.project.cutting.stock["pine:18"]') == {'length': 2400, 'width': 244, 'own': True}
+        pine.locator('.own input').nth(0).fill('50')
+        expect(pine.locator('.own .field-error').nth(0)).to_have_text('Enter a length from 100 to 10,000.')
+        pine.locator('.own input').nth(0).fill('3000')
+        expect(pine.locator('.own input').nth(0)).to_be_focused()
+        expect(pine.locator('.dim').first).to_contain_text('3,000 × 244')
+        pine.locator('select').select_option('2400x144')
+        expect(pine.locator('.own')).to_be_hidden()
+        expect(pine.locator('p.warn')).to_have_count(6)
+        expect(pine.locator('p.warn').first).to_have_text(re.compile(r'^\w+ \([\d,]+ × 244\) is bigger than the 2,400 × 144 board\. Pick a bigger stock size or make the piece smaller\.$'))
+        expect(planner.locator('#plan-totals')).to_contain_text('6 pieces don’t fit')
+        expect(pine.locator('.dim').first).to_have_text('Buy 0 boards · 2,400 × 144')
+        expect(pine.locator('figure.stock-sheet')).to_have_count(0)
+        expect(planner.locator('#parts li .warn', has_text='Doesn’t fit its stock')).to_have_count(6)
+        pine.locator('select').select_option('2400x244')
+        expect(planner.locator('#parts li .warn')).to_have_count(0)
+
+        planner.locator('.stock-key button', has_text='Back panel').click()
+        expect(planner.locator('.row.sel .nm')).to_have_text('Back panel')
+        grain = planner.locator('#editor [name=grain]')
+        expect(grain).to_be_checked()
+        expect(planner.locator('#grain-help')).to_have_text('Unticked, the cutting plan may turn this piece a quarter turn to waste less.')
+        planner.fill('#editor [name=width]', '2400')
+        expect(groups.nth(0).locator('p.warn')).to_have_text('Back panel (1,000 × 2,400) is too wide for the 2,440 × 1,220 sheet with its grain along the length. Untick Keep the grain along the length for it, or pick a bigger stock size.')
+        grain.uncheck()
+        expect(groups.nth(0).locator('p.warn')).to_have_count(0)
+        expect(planner.locator('.stock-key button', has_text='Back panel')).to_have_text('1 Back panel 2,400 × 1,000')
+        planner.click('#undo')
+        expect(grain).to_be_checked()
+        planner.select_option('#field-species', 'mdf')
+        expect(grain).not_to_be_checked()
+        planner.click('#undo')
+        planner.click('#undo')
+        expect(planner.locator('#editor [name=width]')).to_have_value('800')
+
+        planner.click('[data-add-shape=dowel]')
+        expect(planner.locator('#grain-box')).to_be_hidden()
+        expect(planner.locator('#plan-rods')).to_have_text('Dowels are bought as rod and are not laid out: 1 × ⌀30 × 450.')
+        planner.click('#undo')
+        planner.wait_for_timeout(300)
+        planner.screenshot(path=str(HERE / 'plan-1280.png'))
+        share = planner.evaluate('document.querySelector(".cut").getBoundingClientRect().height / innerHeight')
+        assert share <= 0.61, f'the plan pane grew past 60vh: {share}'
+
+        planner.reload()
+        expect(planner.locator('#view-plan')).to_have_attribute('aria-pressed', 'true')
+        expect(planner.locator('#plan')).to_be_visible()
+        assert planner.evaluate('woodworkingPlanner.project.cutting') == {'kerf': 0, 'trim': 0, 'stock': {'pine:18': {'length': 2400, 'width': 244, 'own': False}}}
+        with planner.expect_download() as download:
+            planner.click('#save-file')
+        planned = HERE / 'planned.json'
+        download.value.save_as(planned)
+        saved_plan = json.loads(planned.read_text())
+        planned.unlink()
+        assert saved_plan['version'] == 4 and saved_plan['cutting']['kerf'] == 0, saved_plan.get('cutting')
+        assert all('grain' in part for part in saved_plan['parts'])
+        planner.click('#view-list')
+        expect(planner.locator('#plan')).to_be_hidden()
+        expect(planner.locator('#cut-rows')).to_be_visible()
+        planner.click('#view-plan')
+        planner.click('#new-project')
+        expect(planner.locator('#plan .empty')).to_have_text('No pieces yet. Add a piece and its cutting plan shows here.')
+        expect(planner.locator('#plan-totals')).to_be_hidden()
+        planner.close()
+
+        for scheme, wood in (('light', 'walnut'), ('dark', 'spruce')):
+            themed = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme=scheme)
+            themed.on('pageerror', lambda e: errors.append(str(e)))
+            themed.goto(URL)
+            themed.evaluate('localStorage.setItem("woodworking-planner:cut-view", "plan")')
+            themed.reload()
+            for index in (3, 4):
+                themed.locator('#parts li').nth(index).locator('.row-main').click()
+                themed.select_option('#field-species', wood)
+            themed.keyboard.press('Escape')
+            expect(themed.locator('#plan')).to_be_visible()
+            themed.wait_for_timeout(300)
+            themed.locator('.cut').screenshot(path=str(HERE / f'plan-1280-{scheme}.png'))
+            chips = themed.evaluate('[...document.querySelectorAll("figure.stock-sheet .piece-label")].every((g) => g.querySelector("rect.chip"))')
+            assert chips, 'a piece label sits straight on the wood'
+            themed.close()
+
+        for width in (360, 320):
+            for scheme in ('light', 'dark'):
+                handheld = browser.new_page(viewport={'width': width, 'height': 800}, color_scheme=scheme)
+                handheld.on('pageerror', lambda e: errors.append(str(e)))
+                handheld.goto(URL)
+                handheld.click('.tabs [data-tab=cut]')
+                handheld.click('#view-plan')
+                expect(handheld.locator('figure.stock-sheet')).to_have_count(4)
+                heights = handheld.evaluate('[...document.querySelectorAll(".cut-view button, .stock-key button")].map((b) => b.getBoundingClientRect().height)')
+                assert min(heights) >= 36, f'at {width} px a plan button is under 36 px tall: {min(heights)}'
+                same_line = handheld.evaluate("""(() => {
+                    const h = document.getElementById("cut-title").getBoundingClientRect(), s = document.querySelector(".cut-view").getBoundingClientRect();
+                    const o = document.getElementById("overall").getBoundingClientRect();
+                    return Math.abs(h.top + h.height / 2 - (s.top + s.height / 2)) < 4 && o.top >= s.bottom - 1;
+                })()""")
+                assert same_line, f'at {width} px the heading and the switch do not share a line with Overall below'
+                assert handheld.evaluate('document.documentElement.scrollWidth') <= width, f'at {width} px the plan scrolls sideways'
+                handheld.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
+                last = handheld.locator('.stock-key button').last.bounding_box()
+                bar = handheld.locator('.add-bar').bounding_box()
+                assert last['y'] + last['height'] <= bar['y'], f'at {width} px the last key button stays under the Add bar'
+                handheld.wait_for_timeout(300)
+                handheld.screenshot(path=str(HERE / f'plan-{width}-{scheme}.png'), full_page=True)
+                handheld.close()
         browser.close()
 finally:
     server.terminate()

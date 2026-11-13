@@ -43,6 +43,22 @@ export function saveDebug(on) {
   } catch {}
 }
 
+const CUT_VIEW_KEY = 'woodworking-planner:cut-view';
+
+export function loadCutView() {
+  try {
+    return localStorage.getItem(CUT_VIEW_KEY) === 'plan' ? 'plan' : 'list';
+  } catch {
+    return 'list';
+  }
+}
+
+export function saveCutView(view) {
+  try {
+    localStorage.setItem(CUT_VIEW_KEY, view);
+  } catch {}
+}
+
 export function saveSnap(on) {
   try {
     localStorage.setItem(SNAP_KEY, on ? 'on' : 'off');
