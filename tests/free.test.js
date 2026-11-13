@@ -60,6 +60,14 @@ test('a disc becomes four points with bends and an arc keeps its curves, both wi
   assert.equal(updatePart({ ...makeShape('arc'), sweep: 360 }, 'shape', 'free'), null, 'a full ring has a hole');
 });
 
+test('a dowel becomes a rectangle as wide as its diameter, not the board width', () => {
+  const dowel = { ...makeShape('dowel'), width: 330, dowelDiameter: 30 };
+  const free = updatePart(dowel, 'shape', 'free');
+  assert.deepEqual([free.length, free.width], [dowel.length, 30]);
+  close(faceArea(free), dowel.length * 30);
+  assert.equal(freeSwitchProblem({ ...dowel, width: 20000 }), null, 'a board width past the limit does not block the switch');
+});
+
 test('a free shape keeps its outline while it is another shape, so switching back to Free restores it', () => {
   const drawn = updatePart(makeShape('free'), 'points', pts([0, 0], [400, 0, 40], [400, 300], [100, 300], [0, 200]));
   for (const other of ['board', 'disc', 'dowel', 'arc', 'triangle']) {
