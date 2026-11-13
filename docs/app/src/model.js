@@ -1,3 +1,5 @@
+import { MAX_POINTS, MIN_POINTS, area, arcBend, box, halfEdge, outlineProblem, point, polygon, rebase, scale } from './free.js';
+
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
 export const MAX_SWEEP_DEG = 360;
@@ -9,6 +11,7 @@ export const SHAPES = {
   dowel: 'Dowel',
   arc: 'Arc',
   triangle: 'Triangle',
+  free: 'Free shape',
 };
 
 export const CORNER_STYLES = { square: 'Square', rounded: 'Rounded', cut: 'Cut' };
@@ -204,7 +207,16 @@ function arcOutline(part) {
   return { points: [...arcPoints(cx, cy, part.outerRadius, from, to), ...arcPoints(cx, cy, inner, to, from)], holes: [] };
 }
 
+function freeOutline(part) {
+  const corners = polygon(part.points);
+  const size = box(part.points);
+  const cx = (size.minX + size.maxX) / 2;
+  const cy = (size.minY + size.maxY) / 2;
+  return { points: withoutRepeats(corners.map(([x, y]) => [x - cx, y - cy])), holes: [] };
+}
+
 export function outline(part) {
+  if (part.shape === 'free') return freeOutline(part);
   const size = blank(part);
   const halfL = size.length / 2;
   const halfW = size.width / 2;
@@ -213,6 +225,64 @@ export function outline(part) {
   if (part.shape === 'triangle') return { points: [[-halfL, -halfW], [halfL, -halfW], [-halfL, halfW]], holes: [] };
   if (part.shape === 'board') return { points: boardOutline(part), holes: [] };
   return { points: [[-halfL, -halfW], [halfL, -halfW], [halfL, halfW], [-halfL, halfW]], holes: [] };
+}
+
+function boardPoints(part) {
+  const halfL = part.length / 2;
+  const halfW = part.width / 2;
+  const shaped = part.shape === 'board' && cornersActive(part);
+  const corners = CORNER_WALK.flatMap(([corner, sx, sy]) => {
+    if (!shaped || !part[corner]) return [point(sx * halfL, sy * halfW)];
+    if (part.corners === 'rounded') {
+      const r = part.cornerRadius;
+      const first = sx * sy < 0 ? point(sx * (halfL - r), sy * halfW, arcBend(r, Math.PI / 2)) : point(sx * halfL, sy * (halfW - r), arcBend(r, Math.PI / 2));
+      const second = sx * sy < 0 ? point(sx * halfL, sy * (halfW - r)) : point(sx * (halfL - r), sy * halfW);
+      return [first, second];
+    }
+    const alongLength = point(sx * (halfL - part.cutLength), sy * halfW);
+    const alongWidth = point(sx * halfL, sy * (halfW - part.cutWidth));
+    return sx * sy > 0 ? [alongWidth, alongLength] : [alongLength, alongWidth];
+  });
+  const same = (a, b) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
+  return corners.filter((each, i) => !same(each, corners[(i + 1) % corners.length]));
+}
+
+function ringPoints(radius, from, to, inward) {
+  const steps = Math.ceil(Math.abs(to - from) / 90 - 1e-9);
+  const step = (to - from) / steps;
+  const bend = (inward ? -1 : 1) * arcBend(radius, radians(Math.abs(step)));
+  const at = (degrees, curve) => point(radius * Math.cos(radians(degrees)), radius * Math.sin(radians(degrees)), curve);
+  return [...Array.from({ length: steps }, (_, k) => at(from + k * step, bend)), at(to, 0)];
+}
+
+function freePointsOf(part) {
+  if (part.shape === 'disc') return ringPoints(part.diameter / 2, 270, 270 + 360, false).slice(0, -1);
+  if (part.shape === 'arc') {
+    const [from, to] = sweepRange(part);
+    return [...ringPoints(part.outerRadius, from, to, false), ...ringPoints(part.outerRadius - part.bandWidth, to, from, true)];
+  }
+  if (part.shape === 'triangle') {
+    const halfL = part.length / 2;
+    const halfW = part.width / 2;
+    return [point(-halfL, -halfW), point(halfL, -halfW), point(-halfL, halfW)];
+  }
+  return boardPoints(part);
+}
+
+function withOutline(part, points) {
+  const size = box(points);
+  return { ...part, points, length: roundMm(size.maxX - size.minX), width: roundMm(size.maxY - size.minY) };
+}
+
+function stretched(part, field, value) {
+  const ratio = value / part[field];
+  const points = scale(part.points, field === 'length' ? ratio : 1, field === 'width' ? ratio : 1);
+  return { ...part, points, [field]: value };
+}
+
+function toFree(part, next) {
+  if (part.shape === 'arc' && part.sweep >= MAX_SWEEP_DEG) return null;
+  return withOutline(next, rebase(freePointsOf(part)));
 }
 
 export function cornerCount(part) {
@@ -231,6 +301,7 @@ export function faceArea(part) {
   if (part.shape === 'disc') return (Math.PI * part.diameter ** 2) / 4;
   if (part.shape === 'dowel') return part.length * part.dowelDiameter;
   if (part.shape === 'triangle') return (part.length * part.width) / 2;
+  if (part.shape === 'free') return area(part.points);
   if (part.shape === 'arc') {
     const inner = part.outerRadius - part.bandWidth;
     return (Math.PI * (part.outerRadius ** 2 - inner ** 2) * part.sweep) / 360;
@@ -290,6 +361,7 @@ export function overlaps(parts) {
 function shapeKey(part) {
   if (part.shape === 'disc' || part.shape === 'dowel' || part.shape === 'triangle') return part.shape;
   if (part.shape === 'arc') return ['arc', part.outerRadius, part.bandWidth, part.sweep].join(':');
+  if (part.shape === 'free') return ['free', ...part.points.map(({ x, y, bend }) => `${x},${y},${bend}`)].join(':');
   if (!cornersActive(part)) return 'board';
   const size = part.corners === 'rounded' ? part.cornerRadius : `${part.cutLength}:${part.cutWidth}`;
   return ['board', part.corners, size, cornerCount(part), cornerLayout(part)].join(':');
@@ -375,6 +447,7 @@ const SHAPE_DEFAULTS = {
   dowel: { length: 450 },
   arc: {},
   triangle: { length: 200, width: 200 },
+  free: { length: 400, width: 300, points: [point(0, 0), point(400, 0), point(400, 200), point(300, 300), point(0, 300)] },
 };
 
 export function makeShape(shape = 'board') {
@@ -382,7 +455,7 @@ export function makeShape(shape = 'board') {
 }
 
 const SWITCHES = ['shape', 'corners', ...Object.keys(CORNERS)];
-const GEOMETRY = [...SIZES, 'sweep', ...SWITCHES, ...POSITION, 'pose'];
+const GEOMETRY = [...SIZES, 'sweep', ...SWITCHES, ...POSITION, 'pose', 'points'];
 const inReach = (value) => Number.isFinite(value) && Math.abs(value) <= MAX_SIZE_MM;
 const fitsLimits = (part) => POSITION.every((axis) => inReach(part[axis]));
 const BESIDE_GAP_MM = 50;
@@ -415,10 +488,19 @@ function fieldValue(field, raw) {
   const choices = { species: SPECIES, shape: SHAPES, corners: CORNER_STYLES }[field];
   if (choices) return Object.hasOwn(choices, raw) ? raw : NOT_ALLOWED;
   if (field === 'name') return String(raw).slice(0, 80);
+  if (field === 'points') return pointsValue(raw);
   return NOT_ALLOWED;
 }
 
+function pointsValue(raw) {
+  if (!Array.isArray(raw) || raw.length < MIN_POINTS || raw.length > MAX_POINTS) return NOT_ALLOWED;
+  const points = raw.map((each) => point(roundMm(Number(each?.x)), roundMm(Number(each?.y)), roundMm(Number(each?.bend ?? 0))));
+  if (!points.every(({ x, y, bend }) => inReach(x) && inReach(y) && inReach(bend))) return NOT_ALLOWED;
+  return points.every((each, i) => Math.abs(each.bend) <= halfEdge(points, i) + 0.05) ? points : NOT_ALLOWED;
+}
+
 export function shapeProblem(part) {
+  if (part.shape === 'free') return outlineProblem(part.points, MAX_SIZE_MM) ? 'points' : null;
   if (part.bandWidth >= part.outerRadius) return 'bandWidth';
   if (!cornersActive(part)) return null;
   if (part.corners === 'rounded' && part.cornerRadius > Math.min(part.length, part.width) / 2) return 'cornerRadius';
@@ -445,6 +527,12 @@ export function updatePart(part, field, raw) {
   if (value === NOT_ALLOWED) return null;
   let next = { ...part, [field]: value };
   if (field === 'shape' && part.name === SHAPES[part.shape]) next.name = SHAPES[value];
+  if (field === 'shape' && value === 'free' && part.shape !== 'free') next = toFree(part, next);
+  if (!next) return null;
+  if (field === 'shape' && value !== 'free') delete next.points;
+  if (field === 'points') next = part.shape === 'free' ? withOutline(next, rebase(value)) : null;
+  if (part.shape === 'free' && (field === 'length' || field === 'width')) next = stretched(part, field, value);
+  if (!next) return null;
   if (SWITCHES.includes(field)) next = fitCorners(next);
   return shapeProblem(next) ? null : next;
 }
@@ -472,6 +560,8 @@ export function roundMm(value) {
   return Math.round(value * 10) / 10;
 }
 
+const FILE_NAMES = { points: 'outline' };
+
 export function partFromFile(raw, index) {
   const part = makePart();
   if (raw?.orientation !== undefined) {
@@ -479,13 +569,14 @@ export function partFromFile(raw, index) {
     part.pose = legacyPose(raw.orientation);
   }
   for (const field of ['name', ...GEOMETRY, 'species', 'locked']) {
-    if (raw?.[field] === undefined) continue;
+    if (raw?.[field] === undefined || (field === 'points' && part.shape !== 'free')) continue;
     const value = fieldValue(field, raw[field]);
-    if (value === NOT_ALLOWED) throw new Error(`Part ${index + 1} has an invalid ${field}.`);
+    if (value === NOT_ALLOWED) throw new Error(`Part ${index + 1} has an invalid ${FILE_NAMES[field] ?? field}.`);
     part[field] = value;
   }
+  if (part.shape === 'free') part.points ??= rebase(boardPoints({ ...part, shape: 'board' }));
   const problem = shapeProblem(part);
-  if (problem) throw new Error(`Part ${index + 1} has an invalid ${problem}.`);
+  if (problem) throw new Error(`Part ${index + 1} has an invalid ${FILE_NAMES[problem] ?? problem}.`);
   return part;
 }
 
