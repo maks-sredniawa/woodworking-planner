@@ -189,24 +189,33 @@ const holeDepth = (piece, axis) => Math.floor((2 * extents(piece)[axis]) / 3);
 const holeRoom = (part, to, axis) => holeDepth(part, axis) + holeDepth(to, axis);
 
 const sideOf = (part, axis) => Object.entries(poseAxes(part.pose)).find(([, signed]) => signed[1] === axis)?.[0];
+const SIDE_WORDS = { length: 'end', width: 'edge', thickness: 'face' };
+const housesIn = (kind, to, axis) => (kind === 'dado' ? sideOf(to, axis) === 'thickness' : sideOf(to, axis) !== 'length');
+
+function onlyBoard(kind, piece) {
+  const shape = SHAPES[piece.shape].toLowerCase();
+  const only = kind === 'tenon' ? 'Only a board can have a tenon.' : 'Only a board can sit in a dado.';
+  return `${only} ${nameOf(piece)} is ${/^[aeiou]/.test(shape) ? 'an' : 'a'} ${shape}.`;
+}
+
+function howTheyMeet(part, to, axis) {
+  const [a, b] = [part, to].sort((one, two) => Object.keys(SIDE_WORDS).indexOf(sideOf(one, axis)) - Object.keys(SIDE_WORDS).indexOf(sideOf(two, axis)));
+  const [sideA, sideB] = [sideOf(a, axis), sideOf(b, axis)];
+  if (sideA === sideB) return sideA === 'thickness' ? 'these lie face to face' : `these meet ${SIDE_WORDS[sideA]} to ${SIDE_WORDS[sideA]}`;
+  if (sideB === 'thickness') return `${nameOf(a)} meets ${nameOf(b)} with its ${SIDE_WORDS[sideA]}`;
+  return `${nameOf(a)} meets the ${SIDE_WORDS[sideB]} of ${nameOf(b)} with its ${SIDE_WORDS[sideA]}`;
+}
 
 function cutRoles(kind, part, to) {
   const axis = contact(to, part).axis;
-  const pairs = [[part, to], [to, part]];
-  const able = pairs.filter(([piece]) => (piece.shape === 'board' ? GOES_IN[kind].includes(sideOf(piece, axis)) : sideOf(piece, axis) !== 'thickness'));
+  const goesIn = (piece) => (piece.shape === 'board' ? GOES_IN[kind].includes(sideOf(piece, axis)) : sideOf(piece, axis) !== 'thickness');
+  const able = [[part, to], [to, part]].filter(([piece, housing]) => goesIn(piece) && housesIn(kind, housing, axis));
   if (!able.length) {
     const needs = kind === 'tenon' ? 'A tenon needs the end' : 'A dado needs the end or edge';
-    const edge = pairs.find(([piece]) => sideOf(piece, axis) === 'width');
-    const how = edge ? `${nameOf(edge[0])} meets ${nameOf(edge[1])} with its edge` : 'these lie face to face';
-    return { error: `${needs} of one piece against a face of the other, and ${how}.` };
+    return { error: `${needs} of one piece against a face of the other, and ${howTheyMeet(part, to, axis)}.` };
   }
   const fit = able.find(([piece]) => piece.shape === 'board');
-  if (!fit) {
-    const [piece] = able[0];
-    const shape = SHAPES[piece.shape].toLowerCase();
-    const only = kind === 'tenon' ? 'Only a board can have a tenon.' : 'Only a board can sit in a dado.';
-    return { error: `${only} ${nameOf(piece)} is ${/^[aeiou]/.test(shape) ? 'an' : 'a'} ${shape}.` };
-  }
+  if (!fit) return { error: onlyBoard(kind, able[0][0]) };
   return { part: fit[0], to: fit[1] };
 }
 
@@ -217,7 +226,7 @@ export function cutJoint(project, joint) {
   const touch = part && to && contact(part, to);
   if (!touch) return null;
   const side = sideOf(part, touch.axis);
-  if (GOES_IN[joint.kind] && !GOES_IN[joint.kind].includes(side)) return null;
+  if (GOES_IN[joint.kind] && (part.shape !== 'board' || !GOES_IN[joint.kind].includes(side) || !housesIn(joint.kind, to, touch.axis))) return null;
   const depth = extents(to)[touch.axis];
   const reach = { dado: joint.depth, tenon: joint.through ? depth : joint.length, dowels: joint.length }[joint.kind];
   return { part, to, touch, side, depth, reach };
@@ -435,8 +444,12 @@ export function jointProblem(project, jointId) {
 function cutProblem(project, joint) {
   const cut = cutJoint(project, joint);
   if (!cut) {
+    const part = findPart(project, joint.part);
+    const to = findPart(project, joint.to);
+    if (part.shape !== 'board') return onlyBoard(joint.kind, part);
+    if (GOES_IN[joint.kind].includes(sideOf(part, contact(part, to).axis))) return `${nameOf(to)} no longer offers a face to ${nameOf(part)}. Turn it back, or remove the joint.`;
     const end = joint.kind === 'tenon' ? 'end' : 'end or edge';
-    return `${nameOf(findPart(project, joint.part))} no longer meets ${nameOf(findPart(project, joint.to))} with its ${end}. Turn it back, or remove the joint.`;
+    return `${nameOf(part)} no longer meets ${nameOf(to)} with its ${end}. Turn it back, or remove the joint.`;
   }
   const { part, to, depth, reach } = cut;
   const size = blank(part);
@@ -981,8 +994,9 @@ function cutPieces(project, joint) {
   const along = AXES.find((each) => each !== axis && each !== across);
   const box = { [axis]: [plane, plane + sign * reach], [across]: region[across], [along]: region[along] };
   if (joint.kind === 'tenon') {
-    box[across] = [middleOf(region[across]) - joint.thickness / 2, middleOf(region[across]) + joint.thickness / 2];
-    box[along] = [middleOf(region[along]) - joint.width / 2, middleOf(region[along]) + joint.width / 2];
+    const centred = (each, size) => [Math.max(region[each][0], middleOf(region[each]) - size / 2), Math.min(region[each][1], middleOf(region[each]) + size / 2)];
+    box[across] = centred(across, joint.thickness);
+    box[along] = centred(along, joint.width);
   }
   const end = corners(box);
   const wood = [{ type: 'wood', joint: joint.id, owner: part.id, species: part.species, ...end }];

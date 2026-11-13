@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cutList, legacyPose, makePart, makeShape, totals } from '../docs/app/src/model.js';
+import { cutList, legacyPose, makePart, makeShape, totals, updatePart } from '../docs/app/src/model.js';
 import { assemblyOverlaps, changeJoint, changePart, cutAllowances, hardwareList, hardwarePieces, jointProblem, joineryXray, joinParts, suggestedSizes, updateJoint } from '../docs/app/src/joints.js';
 
 const leg = (fields = {}) => makePart({ name: 'Leg', length: 700, width: 45, thickness: 45, pose: legacyPose('yzx'), ...fields });
@@ -68,6 +68,51 @@ test('face to face pieces can be doweled but not housed or tenoned, and only a b
   const round = { name: 'Round', parts: [post, disc], joints: [] };
   assert.equal(joinParts(round, 'tenon', post.id, disc.id).error, 'Only a board can have a tenon. Disc is a disc.');
   assert.equal(joinParts(round, 'dado', post.id, disc.id).error, 'Only a board can sit in a dado. Disc is a disc.');
+});
+
+test('the housing piece must offer a face: end to end and edge into end grain are refused', () => {
+  const first = makePart({ name: 'First', length: 600, width: 80, thickness: 20, pose: legacyPose('xyz') });
+  const second = makePart({ name: 'Second', length: 400, width: 80, thickness: 20, pose: legacyPose('xyz'), x: 600 });
+  const butted = { name: 'Butted', parts: [first, second], joints: [] };
+  assert.equal(joinParts(butted, 'tenon', first.id, second.id).error, 'A tenon needs the end of one piece against a face of the other, and these meet end to end.');
+  assert.equal(joinParts(butted, 'dado', first.id, second.id).error, 'A dado needs the end or edge of one piece against a face of the other, and these meet end to end.');
+
+  const stile = makePart({ name: 'Stile', length: 700, width: 60, thickness: 20, pose: legacyPose('yxz') });
+  const crossRail = makePart({ name: 'Rail', length: 400, width: 80, thickness: 20, pose: legacyPose('xyz'), x: 60, y: 300 });
+  const door = { name: 'Door', parts: [stile, crossRail], joints: [] };
+  assert.equal(
+    joinParts(door, 'dado', stile.id, crossRail.id).error,
+    'A dado needs the end or edge of one piece against a face of the other, and Rail meets the edge of Stile with its end.',
+  );
+  const { joint } = joinParts(door, 'tenon', stile.id, crossRail.id);
+  assert.deepEqual([joint.part, joint.to], [crossRail.id, stile.id], 'the rail’s end goes into the stile’s edge');
+});
+
+test('a cut joint on a piece switched away from Board is its own problem, adds no length and draws nothing', () => {
+  const project = tenoned();
+  const id = project.joints[0].id;
+  const railId = project.joints[0].part;
+  const disc = changePart(project, { ...updatePart(named(project, 'Rail'), 'shape', 'disc'), diameter: 400 }).project;
+  assert.equal(jointProblem(disc, id), 'Only a board can have a tenon. Rail is a disc.');
+  assert.equal(cutAllowances(disc).has(railId), false);
+  assert.deepEqual(cutList(disc.parts, cutAllowances(disc)).find((row) => row.names.includes('Rail')).length, 400);
+  assert.deepEqual(hardwarePieces(disc), []);
+  assert.deepEqual(joineryXray(disc, railId), []);
+
+  const housed = case_();
+  const dado = joinParts(housed, 'dado', housed.parts[0].id, housed.parts[1].id).project;
+  const triangle = changePart(dado, updatePart(dado.parts[1], 'shape', 'triangle')).project;
+  assert.equal(jointProblem(triangle, dado.joints[0].id), 'Only a board can sit in a dado. Shelf is a triangle.');
+  assert.equal(cutAllowances(triangle).size, 0);
+});
+
+test('a tenon is drawn inside the housing piece when the rail is wider than where they meet', () => {
+  const left = leg();
+  const high = rail({ y: 650 });
+  const project = joinParts({ name: 'High', parts: [left, high], joints: [] }, 'tenon', left.id, high.id).project;
+  const [wood] = hardwarePieces(project).filter((piece) => piece.type === 'wood');
+  assert.deepEqual([wood.min, wood.max], [[15, 650, 18], [45, 700, 26]]);
+  assert.deepEqual(joineryXray(project, left.id), [{ type: 'box', owner: high.id, min: [15, 650, 18], max: [45, 700, 26] }]);
 });
 
 
@@ -152,6 +197,8 @@ test('cut joints warn when they weaken a piece or no longer fit', () => {
   assert.match(jointProblem(thinner, id), /^Rail no longer touches Leg/);
   const shallow = changePart(project, { ...project.parts[0], width: 20 }).project;
   assert.equal(jointProblem(shallow, id), null, 'the leg is still 45 deep along the rail');
+  const endOn = changePart(project, { ...project.parts[0], length: 45, width: 700, thickness: 45, pose: legacyPose('xyz') }).project;
+  assert.equal(jointProblem(endOn, id), 'Leg no longer offers a face to Rail. Turn it back, or remove the joint.');
 
   const housed = case_();
   const dado = joinParts(housed, 'dado', housed.parts[0].id, housed.parts[1].id).project;
