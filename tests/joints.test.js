@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legacyPose, makePart, projectBounds, rotatePart } from '../src/model.js';
 import {
+  applySuggestedSizes,
   assemblyOverlaps,
   contact,
   dragMode,
@@ -14,6 +15,7 @@ import {
   joinParts,
   moveAssembly,
   rotateAssembly,
+  swingLocked,
   swingingHinge,
   touchingParts,
   updateJoint,
@@ -171,6 +173,22 @@ test('turning a piece of an assembly turns the whole assembly about its footprin
   assert.equal(projectBounds(tipped.parts).min.y, 0);
 });
 
+test('turning an assembly with tenth-of-a-millimetre sizes keeps every joint touching', () => {
+  for (const axis of ['x', 'y', 'z']) {
+    for (const x of [0, 0.1, 0.3]) {
+      for (const width of [244, 244.1, 300.3]) {
+        const left = side({ x, width });
+        const board = shelf({ x: x + 18, width, length: 764.3 });
+        let { project: state, joint } = joinParts(project([left, board]), 'screws', board.id, left.id);
+        for (let turn = 1; turn <= 4; turn++) {
+          state = rotateAssembly(state, left.id, axis);
+          assert.equal(jointProblem(state, joint.id), null, `turn ${turn} about ${axis} at x ${x}, width ${width}`);
+        }
+      }
+    }
+  }
+});
+
 test('turning a piece that is not joined turns only that piece, as before', () => {
   const loose = shelf();
   const state = project([loose, side()]);
@@ -255,6 +273,25 @@ test('the hinge line follows the frame, and a locked door or assembly is pinned'
   assert.equal(dragMode(lockedDoor, joint.part), 'none');
   assert.equal(dragMode(lockedDoor, joint.to), 'none');
   assert.equal(updateJoint(lockedDoor, joint.id, 'open', 20), null);
+});
+
+test('nothing on the hinge swings a locked door: not Opens up to, the type, the edge or suggested sizes', () => {
+  const { project: closed, joint } = hung();
+  const lockDoor = (state) => ({ ...state, parts: state.parts.map((part) => (part.id === joint.part ? { ...part, locked: true } : part)) });
+  const open = lockDoor(updateJoint(closed, joint.id, 'open', 150));
+  assert.equal(swingLocked(open, joint.id), true);
+  assert.equal(swingLocked(closed, joint.id), false);
+  assert.equal(updateJoint(open, joint.id, 'opensTo', 30), null);
+  assert.equal(updateJoint(open, joint.id, 'hingeType', 'concealed'), null);
+  assert.equal(updateJoint(open, joint.id, 'edge', '+x'), null);
+  assert.equal(updateJoint(open, joint.id, 'opensTo', 170).joints[0].open, 150);
+  assert.equal(updateJoint(open, joint.id, 'count', 3).joints[0].count, 3);
+  assert.equal(updateJoint(lockDoor(closed), joint.id, 'edge', '+x').joints[0].edge, '+x');
+
+  const roomy = updateJoint(updateJoint(updateJoint(closed, joint.id, 'hingeType', 'concealed'), joint.id, 'opensTo', 200), joint.id, 'open', 150);
+  assert.equal(applySuggestedSizes(lockDoor(roomy), joint.id), null);
+  const suggested = applySuggestedSizes(roomy, joint.id).joints[0];
+  assert.deepEqual([suggested.opensTo, suggested.open], [110, 110]);
 });
 
 test('concealed hinges warn on a door thinner than 16 mm but still swing', () => {

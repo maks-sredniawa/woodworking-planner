@@ -22,6 +22,7 @@ import {
   EDGES,
   HINGE_TYPES,
   JOINT_KINDS,
+  applySuggestedSizes,
   assemblyOverlaps,
   dragMode,
   hardwareList,
@@ -30,6 +31,7 @@ import {
   hingeEdges,
   joinParts,
   joinedTo,
+  jointFieldValue,
   jointProblem,
   moveAssembly,
   placements,
@@ -37,6 +39,7 @@ import {
   removePart,
   rotateAssembly,
   suggestedSizes,
+  swingLocked,
   swingingHinge,
   touchingParts,
   updateJoint,
@@ -514,7 +517,7 @@ function renderEditor() {
     showFieldError(input, null);
   }
   for (const input of form.querySelectorAll('[data-geometry]')) input.disabled = part.locked;
-  if (assemblyPinned(part.id)) for (const name of ['x', 'y', 'z']) form.querySelector(`[name="${name}"]`).disabled = true;
+  if (assemblyPinned(part.id)) for (const name of ['x', 'y', 'z', 'pose']) form.querySelector(`[name="${name}"]`).disabled = true;
   $('lock').setAttribute('aria-pressed', String(part.locked));
   $('lock').textContent = part.locked ? '🔒 Locked · unlock' : 'Lock in place';
   $('locked-note').hidden = !part.locked;
@@ -757,6 +760,7 @@ const JOINT_ERRORS = {
   mm: 'Enter a size above 0 mm.',
   deg: 'Enter an angle from 1° to 270°.',
   open: 'Enter an angle from 0° up to how far it opens.',
+  locked: 'That would swing a locked piece. Unlock it first.',
 };
 
 function jointTitle(joint, part) {
@@ -858,7 +862,9 @@ function jointBody(joint) {
     if (group !== holder) holder.append(group);
     if (holder !== body) body.append(holder);
   }
-  body.append(element('p', 'field-error joint-error'));
+  const error = Object.assign(element('p', 'field-error joint-error'), { id: `joint-error-${joint.id}` });
+  error.setAttribute('aria-live', 'polite');
+  body.append(error);
   const actions = element('div', 'duo');
   actions.append(jointButton(joint, 'suggest', 'Use suggested sizes'), jointButton(joint, 'remove', 'Remove joint', 'danger'));
   body.append(actions);
@@ -906,7 +912,7 @@ function fillJointCard(card, joint, part) {
     if (control === document.activeElement && control.type === 'number') continue;
     if (control.type === 'checkbox') control.checked = Boolean(joint[field]);
     else control.value = String(joint[field]);
-    control.removeAttribute('aria-invalid');
+    if (control.getAttribute('aria-invalid') === 'true') showJointError(control, null);
   }
   const size = card.querySelector('[data-jf-field="size"]');
   if (size) size.hidden = joint.hingeType === 'concealed';
@@ -989,13 +995,27 @@ $('joint-add-ok').addEventListener('click', () => {
   $('joint-add-open').focus();
 });
 
+function jointNote(control) {
+  return control.closest('[data-joint-card]')?.querySelector('.joint-error') ?? null;
+}
+
 function showJointError(control, message) {
-  const card = control.closest('[data-joint-card]');
-  const note = card?.querySelector('.joint-error');
+  const note = jointNote(control);
   if (!note) return;
   note.textContent = message ?? '';
-  if (message) control.setAttribute('aria-invalid', 'true');
-  else control.removeAttribute('aria-invalid');
+  if (message) {
+    control.setAttribute('aria-invalid', 'true');
+    control.setAttribute('aria-describedby', note.id);
+  } else {
+    control.removeAttribute('aria-invalid');
+    control.removeAttribute('aria-describedby');
+  }
+}
+
+function jointRefusal(jointId, field, raw) {
+  const joint = jointById(project, jointId);
+  const valid = joint && jointFieldValue(joint.kind, field, raw) !== undefined;
+  return valid && joint.kind === 'hinge' && swingLocked(project, jointId) ? JOINT_ERRORS.locked : null;
 }
 
 $('joints').addEventListener('input', (event) => {
@@ -1006,15 +1026,20 @@ $('joints').addEventListener('input', (event) => {
   const next = updateJoint(project, jointId, field, raw);
   const typed = control.type === 'number' || control.type === 'range';
   if (!next) {
-    if (typed) showJointError(control, field === 'open' ? JOINT_ERRORS.open : JOINT_ERRORS[control.dataset.check]);
-    else renderEditor();
+    const refusal = jointRefusal(jointId, field, raw);
+    if (typed) {
+      showJointError(control, refusal ?? (field === 'open' ? JOINT_ERRORS.open : JOINT_ERRORS[control.dataset.check]));
+      return;
+    }
+    renderEditor();
+    if (refusal) jointNote(control).textContent = refusal;
     return;
   }
   showJointError(control, null);
   commit(next, typed ? `${jointId}:${field}` : null);
 });
 
-$('joints').addEventListener('click', (event) => {
+$('joints').addEventListener('click', keepingFocus((event) => {
   const button = event.target.closest('[data-jf-act]');
   if (!button) return;
   const joint = jointById(project, button.dataset.joint);
@@ -1026,13 +1051,18 @@ $('joints').addEventListener('click', (event) => {
     return;
   }
   if (act === 'suggest') {
-    const suggested = suggestedSizes(project, joint);
-    if (suggested) commit({ ...project, joints: project.joints.map((each) => (each.id === joint.id ? { ...each, ...suggested } : each)) });
+    const next = applySuggestedSizes(project, joint.id);
+    if (!next) {
+      if (swingLocked(project, joint.id)) jointNote(button).textContent = JOINT_ERRORS.locked;
+      return;
+    }
+    commit(next);
+    if (!usable(button)) button.closest('[data-joint-card]')?.querySelector('summary').focus();
     return;
   }
   const next = updateJoint(project, joint.id, 'open', act === 'close' ? 0 : joint.opensTo);
   if (next) commit(next);
-});
+}));
 
 const HARDWARE_LABELS = [...document.querySelectorAll('.hardware-list thead th')].map((th) => th.textContent);
 const USED_ON_SHOWN = 2;

@@ -468,6 +468,25 @@ function movingParts(project, jointId) {
   });
 }
 
+export function swingLocked(project, jointId) {
+  return movingParts(project, jointId).some((part) => part.locked);
+}
+
+const withJoint = (project, joint) => ({ ...project, joints: jointsOf(project).map((each) => (each.id === joint.id ? joint : each)) });
+
+const samePlacement = (a, b) => a.m.every((value, i) => Math.abs(value - b.m[i]) < 1e-9) && a.o.every((value, i) => Math.abs(value - b.o[i]) < 1e-6);
+
+function movesLockedPiece(before, after) {
+  const was = mechanism(before);
+  const now = mechanism(after);
+  return after.parts.some((part) => part.locked && !samePlacement(was.placement(part.id), now.placement(part.id)));
+}
+
+function unlessLockedMoves(project, next) {
+  const result = withJoint(project, next);
+  return movesLockedPiece(project, result) ? null : result;
+}
+
 export function updateJoint(project, jointId, field, raw) {
   const joint = jointsOf(project).find((each) => each.id === jointId);
   if (!joint) return null;
@@ -475,14 +494,16 @@ export function updateJoint(project, jointId, field, raw) {
   if (value === undefined) return null;
   let next = { ...joint, [field]: value };
   if (field === 'open' && value > joint.opensTo) return null;
-  if (field === 'open' && value !== joint.open && movingParts(project, jointId).some((part) => part.locked)) return null;
   if (field === 'edge' && !hingeEdges(project, joint).includes(value)) return null;
   if (field === 'opensTo') next.open = Math.min(next.open, value);
-  if (field === 'hingeType') {
-    const withType = { ...project, joints: jointsOf(project).map((each) => (each.id === jointId ? next : each)) };
-    next = { ...next, ...(suggestedSizes(withType, next) ?? {}) };
-  }
-  return { ...project, joints: jointsOf(project).map((each) => (each.id === jointId ? next : each)) };
+  if (field === 'hingeType') next = { ...next, ...(suggestedSizes(withJoint(project, next), next) ?? {}) };
+  return unlessLockedMoves(project, next);
+}
+
+export function applySuggestedSizes(project, jointId) {
+  const joint = jointsOf(project).find((each) => each.id === jointId);
+  const suggested = joint && suggestedSizes(project, joint);
+  return suggested ? unlessLockedMoves(project, { ...joint, ...suggested }) : null;
 }
 
 export function moveAssembly(project, id, position) {
@@ -523,7 +544,7 @@ export function rotateAssembly(project, id, axis) {
   }
   if (parts.some((part) => part.locked)) return project;
   const before = projectBounds(parts);
-  const centre = point(before.min).map((value, i) => (value + point(before.max)[i]) / 2);
+  const centre = point(before.min).map((value, i) => roundMm((value + point(before.max)[i]) / 2));
   const turned = parts.map((part) => {
     const box = bounds(part);
     const corners = [box.min, box.max].map((corner) => turnVector(point(corner).map((value, i) => value - centre[i]), axis));
@@ -534,7 +555,7 @@ export function rotateAssembly(project, id, axis) {
   });
   const after = projectBounds(turned);
   const shift = { x: 0, y: before.min.y - after.min.y, z: 0 };
-  for (const each of ['x', 'z']) shift[each] = (before.min[each] + before.max[each] - after.min[each] - after.max[each]) / 2;
+  for (const each of ['x', 'z']) shift[each] = roundMm((before.min[each] + before.max[each] - after.min[each] - after.max[each]) / 2);
   const placed = turned.map((part) => ({ ...part, ...Object.fromEntries(AXES.map((each) => [each, roundMm(part[each] + shift[each])])) }));
   if (placed.some((part) => AXES.some((each) => Math.abs(part[each]) > MAX_SIZE_MM))) return project;
   const byId = new Map(placed.map((part) => [part.id, part]));
