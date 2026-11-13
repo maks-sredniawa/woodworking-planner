@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { POSES, SHAPES, bounds, legacyPose, makePart, makeShape, overlaps, rotatePart, snapPosition } from '../docs/app/src/model.js';
-import { assemblyOverlaps, contact, joinParts, placements, touchingParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
-
-const mechanismPlacement = (project, id) => placements(project).get(id);
+import { assemblyOverlaps, contact, joinParts, snapAssembly, touchingParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
 
 const block = (size, fields = {}) => makePart({ name: 'Block', length: size, width: size, thickness: size, ...fields });
 
@@ -146,10 +144,19 @@ test('snapping against a swung door uses where the door is now', () => {
   const frame = side();
   const door = makePart({ name: 'Door', length: 800, width: 400, thickness: 18, pose: legacyPose('yxz'), z: 244 });
   const hung = joinParts({ name: 'Cabinet', parts: [frame, door], joints: [] }, 'hinge', door.id, frame.id);
-  const open = updateJoint(hung.project, hung.joint.id, 'open', 90);
   const moving = block(50, { x: -100, z: 400 });
-  const placementOf = (id) => (id === door.id ? mechanismPlacement(open, id) : null);
-  assert.equal(snapPosition(moving, { x: -75 }, open.parts.filter((part) => part.id !== frame.id), { placementOf }).x, -68);
+  const open = updateJoint({ ...hung.project, parts: [...hung.project.parts, moving] }, hung.joint.id, 'open', 90);
+  assert.equal(snapAssembly(open, moving.id, { x: -75 }).x, -68);
+});
+
+test('dragging an assembly snaps where any of its pieces meets another by the true outline', () => {
+  const disc = { ...makeShape('disc'), name: 'Disc', z: 200 };
+  const still = { ...makeShape('disc'), name: 'Still', x: 1000 };
+  const holder = makePart({ name: 'Holder', length: 300, width: 400, thickness: 18, pose: legacyPose('yzx'), x: -18, z: 200 });
+  const glued = joinParts({ name: 'Rack', parts: [disc, holder, still], joints: [] }, 'glue', holder.id, disc.id).project;
+  const { x } = snapAssembly(glued, holder.id, { x: 642 });
+  assert.equal(x + 18, snapPosition(disc, { x: 660 }, [still]).x);
+  assert.deepEqual(overlaps([{ ...disc, x: x + 18 }, still]), []);
 });
 
 test('the smallest round pieces still have a solid to test', () => {

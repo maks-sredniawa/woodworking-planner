@@ -1,4 +1,4 @@
-import { TOUCH_MM, convexParts, placeSolid, prism, solidsClash, sweepSpans } from './geometry.js';
+import { TOUCH_MM, convexParts, moveSolid, placeSolid, prism, solidsClash, sweepSpans } from './geometry.js';
 
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
@@ -265,8 +265,8 @@ const placed = (placement, point) => placement.m.reduce((out, value, i) => {
   return out;
 }, [...placement.o]);
 const turned = (placement, vector) => placed({ ...placement, o: [0, 0, 0] }, vector);
-const isIdentity = (placement) =>
-  !placement || (placement.m.every((value, i) => Math.abs(value - (i % 4 === 0 ? 1 : 0)) < 1e-12) && placement.o.every((value) => Math.abs(value) < 1e-12));
+export const isIdentity = (placement) =>
+  !placement || (placement.m.every((value, i) => Math.abs(value - (i % 4 === 0 ? 1 : 0)) < 1e-9) && placement.o.every((value) => Math.abs(value) < 1e-9));
 const solids = new WeakMap();
 
 export function solidOf(part, placement = null) {
@@ -562,34 +562,52 @@ export function partFromFile(raw, index) {
 export const SNAP_GRID_MM = 10;
 export const SNAP_REACH_MM = 15;
 
-function snapTargets(part, axis, value, others, placementOf, meeting) {
-  const size = extents(part);
+const boxOfSolid = (solid) =>
+  Object.fromEntries(['min', 'max'].map((side) => [side, Object.fromEntries(AXES.map((axis, i) => [axis, solid.box[side][i]]))]));
+
+export function bodyOf(part, placement = null) {
+  const solid = solidOf(part, placement);
+  return { solid, box: isIdentity(placement) ? bounds(part) : boxOfSolid(solid) };
+}
+
+function faceTargets(at, moving, axis, proposed, fixed, floor) {
+  const value = proposed[axis];
   const near = [];
-  const consider = (target, side = 0) => {
-    if (Math.abs(target - value) <= SNAP_REACH_MM) near.push({ target, side });
+  const consider = (target) => {
+    if (Math.abs(target - value) <= SNAP_REACH_MM) near.push({ target });
   };
-  if (axis === 'y' && !meeting) consider(0);
-  const across = AXES.filter((other) => other !== axis);
-  const mine = bounds(part);
-  for (const other of others) {
-    if (other.id === part.id) continue;
-    const placement = placementOf(other.id);
-    const shape = solidOf(other, placement);
-    const box = isIdentity(placement)
-      ? bounds(other)
-      : Object.fromEntries(['min', 'max'].map((side) => [side, Object.fromEntries(AXES.map((each, i) => [each, shape.box[side][i]]))]));
-    const inPath = across.every((each) => Math.min(mine.max[each], box.max[each]) - Math.max(mine.min[each], box.min[each]) > TOUCH_MM);
-    if (!meeting) {
-      consider(box.min[axis]);
-      consider(box.max[axis] - size[axis]);
+  if (axis === 'y') consider(floor);
+  const across = AXES.filter((each) => each !== axis);
+  const shift = (each) => (proposed[each] ?? at[each]) - at[each];
+  for (const { box: own } of moving) {
+    const lead = own.min[axis] - at[axis];
+    const tail = own.max[axis] - at[axis];
+    for (const { box } of fixed) {
+      const inPath = across.every((each) => Math.min(own.max[each] + shift(each), box.max[each]) - Math.max(own.min[each] + shift(each), box.min[each]) > TOUCH_MM);
+      consider(box.min[axis] - lead);
+      consider(box.max[axis] - tail);
       if (!inPath) {
-        consider(box.max[axis]);
-        consider(box.min[axis] - size[axis]);
+        consider(box.max[axis] - lead);
+        consider(box.min[axis] - tail);
       }
-      continue;
     }
-    if (!inPath || value < box.min[axis] - size[axis] - SNAP_REACH_MM || value > box.max[axis] + SNAP_REACH_MM) continue;
-    for (const span of sweepSpans(solidOf(part), shape, AXES.indexOf(axis), SNAP_REACH_MM)) span.forEach((travel, end) => consider(value + travel, end ? 1 : -1));
+  }
+  return near;
+}
+
+function meetingTargets(at, moving, axis, position, fixed) {
+  const index = AXES.indexOf(axis);
+  const offset = AXES.map((each) => (position[each] ?? at[each]) - at[each]);
+  const near = [];
+  for (const { solid } of moving) {
+    const placedNow = moveSolid(solid, offset);
+    for (const other of fixed) {
+      for (const span of sweepSpans(placedNow, other.solid, index, SNAP_REACH_MM)) {
+        span.forEach((travel, end) => {
+          if (Math.abs(travel) <= SNAP_REACH_MM) near.push({ target: position[axis] + travel, side: end ? 1 : -1 });
+        });
+      }
+    }
   }
   return near;
 }
@@ -597,22 +615,33 @@ function snapTargets(part, axis, value, others, placementOf, meeting) {
 const roundClear = ({ target, side }) => (side < 0 ? Math.floor(target * 10 + 1e-6) : Math.ceil(target * 10 - 1e-6)) / 10 + 0;
 const nearest = (value, targets) => targets.reduce((best, each) => (best && Math.abs(best.target - value) <= Math.abs(each.target - value) ? best : each), null);
 
-// Each axis first snaps to grid and faces; then the one axis nearest a true meeting snaps there, with the others already in place, so the pieces touch without overlapping.
-export function snapPosition(part, proposed, others, { snap = true, placementOf = () => null } = {}) {
+export function snapPosition(part, proposed, others, options) {
+  const fixed = others.filter((other) => other.id !== part.id).map((other) => bodyOf(other));
+  return snapBodies(part, [bodyOf(part)], proposed, fixed, options);
+}
+
+export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
   const axes = POSITION.filter((axis) => axis in proposed);
   if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundMm(proposed[axis])]));
+  const floor = roundMm(at.y - Math.min(...moving.map(({ box }) => box.min.y)));
   const result = {};
   const plain = {};
   for (const axis of axes) {
-    plain[axis] = nearest(proposed[axis], snapTargets({ ...part, ...proposed }, axis, proposed[axis], others, placementOf, false));
+    plain[axis] = nearest(proposed[axis], faceTargets(at, moving, axis, proposed, fixed, floor));
     result[axis] = roundMm(plain[axis]?.target ?? Math.round(proposed[axis] / SNAP_GRID_MM) * SNAP_GRID_MM);
   }
-  const meetings = axes
-    .map((axis) => ({ axis, meet: nearest(proposed[axis], snapTargets({ ...part, ...result, [axis]: proposed[axis] }, axis, proposed[axis], others, placementOf, true)) }))
-    .filter(({ axis, meet }) => meet && (!plain[axis] || Math.abs(meet.target - proposed[axis]) <= Math.abs(plain[axis].target - proposed[axis])));
-  const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
-  if (closest) result[closest.axis] = roundClear(closest.meet);
-  if ('y' in result && result.y < 0) result.y = 0;
+  let unsettled = axes;
+  while (unsettled.length) {
+    const beatsPlain = ({ axis, meet }) => meet && (!plain[axis] || Math.abs(meet.target - proposed[axis]) <= Math.abs(plain[axis].target - proposed[axis]));
+    const meetings = unsettled
+      .map((axis) => ({ axis, meet: nearest(proposed[axis], meetingTargets(at, moving, axis, { ...result, [axis]: proposed[axis] }, fixed)) }))
+      .filter(beatsPlain);
+    const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
+    if (!closest) break;
+    result[closest.axis] = roundClear(closest.meet);
+    break;
+  }
+  if ('y' in result) result.y = Math.max(result.y, floor);
   return result;
 }
 

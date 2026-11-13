@@ -124,6 +124,18 @@ export function placeSolid(pieces, { origin, u, v, w }) {
   return { pieces: placed, box: boxOf(placed.flatMap((piece) => [piece.box.min, piece.box.max])) };
 }
 
+export function moveSolid(solid, offset) {
+  if (offset.every((value) => value === 0)) return solid;
+  const shift = (point) => point.map((value, k) => value + offset[k]);
+  const pieces = solid.pieces.map((piece) => ({
+    ...piece,
+    corners: piece.corners.map(shift),
+    middle: piece.middle.map((value, i) => value + offset[i % 3]),
+    box: { min: shift(piece.box.min), max: shift(piece.box.max) },
+  }));
+  return { pieces, box: { min: shift(solid.box.min), max: shift(solid.box.max) } };
+}
+
 let shadowLow = 0;
 let shadowHigh = 0;
 
