@@ -2,7 +2,6 @@ export const TOUCH_MM = 0.05;
 const EPS = 1e-9;
 const PIECE_CORNERS = 12;
 
-
 function unit(vector) {
   const size = Math.hypot(...vector);
   return size < 1e-6 ? null : vector.map((value) => value / size);
@@ -33,7 +32,6 @@ function closeChains({ bottom, top }) {
   });
 }
 
-// Cuts the outline into vertical slabs at every corner and merges neighbouring slabs while the piece stays convex.
 export function convexParts({ points, holes = [] }) {
   const rings = [points, ...holes];
   const edges = rings.flatMap((ring) =>
@@ -126,21 +124,21 @@ export function placeSolid(pieces, { origin, u, v, w }) {
   return { pieces: placed, box: boxOf(placed.flatMap((piece) => [piece.box.min, piece.box.max])) };
 }
 
-let low = 0;
-let high = 0;
+let shadowLow = 0;
+let shadowHigh = 0;
 
-function reach(piece, x, y, z) {
+function castShadow(piece, x, y, z) {
   const { middle, half } = piece;
-  low = Infinity;
-  high = -Infinity;
+  shadowLow = Infinity;
+  shadowHigh = -Infinity;
   for (let i = 0; i < middle.length; i += 3) {
     const value = middle[i] * x + middle[i + 1] * y + middle[i + 2] * z;
-    if (value < low) low = value;
-    if (value > high) high = value;
+    if (value < shadowLow) shadowLow = value;
+    if (value > shadowHigh) shadowHigh = value;
   }
   const thick = Math.abs(half[0] * x + half[1] * y + half[2] * z);
-  low -= thick;
-  high += thick;
+  shadowLow -= thick;
+  shadowHigh += thick;
 }
 
 const overlapOf = ([lowA, highA], [lowB, highB]) => Math.min(highA, highB) - Math.max(lowA, lowB);
@@ -152,7 +150,6 @@ export function boxesCross(a, b) {
 
 const PARALLEL = 1 - 1e-9;
 
-// Calls test(x, y, z) with each unit axis that could separate the two pieces; stops when it returns false.
 function eachAxis(a, b, test) {
   for (const normal of a.normals) if (!test(normal[0], normal[1], normal[2])) return false;
   for (const normal of b.normals) if (!test(normal[0], normal[1], normal[2])) return false;
@@ -176,10 +173,10 @@ function eachAxis(a, b, test) {
 function piecesClash(a, b) {
   if (!boxesCross(a.box, b.box)) return false;
   return eachAxis(a, b, (x, y, z) => {
-    reach(a, x, y, z);
-    const [fromA, toA] = [low, high];
-    reach(b, x, y, z);
-    return Math.min(toA, high) - Math.max(fromA, low) > TOUCH_MM;
+    castShadow(a, x, y, z);
+    const [fromA, toA] = [shadowLow, shadowHigh];
+    castShadow(b, x, y, z);
+    return Math.min(toA, shadowHigh) - Math.max(fromA, shadowLow) > TOUCH_MM;
   });
 }
 
@@ -268,12 +265,12 @@ export function meetingRegion(a, b, axis, at) {
 function pieceSweep(a, b, axis) {
   let [from, to] = [-Infinity, Infinity];
   const meets = eachAxis(a, b, (x, y, z) => {
-    reach(a, x, y, z);
-    const [fromA, toA] = [low, high];
-    reach(b, x, y, z);
+    castShadow(a, x, y, z);
+    const [fromA, toA] = [shadowLow, shadowHigh];
+    castShadow(b, x, y, z);
     const rate = [x, y, z][axis];
-    if (Math.abs(rate) < 1e-9) return Math.min(toA, high) - Math.max(fromA, low) > TOUCH_MM;
-    const [one, two] = [(low - toA) / rate, (high - fromA) / rate];
+    if (Math.abs(rate) < 1e-9) return Math.min(toA, shadowHigh) - Math.max(fromA, shadowLow) > TOUCH_MM;
+    const [one, two] = [(shadowLow - toA) / rate, (shadowHigh - fromA) / rate];
     from = Math.max(from, Math.min(one, two));
     to = Math.min(to, Math.max(one, two));
     return to - from > TOUCH_MM;
@@ -281,7 +278,6 @@ function pieceSweep(a, b, axis) {
   return meets ? [from, to] : null;
 }
 
-// The stretches of travel along the axis over which a would overlap b.
 export function sweepSpans(a, b, axis, within = Infinity) {
   const across = [0, 1, 2].filter((k) => k !== axis);
   const passes = (one, two) =>
