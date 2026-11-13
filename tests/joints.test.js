@@ -163,7 +163,7 @@ test('lifting an assembly with snapping stops its lowest piece on the floor', ()
   assert.equal(snapAssembly(glued, board.id, { y: -40 }, { snap: false }).y, -40);
 });
 
-test('the ±10,000 mm limit counts where an open door stands', () => {
+test('the ±10,000 mm limit on moving or turning an assembly counts where an open door stands', () => {
   const { project: closed, joint } = hung();
   const open = updateJoint(closed, joint.id, 'open', 90);
   assert.equal(moveAssembly(open, joint.to, { x: -9990 }), open);
@@ -172,6 +172,10 @@ test('the ±10,000 mm limit counts where an open door stands', () => {
   assert.equal(worldBounds(pastEdge, joint.part).min.x, -10008);
   assert.equal(moveAssembly(pastEdge, joint.to, { x: -9980 }).parts[0].x, -9980);
   assert.equal(moveAssembly(pastEdge, joint.to, { x: -9995 }), pastEdge);
+  const low = moveAssembly(open, joint.to, { y: -9990 });
+  assert.equal(rotateAssembly(low, joint.to, 'z'), low);
+  const closedLow = moveAssembly(closed, joint.to, { y: -9990 });
+  assert.notEqual(rotateAssembly(closedLow, joint.to, 'z'), closedLow);
 });
 
 test('a piece swings on only one hinge and nothing joins a piece while its hinge is open', () => {

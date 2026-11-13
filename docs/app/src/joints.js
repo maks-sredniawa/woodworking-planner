@@ -549,8 +549,12 @@ export function snapAssembly(project, id, proposed, options) {
   return snapBoxes(findPart(project, id), moving, proposed, fixed, options);
 }
 
-const pushedPast = (before, after) =>
-  AXES.some((axis) => Math.abs(after.min[axis]) > MAX_SIZE_MM && Math.abs(after.min[axis]) > Math.abs(before.min[axis]));
+function pushesPastLimit(before, after, members) {
+  const was = actualBoxes(before, members).moving;
+  return actualBoxes(after, members).moving.some((box, i) =>
+    AXES.some((axis) => Math.abs(box.min[axis]) > MAX_SIZE_MM && Math.abs(box.min[axis]) > Math.abs(was[i].min[axis])),
+  );
+}
 
 export function moveAssembly(project, id, position) {
   const piece = findPart(project, id);
@@ -567,9 +571,7 @@ export function moveAssembly(project, id, position) {
     moved.set(part.id, next);
   }
   const next = { ...project, parts: project.parts.map((part) => moved.get(part.id) ?? part) };
-  const before = actualBoxes(project, members).moving;
-  const after = actualBoxes(next, members).moving;
-  return after.some((box, i) => pushedPast(before[i], box)) ? project : next;
+  return pushesPastLimit(project, next, members) ? project : next;
 }
 
 function turnVector(vector, axis) {
@@ -612,7 +614,8 @@ export function rotateAssembly(project, id, axis) {
   const joints = jointsOf(project).map((joint) =>
     joint.kind === 'hinge' && members.has(joint.part) ? { ...joint, edge: turnAxis(joint.edge, axis) } : joint,
   );
-  return { ...project, parts: project.parts.map((part) => byId.get(part.id) ?? part), joints };
+  const next = { ...project, parts: project.parts.map((part) => byId.get(part.id) ?? part), joints };
+  return pushesPastLimit(project, next, members) ? project : next;
 }
 
 export function insideCorner(to, part) {
