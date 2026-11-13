@@ -342,7 +342,6 @@ export function newId() {
 
 export function makePart(fields = {}) {
   return {
-    grain: SPECIES[fields.species ?? 'pine'].grain,
     id: newId(),
     name: 'Board',
     shape: 'board',
@@ -365,6 +364,7 @@ export function makePart(fields = {}) {
     pose: '+x-z+y',
     species: 'pine',
     locked: false,
+    grain: SPECIES[fields.species ?? 'pine'].grain,
     x: 0,
     y: 0,
     z: 0,
