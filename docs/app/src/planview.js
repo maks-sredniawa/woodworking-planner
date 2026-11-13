@@ -349,8 +349,10 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
   let lastWidth = 0;
   new ResizeObserver(() => {
     if (root.clientWidth === lastWidth) return;
+    const wasHidden = lastWidth === 0;
     lastWidth = root.clientWidth;
-    redraw();
+    if (wasHidden) render(getProject(), selected);
+    else redraw();
   }).observe(root);
 
   function totals(plan) {
