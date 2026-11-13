@@ -978,8 +978,8 @@ try:
         download.value.save_as(saved)
         joined.click('#new-project')
         joined.set_input_files('#file-input', str(saved))
-        saved.unlink()
         expect(row('Door').locator('.tag')).to_have_text('Swings on Left side')
+        saved.unlink()
         assert joined.evaluate('woodworkingPlanner.project.joints.length') == 2
         joined.evaluate('localStorage.clear()')
         joined.close()
