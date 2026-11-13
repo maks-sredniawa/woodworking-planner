@@ -301,7 +301,8 @@ function toFree(part, next) {
   const kept = part.points && fitTo(next, part.points, next.length, next.width);
   if (kept && !shapeProblem(kept)) return kept;
   if (fullRing(part)) return null;
-  return withOutline(next, rebase(freePointsOf(part)));
+  const sized = part.shape === 'dowel' ? { ...next, thickness: part.dowelDiameter } : next;
+  return withOutline(sized, rebase(freePointsOf(part)));
 }
 
 export function freeSwitchProblem(part) {
