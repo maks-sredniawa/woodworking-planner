@@ -549,29 +549,38 @@ export function snapAssembly(project, id, proposed, options) {
   return snapBoxes(findPart(project, id), moving, proposed, fixed, options);
 }
 
-function pushesPastLimit(before, after, members) {
+function pieceOverLimit(before, after, members) {
   const was = actualBoxes(before, members).moving;
-  return actualBoxes(after, members).moving.some((box, i) =>
-    AXES.some((axis) => Math.abs(box.min[axis]) > MAX_SIZE_MM && Math.abs(box.min[axis]) > Math.abs(was[i].min[axis])),
-  );
+  const moving = before.parts.filter((part) => members.has(part.id));
+  return moving[
+    actualBoxes(after, members).moving.findIndex((box, i) =>
+      AXES.some((axis) => Math.abs(box.min[axis]) > MAX_SIZE_MM && Math.abs(box.min[axis]) > Math.abs(was[i].min[axis])),
+    )
+  ];
 }
 
-export function moveAssembly(project, id, position) {
+export function changePosition(project, id, position) {
   const piece = findPart(project, id);
-  if (!piece) return project;
+  if (!piece) return { refused: 'missing' };
   const members = joinedTo(project, id);
   const parts = project.parts.filter((part) => members.has(part.id));
-  if (parts.some((part) => part.locked)) return project;
+  const locked = parts.find((part) => part.locked);
+  if (locked) return { refused: 'locked', piece: locked };
   const delta = Object.fromEntries(Object.entries(position).map(([axis, value]) => [axis, value - piece[axis]]));
   const moved = new Map();
   for (const part of parts) {
     const target = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, part[axis] + change]));
     const next = movePart(part, target);
-    if (next === part && Object.values(delta).some(Boolean)) return project;
+    if (next === part && Object.values(delta).some(Boolean)) return { refused: 'limit', piece: part };
     moved.set(part.id, next);
   }
   const next = { ...project, parts: project.parts.map((part) => moved.get(part.id) ?? part) };
-  return pushesPastLimit(project, next, members) ? project : next;
+  const past = pieceOverLimit(project, next, members);
+  return past ? { refused: 'limit', piece: past } : { project: next };
+}
+
+export function moveAssembly(project, id, position) {
+  return changePosition(project, id, position).project ?? project;
 }
 
 function turnVector(vector, axis) {
@@ -615,7 +624,7 @@ export function rotateAssembly(project, id, axis) {
     joint.kind === 'hinge' && members.has(joint.part) ? { ...joint, edge: turnAxis(joint.edge, axis) } : joint,
   );
   const next = { ...project, parts: project.parts.map((part) => byId.get(part.id) ?? part), joints };
-  return pushesPastLimit(project, next, members) ? project : next;
+  return pieceOverLimit(project, next, members) ? project : next;
 }
 
 export function insideCorner(to, part) {
@@ -762,7 +771,8 @@ function hingePieces(project, joint, part, info) {
       const centre = along(value);
       centre[AXES.indexOf(edgeAxis(info.edge))] += inward * cupFromEdge;
       const cup = { type: 'head', kind: 'cup', joint: joint.id, owner: part.id, centre, normal: unit(touch.axis, -touch.sign), radius: CONCEALED_CUP_MM / 2 };
-      return [cup, knuckle(value, Math.min(CONCEALED_CUP_MM, length), 3)];
+      const size = Math.min(CONCEALED_CUP_MM, length);
+      return [cup, knuckle(Math.min(Math.max(value, low + size / 2), low + length - size / 2), size, 3)];
     });
   }
   const size = Math.min(joint.size, length);
