@@ -1190,9 +1190,9 @@ try:
         card.locator('[data-jf-act=open-full]').click()
         assert door_joint('open') == 90
         expect(stop_note).to_have_text('Stopped by Wall at 90°. The hinge itself opens to 180°.')
-        stop_note.evaluate(watch_note)
+        stop_note.evaluate(WATCH_NOTE)
         card.locator('[data-jf-act=open-full]').click()
-        framed.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        framed.wait_for_function(REREAD)
         card.locator('[data-jf-act=close]').click()
         slider = card.locator('input[type=range][data-jf=open]')
         expect(slider).to_have_attribute('max', '180')
