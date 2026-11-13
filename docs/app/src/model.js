@@ -494,8 +494,9 @@ function fieldValue(field, raw) {
 
 function pointsValue(raw) {
   if (!Array.isArray(raw) || raw.length < MIN_POINTS || raw.length > MAX_POINTS) return NOT_ALLOWED;
-  const points = raw.map((each) => point(roundMm(Number(each?.x)), roundMm(Number(each?.y)), roundMm(Number(each?.bend ?? 0))));
-  if (!points.every(({ x, y, bend }) => inReach(x) && inReach(y) && inReach(bend))) return NOT_ALLOWED;
+  const numbers = raw.map((each) => [each?.x, each?.y, each?.bend ?? 0]);
+  if (!numbers.every((values) => values.every((value) => typeof value === 'number' && inReach(value)))) return NOT_ALLOWED;
+  const points = numbers.map((values) => point(...values.map(roundMm)));
   return points.every((each, i) => Math.abs(each.bend) <= halfEdge(points, i) + 0.05) ? points : NOT_ALLOWED;
 }
 
