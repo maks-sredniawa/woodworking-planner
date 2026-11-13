@@ -965,7 +965,14 @@ try:
         expect(door_card.locator('.joint-error')).to_have_text(locked_door)
         expect(door_card.locator('.joint-error')).to_be_visible()
         assert joined.evaluate('woodworkingPlanner.project.joints.length') == 2, 'Remove joint took off the hinge of a locked open door'
-        assert remove_hinge.evaluate('(b) => getComputedStyle(b).opacity') == '0.45', 'Remove joint must still look off'
+        watch_note = '''(note) => { window.noteSeen = []; new MutationObserver(() => noteSeen.push(note.textContent)).observe(note, { childList: true, characterData: true, subtree: true }); }'''
+        door_card.locator('.joint-error').evaluate(watch_note)
+        joined.keyboard.press('Enter')
+        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        expect(door_card.locator('.joint-error')).to_have_text(locked_door)
+        look = remove_hinge.evaluate('(b) => [getComputedStyle(b).opacity, getComputedStyle(b).color, getComputedStyle(b).borderTopStyle]')
+        muted = joined.evaluate('getComputedStyle(document.querySelector(".help")).color')
+        assert look == ['1', muted, 'dashed'], f'Remove joint should look off in muted text with a dashed edge, at full opacity so its focus ring keeps its contrast: {look}'
         row('Left side').locator('.row-main').click()
         expect(joined.locator('#delete')).to_have_attribute('aria-disabled', 'true')
         expect(joined.locator('#delete')).to_have_attribute('title', locked_door)
@@ -974,6 +981,10 @@ try:
         joined.keyboard.press('Enter')
         expect(joined.locator('#editor-note')).to_have_text(locked_door)
         expect(joined.locator('#editor-note')).to_be_visible()
+        joined.locator('#editor-note').evaluate(watch_note)
+        joined.keyboard.press('Enter')
+        joined.wait_for_function('noteSeen.includes("") && noteSeen.at(-1) !== ""')
+        expect(joined.locator('#editor-note')).to_have_text(locked_door)
         row('Left side').locator('.row-acts .danger').click(force=True)
         expect(joined.locator('#parts-note')).to_have_text(locked_door)
         expect(joined.locator('#parts-note')).to_be_visible()

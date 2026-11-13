@@ -55,7 +55,8 @@ button {
   white-space: nowrap;
 }
 button:hover:not(:disabled, [aria-disabled="true"]) { border-color: var(--muted); }
-button:disabled, button[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+button:disabled { opacity: 0.45; cursor: default; }
+button[aria-disabled="true"], button.danger[aria-disabled="true"] { color: var(--muted); border-style: dashed; background: transparent; cursor: not-allowed; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 button.danger { color: var(--danger); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

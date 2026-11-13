@@ -309,11 +309,16 @@ function deleteRefusal(id) {
   return removal.refused ? lockedMoveMessage(removal.piece) : null;
 }
 
+function announce(note, message) {
+  note.textContent = '';
+  if (message) requestAnimationFrame(() => (note.textContent = message));
+}
+
 function showDeleteRefusal(message, origin) {
   const notes = [$('editor-note'), $('parts-note')];
   if (origin?.closest('#parts')) notes.reverse();
   const shown = notes.find(visible) ?? notes[0];
-  for (const note of notes) note.textContent = note === shown ? message : '';
+  for (const note of notes) announce(note, note === shown ? message : '');
 }
 
 function offWithReason(button, reason) {
@@ -1069,7 +1074,7 @@ $('joints').addEventListener('input', (event) => {
       return;
     }
     renderEditor();
-    jointNote(control).textContent = message;
+    announce(jointNote(control), message);
     return;
   }
   showJointError(control, null);
@@ -1085,7 +1090,7 @@ $('joints').addEventListener('click', keepingFocus((event) => {
   if (act === 'remove') {
     const removal = jointRemoval(project, joint.id);
     if (removal.refused) {
-      jointNote(button).textContent = lockedMoveMessage(removal.piece);
+      announce(jointNote(button), lockedMoveMessage(removal.piece));
       return;
     }
     commit(removal.project);
@@ -1095,7 +1100,7 @@ $('joints').addEventListener('click', keepingFocus((event) => {
   if (act === 'suggest') {
     const result = suggestSizes(project, joint.id);
     if (result.refused) {
-      jointNote(button).textContent = JOINT_ERRORS[result.refused];
+      announce(jointNote(button), JOINT_ERRORS[result.refused]);
       return;
     }
     commit(result.project);
@@ -1239,7 +1244,7 @@ $('editor').addEventListener('submit', (event) => event.preventDefault());
 function refusePartEdit(input, message, typed) {
   if (!typed) renderEditor();
   if ($(`${input.name}-error`)) showFieldError(input, message);
-  else $('editor-note').textContent = message;
+  else announce($('editor-note'), message);
 }
 
 $('project-name').addEventListener('change', (event) => {
