@@ -741,7 +741,7 @@ export function snapPosition(part, proposed, others, options) {
   return snapBodies(part, [bodyOf(part)], proposed, fixed, options);
 }
 
-// Each axis first snaps to grid and faces; then the one axis nearest a true meeting snaps there, with the others already in place, so the pieces touch without overlapping.
+// Meetings are settled one axis at a time, nearest first, each with the axes already settled in place: an axis tested before its neighbour moved would meet the wrong face, or none.
 export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
   const axes = POSITION.filter((axis) => axis in proposed);
   if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundMm(proposed[axis])]));
@@ -752,11 +752,17 @@ export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
     plain[axis] = nearest(proposed[axis], faceTargets(at, moving, axis, proposed, fixed, floor));
     result[axis] = roundMm(plain[axis]?.target ?? Math.round(proposed[axis] / SNAP_GRID_MM) * SNAP_GRID_MM);
   }
-  const meetings = axes
-    .map((axis) => ({ axis, meet: nearest(proposed[axis], meetingTargets(at, moving, axis, { ...result, [axis]: proposed[axis] }, fixed)) }))
-    .filter(({ axis, meet }) => meet && (!plain[axis] || Math.abs(meet.target - proposed[axis]) <= Math.abs(plain[axis].target - proposed[axis])));
-  const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
-  if (closest) result[closest.axis] = roundClear(closest.meet);
+  let unsettled = axes;
+  while (unsettled.length) {
+    const beatsPlain = ({ axis, meet }) => meet && (!plain[axis] || Math.abs(meet.target - proposed[axis]) <= Math.abs(plain[axis].target - proposed[axis]));
+    const meetings = unsettled
+      .map((axis) => ({ axis, meet: nearest(proposed[axis], meetingTargets(at, moving, axis, { ...result, [axis]: proposed[axis] }, fixed)) }))
+      .filter(beatsPlain);
+    const closest = nearest(0, meetings.map(({ axis, meet }) => ({ axis, target: meet.target - proposed[axis], meet })));
+    if (!closest) break;
+    result[closest.axis] = roundClear(closest.meet);
+    unsettled = unsettled.filter((axis) => axis !== closest.axis);
+  }
   if ('y' in result) result.y = Math.max(result.y, floor);
   return result;
 }
