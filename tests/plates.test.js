@@ -85,6 +85,51 @@ test('plate warnings: screws longer than a piece is thick, a plate wider than it
   assert.equal(updateJoint(state, joint.id, 'face', '+x'), null);
   const moved = { ...state, parts: state.parts.map((part) => (part.id === right.id ? { ...part, y: 5, z: 5 } : part)) };
   assert.match(jointProblem(moved, joint.id), /needs one flat face running across both pieces/);
+  assert.equal(suggestedSizes(moved, moved.joints[0]), null);
+});
+
+test('a corner plate whose pieces no longer share a flush face is warned about and suggests no sizes', () => {
+  const upright = stile();
+  const bottom = rail();
+  const { project: state, joint } = joinParts(project([upright, bottom]), 'cornerPlate', bottom.id, upright.id);
+  const moved = { ...state, parts: state.parts.map((part) => (part.id === bottom.id ? { ...part, y: 5, z: 5 } : part)) };
+  assert.match(jointProblem(moved, joint.id), /Line up a face of Rail with a face of Stile first/);
+  assert.equal(suggestedSizes(moved, moved.joints[0]), null);
+  assert.deepEqual(hardwarePieces(moved), []);
+});
+
+test('a plate longer than the pieces leave room for is warned about, and not offered when no stock plate fits', () => {
+  const short = rail({ x: 0, length: 30 });
+  const next = rail({ x: 30 });
+  const { project: state, joint } = joinParts(project([short, next]), 'mendingPlate', next.id, short.id);
+  assert.equal(jointProblem(updateJoint(state, joint.id, 'length', 60), joint.id), null);
+  assert.equal(jointProblem(updateJoint(state, joint.id, 'length', 63), joint.id), 'The plate (63 × 12) is longer than the pieces leave room for (60).');
+  const shrunk = { ...state, parts: state.parts.map((part) => (part.id === next.id ? { ...part, length: 15 } : part)) };
+  assert.equal(jointProblem(shrunk, joint.id), 'The plate (50 × 12) is longer than the pieces leave room for (30).');
+  const suggested = suggestedSizes(shrunk, shrunk.joints[0]);
+  assert.deepEqual([suggested.length, suggested.width, suggested.screwLength], [undefined, undefined, 16]);
+
+  const left = side();
+  const top = makePart({ name: 'Top', length: 800, width: 244, thickness: 18, pose: legacyPose('xzy'), y: 1000 });
+  assert.equal(
+    joinParts(project([left, top]), 'mendingPlate', top.id, left.id).error,
+    'Even the smallest mending plate (40 × 12) is longer than these pieces leave room for (36).',
+  );
+
+  const upright = stile();
+  const bottom = rail();
+  const cornered = joinParts(project([upright, bottom]), 'cornerPlate', bottom.id, upright.id);
+  assert.equal(jointProblem(updateJoint(cornered.project, cornered.joint.id, 'leg', 416), cornered.joint.id), null);
+  assert.equal(
+    jointProblem(updateJoint(cornered.project, cornered.joint.id, 'leg', 500), cornered.joint.id),
+    'The plate (500 × 500 × 16) is longer than the pieces leave room for (416).',
+  );
+  assert.deepEqual(hardwarePieces(cornered.project).filter((piece) => piece.type === 'plate').length, 2);
+  const stub = rail({ name: 'Stub', length: 20 });
+  assert.equal(
+    joinParts(project([upright, stub]), 'cornerPlate', stub.id, upright.id).error,
+    'Even the smallest corner plate (40 × 40 × 12) is longer than these pieces leave room for (32).',
+  );
 });
 
 test('a corner plate wider than the pieces it sits on is warned about', () => {
@@ -103,7 +148,7 @@ test('suggested sizes for a plate follow the face it is on', () => {
   assert.deepEqual(suggestedSizes(onEdge, onEdge.joints[0]).face, '-y');
 });
 
-const side = () => makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
+const side = (fields = {}) => makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx'), ...fields });
 const shelf = (fields = {}) => makePart({ name: 'Shelf', length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 300, ...fields });
 
 test('pocket screws are drilled in the picked piece, sized from its thickness, pockets on its back', () => {
@@ -143,6 +188,19 @@ test('when the picked piece meets the other with its face, the other is drilled;
     joinParts(project([under, board]), 'pocketScrews', board.id, under.id).error,
     'Pocket screws go through the end or edge of one piece, and these lie face to face. Use screws instead.',
   );
+});
+
+test('pockets go on the face toward the other piece, so a top on two sides gets them inside both', () => {
+  const left = side();
+  const right = side({ name: 'Right side', x: 782 });
+  const top = makePart({ name: 'Top', length: 800, width: 244, thickness: 18, pose: legacyPose('xzy'), y: 1000 });
+  const first = joinParts(project([left, right, top]), 'pocketScrews', top.id, left.id);
+  const second = joinParts(first.project, 'pocketScrews', top.id, right.id);
+  assert.deepEqual([first.joint.part, first.joint.face], [left.id, '+x']);
+  assert.deepEqual([second.joint.part, second.joint.face], [right.id, '-x']);
+  const normals = hardwarePieces(second.project).filter((piece) => piece.type === 'pocket').map((pocket) => [pocket.owner, pocket.normal]);
+  assert.deepEqual(normals, [[left.id, [1, 0, 0]], [left.id, [1, 0, 0]], [right.id, [-1, 0, 0]], [right.id, [-1, 0, 0]]]);
+  assert.equal(suggestedSizes(second.project, second.joint).face, '-x');
 });
 
 test('pocket screws that would come out the far side of the other piece are warned about', () => {
