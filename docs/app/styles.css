@@ -369,7 +369,7 @@ main {
 .outline-tools .field-error { flex-basis: 100%; margin: 0; }
 .outline-side { grid-area: side; min-height: 0; overflow: auto; align-content: start; gap: 6px; border-left: 1px solid var(--line); }
 .points-head, .points li { display: grid; grid-template-columns: 24px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
-.points-head { font-size: 11px; line-height: 1.2; color: var(--muted); padding: 0 5px; align-items: end; }
+.points-head { position: sticky; top: -14px; z-index: 1; margin-top: -14px; padding: 14px 5px 4px; background: var(--panel); font-size: 11px; line-height: 1.2; color: var(--muted); align-items: end; }
 .points { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .points li { padding: 3px 4px; border: 1px solid transparent; border-radius: 6px; }
 .points li.sel { background: var(--accent-soft); border-color: var(--accent); }
@@ -463,7 +463,7 @@ main {
   .outline-draw { flex: none; height: min(100vw, 45dvh); }
   .outline-tools { padding: 8px 16px; }
   .outline-tools .tool-group button { height: 36px; padding: 0 8px; }
-  .outline-side { flex: 1 1 auto; border-left: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+  .outline-side { flex: 1 1 auto; border-left: 0; border-top: 1px solid var(--line); }
   .outline-foot { flex: none; }
   .outline-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .outline-actions button { height: 44px; }
