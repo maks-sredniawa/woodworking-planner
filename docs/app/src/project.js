@@ -1,6 +1,6 @@
 import { legacyPose, makePart, newId, partFromFile, roundMm } from './model.js';
 import { JOINT_FIELDS, JOINT_KINDS, jointFieldValue } from './joints.js';
-import { cuttingFromFile, cuttingOf } from './cutplan.js';
+import { cuttingFromFile, cuttingToFile } from './cutplan.js';
 
 export const FORMAT = 'woodworking-planner';
 export const FORMAT_VERSION = 4;
@@ -14,7 +14,7 @@ export function serialize(project) {
       name: project.name,
       parts: project.parts.map(({ id, ...rest }) => rest),
       joints: (project.joints ?? []).map(({ id, part, to, ...rest }) => ({ ...rest, part: index.get(part), to: index.get(to) })),
-      cutting: cuttingOf(project),
+      cutting: cuttingToFile(project),
     },
     null,
     2,

@@ -1,4 +1,4 @@
-import { SPECIES, roundMm } from './model.js';
+import { SPECIES, cutList, roundMm } from './model.js';
 
 export const KERF_LIMITS = { min: 0, max: 10 };
 export const TRIM_LIMITS = { min: 0, max: 100 };
@@ -239,8 +239,11 @@ function stockFromFile(key, raw) {
   return { length: roundMm(raw.length), width: roundMm(raw.width), own: Boolean(raw.own) };
 }
 
+const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 export function cuttingFromFile(raw) {
   if (raw === undefined) return { ...DEFAULT_CUTTING, stock: {} };
+  if (!isRecord(raw) || (raw.stock !== undefined && !isRecord(raw.stock))) throw new Error('This project has invalid cutting settings.');
   const kerf = raw.kerf ?? DEFAULT_CUTTING.kerf;
   const trim = raw.trim ?? DEFAULT_CUTTING.trim;
   if (!within(kerf, KERF_LIMITS)) throw new Error('This project has an invalid saw kerf.');
@@ -250,3 +253,9 @@ export function cuttingFromFile(raw) {
 }
 
 export const cuttingOf = (project) => project.cutting ?? DEFAULT_CUTTING;
+
+export function cuttingToFile(project) {
+  const cutting = cuttingOf(project);
+  const used = new Set(planPieces(cutList(project.parts)).map(groupKey));
+  return { ...cutting, stock: Object.fromEntries(Object.entries(cutting.stock).filter(([key]) => used.has(key))) };
+}
