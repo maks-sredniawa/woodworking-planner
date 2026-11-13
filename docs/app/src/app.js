@@ -14,7 +14,6 @@ import {
   newPartBeside,
   outline,
   projectBounds,
-  snapPosition,
   totals,
   updatePart,
 } from './model.js';
@@ -39,6 +38,7 @@ import {
   placements,
   removePart,
   rotateAssembly,
+  snapAssembly,
   suggestedSizes,
   suggestSizes,
   swingingHinge,
@@ -128,9 +128,7 @@ const handleDrag = timed(({ phase, id, delta, vertical, invertSnap, swing }) => 
     showDragModes(vertical, snapOn !== invertSnap);
     const from = dragStart.part;
     const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
-    const members = joinedTo(dragStart.base, id);
-    const others = project.parts.filter((part) => !members.has(part.id));
-    const target = snapPosition(from, proposed, others, { snap: snapOn !== invertSnap });
+    const target = snapAssembly(dragStart.base, id, proposed, { snap: snapOn !== invertSnap });
     const next = moveAssembly(dragStart.base, id, target);
     const same = next.parts.every((part, i) => ['x', 'y', 'z'].every((axis) => part[axis] === project.parts[i][axis]));
     if (same) return;

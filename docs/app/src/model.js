@@ -492,8 +492,13 @@ export function partFromFile(raw, index) {
 export const SNAP_GRID_MM = 10;
 export const SNAP_REACH_MM = 15;
 
-export function snapPosition(part, proposed, others, { snap = true } = {}) {
-  const size = extents(part);
+export function snapPosition(part, proposed, others, options) {
+  const fixed = others.filter((other) => other.id !== part.id).map(bounds);
+  return snapBoxes(part, [bounds(part)], proposed, fixed, options);
+}
+
+export function snapBoxes(at, moving, proposed, fixed, { snap = true } = {}) {
+  const onFloor = roundMm(at.y - Math.min(...moving.map((box) => box.min.y)));
   const result = {};
   for (const axis of POSITION) {
     if (!(axis in proposed)) continue;
@@ -507,18 +512,15 @@ export function snapPosition(part, proposed, others, { snap = true } = {}) {
       const distance = Math.abs(target - value);
       if (distance <= SNAP_REACH_MM && (best === null || distance < Math.abs(best - value))) best = target;
     };
-    if (axis === 'y') consider(0);
-    for (const other of others) {
-      if (other.id === part.id) continue;
-      const box = bounds(other);
-      for (const face of [box.min[axis], box.max[axis]]) {
-        consider(face);
-        consider(face - size[axis]);
+    if (axis === 'y') consider(onFloor);
+    for (const other of fixed) {
+      for (const face of [other.min[axis], other.max[axis]]) {
+        for (const box of moving) for (const own of [box.min[axis], box.max[axis]]) consider(face - (own - at[axis]));
       }
     }
     result[axis] = roundMm(best ?? Math.round(value / SNAP_GRID_MM) * SNAP_GRID_MM);
   }
-  if ('y' in result && result.y < 0 && snap) result.y = 0;
+  if ('y' in result && snap) result.y = Math.max(result.y, onFloor);
   return result;
 }
 

@@ -22,6 +22,7 @@ import {
   joinParts,
   moveAssembly,
   rotateAssembly,
+  snapAssembly,
   swingLocked,
   swingingHinge,
   touchingParts,
@@ -139,6 +140,38 @@ test('moving the frame carries the open door with it, dragging the door swings i
   assert.deepEqual(worldBounds(moved, joint.part).min, { x: 82, y: 0, z: 244 });
   assert.equal(swingingHinge(open, joint.part)?.id, joint.id);
   assert.equal(swingingHinge(open, joint.to), null);
+});
+
+test('dragging an assembly snaps to where its open door stands, not where the door would be closed', () => {
+  const { project: closed, joint } = hung();
+  const wall = shelf({ name: 'Wall', x: -500, z: 660 });
+  const withWall = (state) => ({ ...state, parts: [...state.parts, wall] });
+  const open = withWall(updateJoint(closed, joint.id, 'open', 90));
+  assert.deepEqual(snapAssembly(open, joint.to, { z: 10 }), { z: 16 });
+  assert.deepEqual(snapAssembly(withWall(closed), joint.to, { z: 10 }), { z: 10 });
+  assert.deepEqual(snapAssembly(open, wall.id, { z: 640 }), { z: 644 });
+  assert.deepEqual(snapAssembly(withWall(closed), wall.id, { z: 640 }), { z: 640 });
+  assert.deepEqual(snapAssembly(open, joint.to, { z: 10 }, { snap: false }), { z: 10 });
+});
+
+test('lifting an assembly with snapping stops its lowest piece on the floor', () => {
+  const left = side();
+  const board = shelf();
+  const glued = joinParts(project([left, board]), 'glue', board.id, left.id).project;
+  assert.equal(snapAssembly(glued, board.id, { y: -40 }).y, 300);
+  assert.equal(snapAssembly(glued, board.id, { y: 309 }).y, 300);
+  assert.equal(snapAssembly(glued, board.id, { y: -40 }, { snap: false }).y, -40);
+});
+
+test('the ±10,000 mm limit counts where an open door stands', () => {
+  const { project: closed, joint } = hung();
+  const open = updateJoint(closed, joint.id, 'open', 90);
+  assert.equal(moveAssembly(open, joint.to, { x: -9990 }), open);
+  assert.equal(moveAssembly(closed, joint.to, { x: -9990 }).parts[0].x, -9990);
+  const pastEdge = updateJoint(moveAssembly(closed, joint.to, { x: -9990 }), joint.id, 'open', 90);
+  assert.equal(worldBounds(pastEdge, joint.part).min.x, -10008);
+  assert.equal(moveAssembly(pastEdge, joint.to, { x: -9980 }).parts[0].x, -9980);
+  assert.equal(moveAssembly(pastEdge, joint.to, { x: -9995 }), pastEdge);
 });
 
 test('a piece swings on only one hinge and nothing joins a piece while its hinge is open', () => {
