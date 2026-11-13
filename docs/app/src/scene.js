@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/OrbitControls.js';
+import * as THREE from '../vendor/three/three.module.js';
+import { OrbitControls } from '../vendor/three/addons/OrbitControls.js';
 import { SPECIES, blank, cornersActive, extents, outline, projectBounds, sceneBasis } from './model.js';
 
 const AXIS = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };

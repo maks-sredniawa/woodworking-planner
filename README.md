@@ -2,7 +2,7 @@
 
 Tool. A web app to plan a woodworking project and see it as a 3D render, all worked out on your own computer, before you cut the first board.
 
-In development: the first version works locally, in the Workbench layout (direction A in `design/DESIGN.md`).
+Live at https://maksforge.com/woodworking-planner/app/ (the app's page is https://maksforge.com/woodworking-planner/). Workbench layout, direction A in `design/DESIGN.md`.
 
 ## What it's for
 
@@ -39,7 +39,9 @@ For anyone building furniture or other projects from boards and sheet goods: lay
 npm start
 ```
 
-Then open http://127.0.0.1:8777/. There is no build step; three.js is vendored in `vendor/three/` (0.180.0, MIT), so it runs offline.
+Then open http://127.0.0.1:8777/. There is no build step. The app lives in `docs/app/`, which maksforge.com serves at `/woodworking-planner/app/`; the rest of `docs/` is its page there. three.js is vendored in `docs/app/vendor/three/` (0.180.0, MIT), with one change: `addons/OrbitControls.js` imports `../three.module.js` instead of the bare name `three`, because the site's Content-Security-Policy blocks an inline import map.
+
+A service worker (`docs/app/sw.js`) keeps a copy of every app file so it works offline after the first visit, and `manifest.webmanifest` makes it installable. `tests/offline.test.js` fails when a file is added without being listed in `sw.js`; bump its `CACHE` name whenever the app changes, so visitors get the new files.
 
 ## Tests
 
@@ -58,7 +60,6 @@ uv run --with playwright python tests/browser/ui_test.py
 - Joints: mending and corner plates, pocket screws, and a door stopped by what it swings into?
 - Sheet goods: a cutting plan that nests parts onto standard boards or plywood sheets, with saw kerf?
 - Shapes: overlaps and snapping by the true outline instead of the box? Free polygons, or curves drawn by hand?
-- Hosting: a page on maksforge.com, installable for offline use.
 
 ## Contributing
 

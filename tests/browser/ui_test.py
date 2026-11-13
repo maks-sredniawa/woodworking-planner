@@ -14,7 +14,7 @@ with socket.socket() as probe:
     PORT = probe.getsockname()[1]
 URL = f'http://127.0.0.1:{PORT}/index.html'
 
-server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT), '--bind', '127.0.0.1'], cwd=ROOT,
+server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT), '--bind', '127.0.0.1'], cwd=ROOT / 'docs' / 'app',
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 errors = []
 CORNERS_OUTSIDE = '''(() => {
@@ -1069,6 +1069,18 @@ try:
         handset.screenshot(path=str(HERE / 'hardware-360.png'), full_page=True)
         handset.evaluate('localStorage.clear()')
         handset.close()
+
+        offline_context = browser.new_context(viewport={'width': 1280, 'height': 900})
+        away = offline_context.new_page()
+        away.on('pageerror', lambda e: errors.append(str(e)))
+        away.goto(URL)
+        expect(away.locator('#parts li')).to_have_count(7)
+        away.wait_for_function('navigator.serviceWorker.controller !== null', timeout=15000)
+        offline_context.set_offline(True)
+        away.reload()
+        expect(away.locator('#parts li')).to_have_count(7)
+        assert away.evaluate('typeof woodworkingPlanner') == 'object', 'the app did not start offline'
+        offline_context.close()
 
         dark = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='dark')
         dark.goto(URL)

@@ -10,10 +10,9 @@ Everything is worked out on your own computer: no account and no online server.
 
 ## Try it
 
-In development: not hosted yet. To try it, run it locally from the
-[source](https://github.com/maks-sredniawa/woodworking-planner): `npm start` serves it at
-`http://127.0.0.1:8777/` (it needs Node.js and Python 3). There is no build step, and it works
-offline.
+**[Open the planner](app/)**. It runs in your browser: the page is sent to you once, and everything
+after that is worked out on your own computer. After the first visit it also works offline, and your
+browser can install it like an app (look for Install in its menu or address bar).
 
 ## What it's for
 

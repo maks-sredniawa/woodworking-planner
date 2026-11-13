@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { serialize, starterProject } from '../src/project.js';
-import { fileName, loadSaved } from '../src/storage.js';
+import { serialize, starterProject } from '../docs/app/src/project.js';
+import { fileName, loadSaved } from '../docs/app/src/storage.js';
 
 const KEY = 'woodworking-planner:project';
 const UNREADABLE_KEY = 'woodworking-planner:unreadable-project';

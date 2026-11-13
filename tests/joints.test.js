@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart, projectBounds, rotatePart, updatePart } from '../src/model.js';
+import { legacyPose, makePart, projectBounds, rotatePart, updatePart } from '../docs/app/src/model.js';
 import {
   applySuggestedSizes,
   assemblyOverlaps,
@@ -27,7 +27,7 @@ import {
   touchingParts,
   updateJoint,
   worldBounds,
-} from '../src/joints.js';
+} from '../docs/app/src/joints.js';
 
 const side = (fields = {}) =>
   makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx'), ...fields });

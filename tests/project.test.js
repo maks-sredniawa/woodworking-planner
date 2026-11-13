@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart } from '../src/model.js';
-import { joinParts, updateJoint, worldBounds } from '../src/joints.js';
-import { parseProject, serialize, starterProject } from '../src/project.js';
+import { legacyPose, makePart } from '../docs/app/src/model.js';
+import { joinParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
+import { parseProject, serialize, starterProject } from '../docs/app/src/project.js';
 
 const hungDoor = () => {
   const side = makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });

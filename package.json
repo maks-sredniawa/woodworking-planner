@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/",
-    "start": "python3 -m http.server 8777 --bind 127.0.0.1"
+    "start": "python3 -m http.server 8777 --bind 127.0.0.1 --directory docs/app"
   }
 }
