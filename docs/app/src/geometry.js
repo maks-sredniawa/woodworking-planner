@@ -315,7 +315,7 @@ function stops(solid, k, [low, high]) {
   return [...new Set([low, high, ...near])];
 }
 
-export function depthBehind(solid, axis, at, sign, region) {
+export function depthBehind(solid, axis, at, sign, region, bare = null) {
   const [piece] = solid.pieces;
   if (solid.pieces.every((each) => Math.abs(each.w[axis]) >= PARALLEL)) return piece ? 2 * Math.abs(piece.half[axis]) : null;
   const [first, second] = [0, 1, 2].filter((k) => k !== axis);
@@ -326,9 +326,8 @@ export function depthBehind(solid, axis, at, sign, region) {
       point[first] = a;
       point[second] = b;
       const run = woodRuns(solid, axis, point).find(([from, to]) => from <= at + TOUCH_MM && to >= at - TOUCH_MM);
-      if (!run) continue;
-      const depth = sign > 0 ? run[1] - at : at - run[0];
-      if (least === null || depth < least) least = depth;
+      const depth = run ? (sign > 0 ? run[1] - at : at - run[0]) : bare;
+      if (depth !== null && (least === null || depth < least)) least = depth;
     }
   }
   return least;

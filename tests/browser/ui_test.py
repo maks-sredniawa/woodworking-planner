@@ -1247,7 +1247,7 @@ try:
 
         sloped_file = json.dumps({'format': 'woodworking-planner', 'version': 5, 'name': 'Sloped', 'parts': [
             {'name': 'Triangle', 'shape': 'triangle', 'length': 400, 'width': 400, 'thickness': 45, 'pose': '+x+y+z', 'y': 600},
-            {'name': 'Post', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+y-x+z', 'x': 300, 'z': 10},
+            {'name': 'Post', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+y-x+z', 'x': 320, 'z': 10},
             {'name': 'Leg', 'length': 700, 'width': 45, 'thickness': 45, 'pose': '+y+z+x', 'x': 1000},
             {'name': 'Top rail', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+x+y+z', 'x': 1045, 'y': 680, 'z': 10}],
             'joints': [
@@ -1264,9 +1264,9 @@ try:
         sloped_item('Post').locator('.row-main').click()
         card = sloped.locator('details.joint').first
         card.locator('summary').click()
-        expect(card.locator('.joint-body > .warn')).to_have_text('The tenon (265) is longer than Triangle is deep there (20). Shorten it or tick Through tenon.')
+        expect(card.locator('.joint-body > .warn')).to_have_text('The tenon (265) is longer than Triangle is deep there (10). Shorten it or tick Through tenon.')
         card.locator('[data-jf-act=suggest]').click()
-        expect(card.locator('summary .dim')).to_have_text('10 × 8 × 60 tenon · glued')
+        expect(card.locator('summary .dim')).to_have_text('5 × 8 × 60 tenon · glued')
         expect(card.locator('.joint-body > .warn')).to_be_hidden()
         sloped_item('Top rail').locator('.row-main').click()
         card = sloped.locator('details.joint').first

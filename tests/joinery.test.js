@@ -175,29 +175,54 @@ test('a tenon on a rail with rounded corners is checked and drawn at the size it
 const triangle = (fields = {}) => ({ ...makeShape('triangle'), name: 'Triangle', length: 400, width: 400, thickness: 45, pose: legacyPose('xyz'), y: 600, ...fields });
 const post = (fields = {}) => makePart({ name: 'Post', length: 600, width: 80, thickness: 24, pose: legacyPose('yxz'), x: 300, z: 10, ...fields });
 
-test('a tenon into a triangle is sized, checked, listed and drawn by the wood at the joint, not the triangle’s box', () => {
+test('a tenon into a triangle is sized, checked, listed and drawn by the wood where the tenon sits, not the triangle’s box', () => {
   const housing = triangle();
   const tall = post();
   const { project, joint } = joinParts({ name: 'Slope', parts: [housing, tall], joints: [] }, 'tenon', housing.id, tall.id);
-  assert.deepEqual([joint.part, joint.to, joint.length], [tall.id, housing.id, 10], 'two thirds of the 20 left at the slope');
+  assert.deepEqual([joint.part, joint.to, joint.length], [tall.id, housing.id, 20], 'two thirds of the 30 left under the tenon at x 370');
   assert.equal(jointProblem(project, joint.id), null);
-  assert.equal(changeJoint(project, joint.id, 'length', '21').reason, 'Enter a length up to 20, the depth of Triangle there, or tick Through tenon.');
+  assert.equal(changeJoint(project, joint.id, 'length', '31').reason, 'Enter a length up to 30, the depth of Triangle there, or tick Through tenon.');
   const long = { ...project, joints: [{ ...joint, length: 265 }] };
-  assert.equal(jointProblem(long, joint.id), 'The tenon (265) is longer than Triangle is deep there (20). Shorten it or tick Through tenon.');
-  assert.equal(cutAllowances(project).get(tall.id).length, 10);
+  assert.equal(jointProblem(long, joint.id), 'The tenon (265) is longer than Triangle is deep there (30). Shorten it or tick Through tenon.');
+  assert.equal(cutAllowances(project).get(tall.id).length, 20);
   const through = updateJoint(project, joint.id, 'through', true);
-  assert.equal(cutAllowances(through).get(tall.id).length, 20);
+  assert.equal(cutAllowances(through).get(tall.id).length, 30);
   const [wood] = hardwarePieces(project).filter((piece) => piece.type === 'wood');
-  assert.deepEqual([wood.min, wood.max], [[310, 600, 18], [370, 610, 26]]);
+  assert.deepEqual([wood.min, wood.max], [[310, 600, 18], [370, 620, 26]]);
 });
 
-test('dowels into a triangle drill no deeper than the wood at the joint', () => {
+for (const [x, from, to] of [[320, 330, 390], [330, 340, 390], [360, 370, 390]]) {
+  test(`a tenon on a post at x ${x}, meeting the triangle up to its corner, is sized by the 10 left where the tenon ends`, () => {
+    const housing = triangle();
+    const tall = post({ x });
+    const { project, joint } = joinParts({ name: 'Corner', parts: [housing, tall], joints: [] }, 'tenon', housing.id, tall.id);
+    assert.equal(joint.length, 5);
+    assert.equal(jointProblem(project, joint.id), null);
+    assert.equal(changeJoint(project, joint.id, 'length', '11').reason, 'Enter a length up to 10, the depth of Triangle there, or tick Through tenon.');
+    const long = { ...project, joints: [{ ...joint, length: 50 }] };
+    assert.equal(jointProblem(long, joint.id), 'The tenon (50) is longer than Triangle is deep there (10). Shorten it or tick Through tenon.');
+    assert.equal(cutAllowances(project).get(tall.id).length, 5);
+    assert.equal(cutAllowances(updateJoint(project, joint.id, 'through', true)).get(tall.id).length, 10);
+    const [wood] = hardwarePieces(project).filter((piece) => piece.type === 'wood');
+    assert.deepEqual([wood.min, wood.max], [[from, 600, 18], [to, 605, 26]]);
+  });
+}
+
+test('a tenon reaching the triangle’s corner has no wood to go into there', () => {
   const housing = triangle();
-  const tall = post();
-  const project = joinParts({ name: 'Slope', parts: [housing, tall], joints: [] }, 'dowels', tall.id, housing.id).project;
+  const tall = post({ x: 320 });
+  const { project, joint } = joinParts({ name: 'Corner', parts: [housing, tall], joints: [] }, 'tenon', housing.id, tall.id);
+  const wide = updateJoint(project, joint.id, 'width', '80');
+  assert.equal(jointProblem(wide, joint.id), 'The tenon (5) is longer than Triangle is deep there (0). Shorten it or tick Through tenon.');
+});
+
+test('dowels near a triangle’s corner drill no deeper than the wood under the dowel nearest it', () => {
+  const housing = triangle();
+  const tall = post({ x: 320 });
+  const project = joinParts({ name: 'Corner', parts: [housing, tall], joints: [] }, 'dowels', tall.id, housing.id).project;
   const traced = joineryXray(project, housing.id);
-  assert.equal(traced.length, 2);
-  assert.ok(traced.every((piece) => piece.to[1] === 613), `two thirds of the 20 at the slope, got ${traced.map((piece) => piece.to[1])}`);
+  assert.deepEqual(traced.map((piece) => piece.to[0]), [340, 380]);
+  assert.ok(traced.every((piece) => piece.to[1] === 610), `two thirds of the 16 under the dowel at x 380, got ${traced.map((piece) => piece.to[1])}`);
 });
 
 test('a dado groove across a triangle stops at its outline', () => {
