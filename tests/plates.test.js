@@ -355,3 +355,18 @@ test('free-shape pieces take a mending plate and pocket screws by their blank, l
   const pocketed = joinParts(project([left, right]), 'pocketScrews', right.id, left.id);
   assert.equal(pocketed.error, undefined);
 });
+
+test('a plate or pocket screws is refused on a pair that already has a cut joint, and a cut joint on one that has a plate', () => {
+  const post = stile();
+  const bar = rail();
+  const tenoned = joinParts(project([post, bar]), 'tenon', bar.id, post.id);
+  assert.equal(tenoned.error, undefined);
+  for (const kind of ['mendingPlate', 'cornerPlate', 'pocketScrews']) {
+    assert.equal(joinParts(tenoned.project, kind, bar.id, post.id).error, 'Rail and Stile are already joined. Change that joint instead.');
+  }
+  const plated = joinParts(project([post, bar]), 'cornerPlate', bar.id, post.id);
+  assert.equal(plated.error, undefined);
+  for (const kind of ['dado', 'tenon', 'dowels']) {
+    assert.equal(joinParts(plated.project, kind, post.id, bar.id).error, 'Stile and Rail are already joined. Change that joint instead.');
+  }
+});
