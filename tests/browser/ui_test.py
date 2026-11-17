@@ -1277,6 +1277,15 @@ try:
         card.locator('[data-jf-act=suggest]').click()
         expect(card.locator('summary .dim')).to_have_text('30 × 8 × 10 tenon · glued')
         expect(sloped.locator('#parts li .warn')).to_have_count(0)
+        rounded_rail = json.dumps({'format': 'woodworking-planner', 'version': 5, 'name': 'Rounded', 'parts': [
+            {'name': 'Leg', 'length': 700, 'width': 45, 'thickness': 45, 'pose': '+y+z+x'},
+            {'name': 'Rail', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+x+y+z', 'x': 45, 'y': 600, 'z': 10,
+             'corners': 'rounded', 'cornerRadius': 20, 'cornerTopLeft': True, 'cornerTopRight': True, 'cornerBottomLeft': True, 'cornerBottomRight': True}],
+            'joints': [{'kind': 'tenon', 'part': 1, 'to': 0, 'length': 30, 'thickness': 8, 'width': 60, 'through': False, 'glued': True}]})
+        sloped.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(rounded_rail)})')
+        sloped.reload()
+        sloped_item('Rail').locator('.row-main').click()
+        expect(sloped.locator('details.joint').first.locator('summary .warn')).to_have_text('The tenon (60) is wider than where Rail meets Leg (40.6)')
         sloped.evaluate('localStorage.clear()')
         sloped.close()
 
