@@ -1123,13 +1123,25 @@ const gapTo = (solids, solid) => Math.min(...solids.map((each) => solidsGap(each
 const STOP_TRAVEL_MM = 0.5;
 const GRAZE_MM = 1;
 const STOP_REFINE_STEPS = 30;
+const STOPS_KEPT = 32;
 const knownStops = new WeakMap();
+const stopsByLayout = new Map();
 
 export function swingStop(project, jointId) {
   if (!knownStops.has(project)) knownStops.set(project, new Map());
   const known = knownStops.get(project);
-  if (!known.has(jointId)) known.set(jointId, findStop(project, jointId));
+  if (!known.has(jointId)) known.set(jointId, stopForLayout(project, jointId));
   return known.get(jointId);
+}
+
+function stopForLayout(project, jointId) {
+  const shut = jointsOf(project).map((joint) => (joint.id === jointId ? { ...joint, open: 0 } : joint));
+  const key = JSON.stringify([jointId, project.parts, shut]);
+  const stop = stopsByLayout.has(key) ? stopsByLayout.get(key) : findStop(project, jointId);
+  stopsByLayout.delete(key);
+  stopsByLayout.set(key, stop);
+  if (stopsByLayout.size > STOPS_KEPT) stopsByLayout.delete(stopsByLayout.keys().next().value);
+  return stop;
 }
 
 function findStop(project, jointId) {
