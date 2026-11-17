@@ -1299,7 +1299,7 @@ try:
             framed.click('#save-file')
         saved = HERE / 'framed.json'
         download.value.save_as(saved)
-        assert json.loads(saved.read_text())['version'] == 4
+        assert json.loads(saved.read_text())['version'] == 7
         framed.click('#new-project')
         framed.set_input_files('#file-input', str(saved))
         saved.unlink()
@@ -1993,7 +1993,7 @@ try:
         download.value.save_as(planned)
         saved_plan = json.loads(planned.read_text())
         planned.unlink()
-        assert saved_plan['version'] == 6 and saved_plan['cutting']['kerf'] == 0, saved_plan.get('cutting')
+        assert saved_plan['version'] == 7 and saved_plan['cutting']['kerf'] == 0, saved_plan.get('cutting')
         assert all('grain' in part for part in saved_plan['parts'])
         planner.click('#view-list')
         expect(planner.locator('#plan')).to_be_hidden()

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart } from '../docs/app/src/model.js';
+import { legacyPose, makePart, makeShape } from '../docs/app/src/model.js';
 import { joinParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
 import { parseProject, serialize, starterProject } from '../docs/app/src/project.js';
 
@@ -14,7 +14,7 @@ const hungDoor = () => {
 test('joints are saved with the project and load back joining the same pieces', () => {
   const saved = hungDoor();
   const text = serialize(saved);
-  assert.match(text, /"version": 6/);
+  assert.match(text, /"version": 7/);
   const loaded = parseProject(text);
   assert.equal(loaded.joints.length, 1);
   const [joint] = loaded.joints;
@@ -35,7 +35,7 @@ test('a file with a broken joint is refused with the joint named', () => {
   assert.throws(() => parseProject(file([{ kind: 'glue', part: 0, to: 0 }])), /Joint 1 joins a piece to itself/);
   assert.throws(() => parseProject(file([{ kind: 'screws', part: 0, to: 1, count: 0, diameter: 4, length: 40, glued: false }])), /Joint 1 has an invalid count/);
   assert.throws(() => parseProject(file([{ kind: 'glue', part: 0, to: 1 }, { kind: 'glue', part: 1, to: 0 }])), /Joint 2 joins the same two pieces as an earlier joint/);
-  assert.throws(() => parseProject('{"format":"woodworking-planner","version":7,"parts":[]}'), /newer version/);
+  assert.throws(() => parseProject('{"format":"woodworking-planner","version":8,"parts":[]}'), /newer version/);
 });
 
 test('cut joints are saved with their sizes and load back with the same piece going in', () => {
@@ -67,7 +67,7 @@ test('a version 4 file with a free shape and no cut joints opens as before', () 
   assert.deepEqual([top.shape, top.length, top.width, top.points.map(({ x, y }) => [x, y])], ['free', 400, 300, outline.map(({ x, y }) => [x, y])]);
   assert.deepEqual([side.shape, side.length, side.width], ['board', 500, 200]);
   assert.deepEqual(loaded.joints.map(({ kind, part, to }) => [kind, part, to]), [['glue', top.id, side.id]]);
-  assert.match(serialize(loaded), /"version": 6/);
+  assert.match(serialize(loaded), /"version": 7/);
 });
 
 test('a version 5 file with cut joints saves back the same joints', () => {
@@ -78,7 +78,7 @@ test('a version 5 file with cut joints saves back the same joints', () => {
   ];
   const text = JSON.stringify({ format: 'woodworking-planner', version: 5, name: 'Frame', parts: [{}, {}, {}, {}], joints });
   const saved = JSON.parse(serialize(parseProject(text)));
-  assert.equal(saved.version, 6);
+  assert.equal(saved.version, 7);
   assert.deepEqual(saved.joints, joints);
 });
 
@@ -104,4 +104,31 @@ test('plates and pocket screws are saved and load back with their face', () => {
   const loaded = parseProject(serialize(state));
   assert.deepEqual(loaded.joints.map((joint) => [joint.kind, joint.face]), [['cornerPlate', '-z'], ['pocketScrews', '+z']]);
   assert.equal(loaded.joints[0].leg, 80);
+});
+
+test('a version 4 file, saved before the door stop, plates and pocket screws, opens with the stop on and keeps its free shapes', () => {
+  const cabinet = hungDoor();
+  const saved = JSON.parse(serialize({ ...cabinet, parts: [...cabinet.parts, makeShape('free')] }));
+  delete saved.joints[0].stops;
+  const loaded = parseProject(JSON.stringify({ ...saved, version: 4 }));
+  assert.deepEqual(loaded.joints.map((joint) => [joint.kind, joint.stops, joint.open]), [['hinge', true, 35]]);
+  assert.deepEqual(loaded.parts[2].points.map(({ x, y }) => [x, y]), [[0, 0], [400, 0], [400, 200], [300, 300], [0, 300]]);
+});
+
+test('a version 6 file, with cut joints and cutting settings but saved before the door stop, opens with the stop on and keeps both', () => {
+  const cabinet = hungDoor();
+  const leg = makePart({ name: 'Leg', length: 700, width: 45, thickness: 45, pose: legacyPose('yzx'), x: 2000 });
+  const rail = makePart({ name: 'Rail', length: 600, width: 80, thickness: 24, pose: legacyPose('xyz'), x: 2045, y: 600, z: 10 });
+  const framed = joinParts({ ...cabinet, parts: [...cabinet.parts, leg, rail] }, 'tenon', leg.id, rail.id).project;
+  const cutting = { kerf: 4, trim: 2, stock: { 'pine:18': { length: 3000, width: 244, own: true } } };
+  const saved = JSON.parse(serialize({ ...framed, cutting }));
+  delete saved.joints[0].stops;
+  const loaded = parseProject(JSON.stringify({ ...saved, version: 6 }));
+  const name = (id) => loaded.parts.find((part) => part.id === id).name;
+  assert.deepEqual(
+    loaded.joints.map((joint) => [joint.kind, name(joint.part), name(joint.to), joint.stops ?? joint.length]),
+    [['hinge', 'Door', 'Side', true], ['tenon', 'Rail', 'Leg', saved.joints[1].length]],
+  );
+  assert.deepEqual(loaded.cutting, cutting);
+  assert.equal(JSON.parse(serialize(loaded)).version, 7);
 });

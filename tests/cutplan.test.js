@@ -325,11 +325,11 @@ test('saving drops stock choices that no piece uses any more', () => {
   assert.deepEqual(project.cutting.stock['oak:20'], own(1234, 321));
 });
 
-test('a project saves its cutting settings and grain ticks in format version 6 and older files still open', () => {
+test('a project saves its cutting settings and grain ticks, which files carry from format version 6 on, and older files still open', () => {
   const project = { ...starterProject(), cutting: { kerf: 4, trim: 5, stock: { 'pine:18': own(3000, 244) } } };
   project.parts[1] = { ...project.parts[1], grain: false };
   const text = serialize(project);
-  assert.match(text, /"version": 6/);
+  assert.match(text, /"version": 7/);
   const loaded = parseProject(text);
   assert.deepEqual(loaded.cutting, project.cutting);
   assert.equal(loaded.parts[1].grain, false);
@@ -350,10 +350,10 @@ test('a version 4 file, saved before cutting settings, opens with the cutting de
   const loaded = parseProject(file);
   assert.deepEqual(loaded.cutting, DEFAULT_CUTTING);
   assert.deepEqual(loaded.parts.map((part) => part.grain), [true, false]);
-  assert.match(serialize(loaded), /"version": 6/);
+  assert.match(serialize(loaded), /"version": 7/);
 });
 
-test('a version 5 file with cut joints and no cutting settings opens with the cutting defaults and saves as version 6', () => {
+test('a version 5 file with cut joints and no cutting settings opens with the cutting defaults and saves as the current version', () => {
   const { project } = tenonedFrame();
   const data = JSON.parse(serialize(project));
   data.version = 5;
@@ -365,6 +365,6 @@ test('a version 5 file with cut joints and no cutting settings opens with the cu
   assert.ok(loaded.parts.every((part) => part.grain === true));
   assert.ok(projectPieces(loaded).some((piece) => piece.name === 'Rail' && piece.length === 660));
   const saved = JSON.parse(serialize(loaded));
-  assert.equal(saved.version, 6);
+  assert.equal(saved.version, 7);
   assert.deepEqual(saved.cutting, DEFAULT_CUTTING);
 });
