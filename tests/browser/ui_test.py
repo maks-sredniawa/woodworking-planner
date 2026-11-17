@@ -1821,6 +1821,31 @@ try:
                 handheld.wait_for_timeout(300)
                 handheld.screenshot(path=str(HERE / f'plan-{width}-{scheme}.png'), full_page=True)
                 handheld.close()
+
+        clipped_keys = '[...document.querySelectorAll(".stock-key button")].filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent)'
+        long_name = 'Back panel for the left-hand wardrobe carcass, routed for the cable slot up top'
+        assert len(long_name) <= 80
+        keyed = browser.new_page(viewport={'width': 1280, 'height': 900})
+        keyed.on('pageerror', lambda e: errors.append(str(e)))
+        keyed.goto(URL)
+        keyed.evaluate('localStorage.setItem("woodworking-planner:cut-view", "plan")')
+        keyed.reload()
+        keyed.locator('#parts li').first.locator('.row-main').click()
+        keyed.fill('#editor [name=name]', long_name)
+        keyed.keyboard.press('Escape')
+        expect(keyed.locator('.stock-key button').first).to_have_text(f'1 {long_name} 1,000 × 800')
+        assert keyed.evaluate(clipped_keys) == [], 'at 1280 px a key button cuts off its label'
+        keyed.add_style_tag(content='.stock-key button { font-size: 24px !important; }')
+        assert keyed.evaluate(clipped_keys) == [], 'with text at 200% a key button cuts off its label'
+        for width in (360, 320):
+            keyed.set_viewport_size({'width': width, 'height': 800})
+            keyed.click('.tabs [data-tab=cut]')
+            expect(keyed.locator('#plan')).to_be_visible()
+            assert keyed.evaluate(clipped_keys) == [], f'at {width} px with text at 200% a key button cuts off its label'
+            assert keyed.evaluate('document.documentElement.scrollWidth') <= width, f'at {width} px a long key label scrolls the plan sideways'
+            heights = keyed.evaluate('[...document.querySelectorAll(".stock-key button")].map((b) => b.getBoundingClientRect().height)')
+            assert min(heights) >= 36, f'at {width} px a key button is under 36 px tall: {min(heights)}'
+        keyed.close()
         browser.close()
 finally:
     server.terminate()
