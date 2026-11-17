@@ -1069,7 +1069,7 @@ function fillJointCard(card, joint, part) {
   title.textContent = jointTitle(joint, part);
   summary.textContent = jointSummary(joint);
   summary.hidden = !summary.textContent;
-  warn.textContent = problem ? problem.split(/[.;]/)[0] : '';
+  warn.textContent = problem ? problem.split(/\.(?=\s|$)|;/)[0] : '';
   warn.hidden = !problem;
   const note = card.querySelector('.joint-body > .warn');
   note.textContent = problem ?? '';
