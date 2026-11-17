@@ -174,3 +174,29 @@ test('a door with cutting settings in the project stops the same, is laid out fl
   assert.deepEqual([loaded.joints[0].stops, loaded.joints[0].open], [true, 90]);
   assert.deepEqual(swingStop(loaded, loaded.joints[0].id).angle, 90);
 });
+
+test('a swing drag finds the stop once at its start and reuses it on every move, even handed a fresh copy of the start each time', () => {
+  const wall = block('Wall', [-100, -18], [244, 700]);
+  const { project: start, joint } = hungWith(wall);
+  const found = swingStop(start, joint.id);
+  let current = start;
+  for (let angle = 5; angle <= 150; angle += 5) {
+    const copy = { ...start, parts: current.parts };
+    const moved = changeJoint(copy, joint.id, 'open', angle);
+    assert.equal(moved.stopped ?? swingStop(moved.project, joint.id), found);
+    current = moved.project;
+  }
+  assert.equal(current.joints[0].open, 90);
+});
+
+test('a stop is kept across edits that leave the pieces where they are, and found again when a piece moves', () => {
+  const wall = block('Wall', [-100, -18], [244, 700]);
+  const { project, joint } = hungWith(wall);
+  const found = swingStop(project, joint.id);
+  const renamed = { ...project, name: 'Wardrobe' };
+  assert.equal(swingStop(renamed, joint.id), found);
+  const moved = { ...project, parts: project.parts.map((part) => (part.id === wall.id ? { ...part, z: part.z + 600 } : part)) };
+  assert.equal(swingStop(moved, joint.id), null);
+  const back = { ...moved, parts: project.parts.map((part) => ({ ...part })) };
+  assert.deepEqual(swingStop(back, joint.id), found);
+});
