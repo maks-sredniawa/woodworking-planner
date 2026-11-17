@@ -138,10 +138,10 @@ test('changing the length or width of a free shape stretches its outline that wa
   assert.equal(updatePart(piece, 'length', '0.1'), null, 'squeezed until points meet');
 });
 
-test('a free shape is saved with its outline, in format version 4, and older files still open', () => {
+test('a free shape is saved with its outline, which format version 4 added, and older files still open', () => {
   const disc = updatePart(makeShape('disc'), 'shape', 'free');
   const text = serialize({ name: 'Shapes', parts: [makeShape('free'), disc, makePart()], joints: [] });
-  assert.match(text, /"version": 4/);
+  assert.match(text, /"version": 5/);
   const loaded = parseProject(text);
   assert.deepEqual(loaded.parts.map(({ id, ...rest }) => rest), [makeShape('free'), disc, makePart()].map(({ id, ...rest }) => rest));
   assert.equal('points' in loaded.parts[2], false, 'only a free shape carries points');
@@ -160,7 +160,7 @@ test('a free shape is saved with its outline, in format version 4, and older fil
   assert.throws(() => parseProject(file({ shape: 'free', points: pts([0, 0], [100, 100], [100, 0], [0, 100]) })), /Part 1 has an invalid outline/);
   assert.throws(() => parseProject(file({ shape: 'free', points: [{ x: 'a', y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] })), /Part 1 has an invalid outline/);
   assert.throws(() => parseProject(file({ shape: 'free', points: [{ x: null, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 100 }] })), /Part 1 has an invalid outline/);
-  assert.throws(() => parseProject('{"format":"woodworking-planner","version":5,"parts":[]}'), /newer version/);
+  assert.throws(() => parseProject('{"format":"woodworking-planner","version":6,"parts":[]}'), /newer version/);
 });
 
 test('the cut list groups free shapes only when their outlines match', () => {
