@@ -74,14 +74,14 @@ test('every shape lying on another flat piece only touches it', () => {
 
 const side = () => makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
 
-test('a round door swung open clears a block in the corner of its turned box, and hits one on its rim', () => {
+test('a round door swung open past its stop clears a block in the corner of its turned box, and hits one on its rim', () => {
   const frame = side();
   const door = { ...makeShape('disc'), name: 'Round door', pose: legacyPose('yxz'), z: 244 };
   const hung = joinParts({ name: 'Cabinet', parts: [frame, door], joints: [] }, 'hinge', door.id, frame.id);
   assert.equal(hung.error, undefined);
   const corner = block(50, { name: 'Corner', x: -30, z: 594 });
   const rim = block(50, { name: 'Rim', x: -30, z: 419 });
-  const closed = { ...hung.project, parts: [...hung.project.parts, corner, rim] };
+  const closed = updateJoint({ ...hung.project, parts: [...hung.project.parts, corner, rim] }, hung.joint.id, 'stops', false);
   assert.deepEqual(assemblyOverlaps(closed), []);
   const open = updateJoint(closed, hung.joint.id, 'open', 90);
   assert.deepEqual(worldBounds(open, door.id), { min: { x: -18, y: 0, z: 244 }, max: { x: 0, y: 400, z: 644 } });
