@@ -66,18 +66,25 @@ function circle(points, i) {
   return { radius, cx: px - nx * side * radius, cy: py - ny * side * radius, half, bend };
 }
 
-function edgePoints(points, i, segments) {
+export function edgeArc(points, i) {
   const a = points[i];
-  if (!a.bend || !halfEdge(points, i)) return [[a.x, a.y]];
+  if (!a.bend || !halfEdge(points, i)) return null;
   const { radius, cx, cy } = circle(points, i);
   const [px, py] = apex(points, i);
   const start = Math.atan2(a.y - cy, a.x - cx);
   let half = Math.atan2(py - cy, px - cx) - start;
   if (half > Math.PI) half -= 2 * Math.PI;
   if (half < -Math.PI) half += 2 * Math.PI;
-  const count = segments ?? Math.max(2, Math.ceil(Math.abs(2 * half) / STEP_RAD));
+  return { cx, cy, radius, from: start, to: start + 2 * half };
+}
+
+function edgePoints(points, i, segments) {
+  const arc = edgeArc(points, i);
+  if (!arc) return [[points[i].x, points[i].y]];
+  const { cx, cy, radius, from, to } = arc;
+  const count = segments ?? Math.max(2, Math.ceil(Math.abs(to - from) / STEP_RAD));
   return Array.from({ length: count }, (_, k) => {
-    const angle = start + (2 * half * k) / count;
+    const angle = from + ((to - from) * k) / count;
     return [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
   });
 }

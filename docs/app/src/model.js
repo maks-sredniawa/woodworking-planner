@@ -1,4 +1,4 @@
-import { MAX_POINTS, MIN_POINTS, area, arcBend, box, halfEdge, outlineProblem, point, polygon, rebase, scale } from './free.js';
+import { MAX_POINTS, MIN_POINTS, area, arcBend, box, edgeArc, halfEdge, outlineProblem, point, rebase, scale } from './free.js';
 import { TOUCH_MM, convexParts, moveSolid, placeSolid, prism, solidsClash, sweepSpans } from './geometry.js';
 
 export const MAX_SIZE_MM = 10000;
@@ -116,6 +116,7 @@ const SIZE_LIMITS = { outerRadius: MAX_RADIUS_MM };
 const ARC_STEP_DEG = 4;
 
 const radians = (degrees) => (degrees * Math.PI) / 180;
+const toDegrees = (angle) => (angle * 180) / Math.PI;
 
 export function cornersActive(part) {
   return part.shape === 'board' && part.corners !== 'square' && Object.keys(CORNERS).some((corner) => part[corner]);
@@ -223,16 +224,20 @@ function arcOutline(part, curve) {
   return { points: withoutRepeats([...curve(cx, cy, part.outerRadius, from, to), ...curve(cx, cy, inner, to, from, true)]), holes: [] };
 }
 
-function freeOutline(part) {
-  const corners = polygon(part.points);
+function freeOutline(part, curve) {
   const size = box(part.points);
   const cx = (size.minX + size.maxX) / 2;
   const cy = (size.minY + size.maxY) / 2;
-  return { points: withoutRepeats(corners.map(([x, y]) => [x - cx, y - cy])), holes: [] };
+  const corners = part.points.flatMap((each, i) => {
+    const arc = edgeArc(part.points, i);
+    if (!arc) return [[each.x - cx, each.y - cy]];
+    return curve(arc.cx - cx, arc.cy - cy, arc.radius, toDegrees(arc.from), toDegrees(arc.to), each.bend < 0).slice(0, -1);
+  });
+  return { points: withoutRepeats(corners), holes: [] };
 }
 
 function shapeOutline(part, curve) {
-  if (part.shape === 'free') return freeOutline(part);
+  if (part.shape === 'free') return freeOutline(part, curve);
   const size = blank(part);
   const halfL = size.length / 2;
   const halfW = size.width / 2;

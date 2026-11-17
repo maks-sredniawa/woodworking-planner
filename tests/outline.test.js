@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { POSES, SHAPES, bounds, legacyPose, makePart, makeShape, overlaps, rotatePart, snapPosition } from '../docs/app/src/model.js';
+import { POSES, SHAPES, bounds, legacyPose, makePart, makeShape, overlaps, rotatePart, snapPosition, updatePart } from '../docs/app/src/model.js';
 import { assemblyOverlaps, contact, joinParts, snapAssembly, touchingParts, updateJoint, worldBounds } from '../docs/app/src/joints.js';
 
 const block = (size, fields = {}) => makePart({ name: 'Block', length: size, width: size, thickness: size, ...fields });
@@ -188,4 +188,38 @@ test('the smallest round pieces still have a solid to test', () => {
   assert.equal(overlaps([thin, { ...thin, id: 'twin' }]).length, 1);
   const tight = { ...makePart({ length: 1, width: 1 }), corners: 'rounded', cornerRadius: 0.1 };
   assert.equal(overlaps([tight, { ...tight, id: 'twin' }]).length, 1);
+});
+
+const pts = (...list) => list.map(([x, y, bend = 0]) => ({ x, y, bend }));
+const freeShape = (points) => updatePart({ ...makeShape('free'), name: 'Free' }, 'points', points);
+const freeDisc = () => updatePart({ ...makeShape('disc'), name: 'Free disc' }, 'shape', 'free');
+
+test('a free shape is tested by its bent edges: a disc in its box corner clears it, pushed into the rim it overlaps', () => {
+  const round = freeDisc();
+  assert.deepEqual(overlaps([round, block(50)]), []);
+  assert.equal(overlaps([round, block(70)]).length, 1);
+});
+
+test('a disc nested in the hollow of a free shape’s inward bend fits it exactly; a bigger one, or the same blank unbent, overlaps', () => {
+  const hollow = freeShape(pts([0, 0], [400, 0], [400, 300, -100], [0, 300]));
+  const nested = { ...makeShape('disc'), diameter: 500, x: -50, z: -400 };
+  assert.deepEqual(overlaps([hollow, nested]), []);
+  assert.equal(overlaps([hollow, { ...nested, diameter: 504, x: -52, z: -402 }]).length, 1);
+  assert.equal(overlaps([freeShape(pts([0, 0], [400, 0], [400, 300], [0, 300])), nested]).length, 1);
+});
+
+test('a free disc touches a side only where its rim meets it, and snaps against another disc where the rims meet', () => {
+  const wall = side();
+  const against = { ...freeDisc(), x: 18, y: 300 };
+  const touch = contact(wall, against);
+  assert.equal(touch.axis, 'x');
+  const [low, high] = touch.region.z;
+  assert.ok(low < 200 && high > 200 && high - low < 10, `rim meets the side around z 200, got ${low}–${high}`);
+  assert.equal(contact(wall, { ...against, z: 200 }), null, 'its box still meets the side, its rim does not');
+  const still = { ...makeShape('disc'), name: 'Still', x: 1000 };
+  const moving = { ...freeDisc(), z: 200 };
+  const { x } = snapPosition(moving, { x: 660 }, [still]);
+  assert.equal(x, snapPosition({ ...makeShape('disc'), z: 200 }, { x: 660 }, [still]).x);
+  assert.deepEqual(overlaps([{ ...moving, x }, still]), []);
+  assert.equal(overlaps([{ ...moving, x: x + 1 }, still]).length, 1);
 });
