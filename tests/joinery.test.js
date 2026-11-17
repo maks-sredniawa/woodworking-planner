@@ -289,3 +289,29 @@ test('dowels are traced as cylinders across the joint line and are not drawn oth
   assert.deepEqual([first.from[0], first.to[0]], [6, 46], 'the side takes what its 18 can hold (12), the shelf the rest');
   assert.ok(traced.every((piece) => piece.from[1] === 309 && piece.to[1] === 309));
 });
+
+test('cut joints follow the true outline: shaped pieces in a joint never overlap, and a rail pushed into its leg still does', () => {
+  const roundedShelf = shelf({ corners: 'rounded', cornerRadius: 50, cornerTopLeft: false, cornerTopRight: false });
+  const housed = { name: 'Case', parts: [side(), roundedShelf, side({ x: 782 })], joints: [] };
+  for (const kind of ['dado', 'dowels']) {
+    const project = joinParts(housed, kind, housed.parts[0].id, roundedShelf.id).project;
+    assert.deepEqual(assemblyOverlaps(project), [], `a ${kind} joint does not overlap`);
+  }
+  const dadoed = joinParts(housed, 'dado', housed.parts[0].id, roundedShelf.id).project;
+  const [end] = hardwarePieces(dadoed).filter((piece) => piece.type === 'wood');
+  assert.deepEqual([end.min, end.max.slice(0, 2)], [[12, 300, 0], [18, 318]]);
+  assert.ok(end.max[2] >= 194 && end.max[2] < 195, `the housed end stops where the rounded corner leaves the side, got ${end.max[2]}`);
+
+  const freeLeg = updatePart(leg(), 'shape', 'free');
+  const railed = rail();
+  const { project: framed, joint } = joinParts({ name: 'Free', parts: [freeLeg, railed], joints: [] }, 'tenon', freeLeg.id, railed.id);
+  assert.deepEqual([joint.part, joint.to], [railed.id, freeLeg.id]);
+  assert.equal(jointProblem(framed, joint.id), null);
+  assert.deepEqual(assemblyOverlaps(framed), []);
+
+  const project = tenoned();
+  const [left, middle] = project.parts;
+  const pushed = changePart(project, { ...middle, x: 40 }).project;
+  assert.deepEqual(assemblyOverlaps(pushed), [[left.id, middle.id]]);
+  assert.match(jointProblem(pushed, project.joints[0].id), /^Rail no longer touches Leg/);
+});
