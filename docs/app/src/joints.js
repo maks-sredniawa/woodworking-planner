@@ -1152,7 +1152,10 @@ function aroundLine(point, origin, direction) {
   return { along, distance: Math.hypot(...offset.map((value, i) => value - along * direction[i])) };
 }
 
+const gapTo = (boxes, box) => Math.min(...boxes.map((each) => boxGap(each, box)));
+
 const STOP_TRAVEL_MM = 0.5;
+const GRAZE_MM = 1;
 const STOP_REFINE_STEPS = 30;
 const knownStops = new WeakMap();
 
@@ -1191,11 +1194,12 @@ function findStop(project, jointId) {
   const obstacles = project.parts
     .filter((part) => !moving.has(part.id) && part.id !== joint.to)
     .map((part) => ({ part, box: orientedBox(part, mech.placement(part.id)) }))
-    .filter(({ box }) => inSwing(box) && closed.every((each) => separated(each, box)));
+    .filter(({ box }) => inSwing(box) && closed.every((each) => separated(each, box)))
+    .map((obstacle) => ({ ...obstacle, give: gapTo(closed, obstacle.box) < GRAZE_MM ? GRAZE_MM : TOUCH_MM }));
   if (!obstacles.length) return null;
   const blocker = (angle) => {
     const boxes = swung(angle);
-    return obstacles.find(({ box }) => boxes.some((each) => !separated(each, box))) ?? null;
+    return obstacles.find(({ box, give }) => gapTo(boxes, box) < -give) ?? null;
   };
   const toDegrees = (mm) => (mm / Math.max(radius, 1)) * (180 / Math.PI);
   const due = obstacles.map(() => 0);
@@ -1203,11 +1207,11 @@ function findStop(project, jointId) {
   for (let angle = 0; ; angle = Math.min(joint.opensTo, ...due)) {
     const boxes = swung(angle);
     let hit = false;
-    obstacles.forEach(({ box }, i) => {
+    obstacles.forEach(({ box, give }, i) => {
       if (due[i] > angle) return;
-      const gap = Math.min(...boxes.map((each) => boxGap(each, box)));
-      if (gap < -TOUCH_MM) hit = true;
-      else due[i] = angle + toDegrees(Math.max(STOP_TRAVEL_MM, gap + TOUCH_MM));
+      const gap = gapTo(boxes, box);
+      if (gap < -give) hit = true;
+      else due[i] = angle + toDegrees(Math.max(STOP_TRAVEL_MM, gap + give));
     });
     if (!hit) {
       clear = angle;

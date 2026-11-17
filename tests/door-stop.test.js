@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legacyPose, makePart, updatePart } from '../docs/app/src/model.js';
 import { assemblyOverlaps, changeJoint, joinParts, jointProblem, swingStop, updateJoint } from '../docs/app/src/joints.js';
+import { parseProject, serialize } from '../docs/app/src/project.js';
 
 const side = () => makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
 const door = () => makePart({ name: 'Door', length: 800, width: 400, thickness: 18, pose: legacyPose('yxz'), z: 244 });
@@ -87,4 +88,51 @@ test('a free-shape door stops at the wall where a board door of the same blank d
   const wall = block('Wall', [-100, -18], [244, 700]);
   const { project, joint } = joinParts({ name: 'Cabinet', parts: [frame, leaf, wall], joints: [] }, 'hinge', leaf.id, frame.id);
   assert.deepEqual(swingStop(project, joint.id), { angle: 90, by: wall.id });
+});
+
+function insetDoor(width, ...others) {
+  const left = makePart({ name: 'Left', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
+  const right = makePart({ name: 'Right', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx'), x: 18 + width });
+  const leaf = makePart({ name: 'Door', length: 800, width, thickness: 18, pose: legacyPose('yxz'), x: 18, z: 226 });
+  const hung = joinParts({ name: 'Cabinet', parts: [left, right, leaf, ...others], joints: [] }, 'hinge', leaf.id, left.id);
+  return { project: updateJoint(hung.project, hung.joint.id, 'edge', '+z'), joint: hung.joint, right };
+}
+
+test('an inset door flush between two sides opens with the stop on, though its corner grazes the far side by under 1 mm', () => {
+  const { project, joint } = insetDoor(400);
+  assert.equal(swingStop(project, joint.id), null);
+  assert.equal(changeJoint(project, joint.id, 'open', 90).project.joints[0].open, 90);
+});
+
+test('a side the closed door almost touches is grazed the same way as one it touches', () => {
+  const { project, joint, right } = insetDoor(400);
+  const apart = { ...project, parts: project.parts.map((part) => (part.id === right.id ? { ...part, x: part.x + 0.3 } : part)) };
+  assert.equal(swingStop(apart, joint.id), null);
+});
+
+test('a narrow inset door whose corner would cut over 1 mm into the far side stops before it does', () => {
+  const { project, joint, right } = insetDoor(100);
+  const over = (angle) => 100 * Math.cos(angle) + 18 * Math.sin(angle) - 100 - 1;
+  let [low, high] = [0, Math.atan2(18, 100)];
+  for (let i = 0; i < 40; i++) [low, high] = over((low + high) / 2) > 0 ? [low, (low + high) / 2] : [(low + high) / 2, high];
+  assert.deepEqual(swingStop(project, joint.id), { angle: Math.floor((low * 180) / Math.PI), by: right.id });
+  assert.equal(swingStop(project, joint.id).angle, 3);
+});
+
+test('a piece in the swing still stops a flush inset door', () => {
+  const post = block('Post', [250, 300], [300, 350]);
+  const { project, joint } = insetDoor(400, post);
+  const stop = swingStop(project, joint.id);
+  assert.equal(stop.by, post.id);
+  assert.ok(stop.angle > 0 && stop.angle < 90, stop.angle);
+});
+
+test('a version 3 project with a flush inset door open 90° loads without being open past the far side', () => {
+  const { project, joint } = insetDoor(400);
+  const saved = JSON.parse(serialize(updateJoint(updateJoint(project, joint.id, 'stops', false), joint.id, 'open', 90)));
+  delete saved.joints[0].stops;
+  const loaded = parseProject(JSON.stringify({ ...saved, version: 3 }));
+  assert.equal(loaded.joints[0].stops, true);
+  assert.equal(loaded.joints[0].open, 90);
+  assert.equal(jointProblem(loaded, loaded.joints[0].id), null);
 });

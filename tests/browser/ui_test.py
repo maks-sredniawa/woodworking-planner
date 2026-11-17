@@ -1217,6 +1217,31 @@ try:
             expect(loose.locator('details.joint')).to_have_count(0)
         loose.close()
 
+        inset = json.dumps({'format': 'woodworking-planner', 'version': 3, 'name': 'Inset door', 'parts': [
+            piece('Left', 1000, 244, '+y+z+x'), piece('Right', 1000, 244, '+y+z+x', x=418), piece('Door', 800, 400, '+y-x+z', x=18, z=226)], 'joints': [
+            {'kind': 'hinge', 'part': 2, 'to': 0, 'hingeType': 'butt', 'edge': '+z', 'open': 90, 'count': 2, 'size': 75, 'screwsEach': 6, 'screwDiameter': 3.5, 'screwLength': 16, 'opensTo': 180}]})
+        flush = browser.new_page(viewport={'width': 1280, 'height': 900})
+        flush.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        flush.on('pageerror', lambda e: errors.append(str(e)))
+        flush.goto(URL)
+        flush.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(inset)})')
+        flush.reload()
+        expect(flush.locator('#parts li')).to_have_count(3)
+        pick(flush, 'Door')
+        flush_card = flush.locator('details.joint')
+        expect(flush_card.locator('summary .dim')).to_have_text('2 × butt 75 mm · open 90°')
+        expect(flush_card.locator('summary .warn')).to_be_hidden()
+        expect(flush.locator('#parts li').filter(has_text='Open past a piece in its way')).to_have_count(0)
+        flush_card.locator('summary').click()
+        expect(flush_card.locator('[data-jf=stops]')).to_be_checked()
+        expect(flush_card.locator('.stop-note')).to_be_empty()
+        flush_card.locator('[data-jf-act=close]').click()
+        flush_card.locator('[data-jf-act=open-full]').click()
+        expect(flush_card.locator('.stop-note')).to_be_empty()
+        assert flush.evaluate('woodworkingPlanner.project.joints[0].open') == 180
+        flush.evaluate('localStorage.clear()')
+        flush.close()
+
         pick(framed, 'Door')
         framed.click('#joint-add-open')
         framed.select_option('#joint-kind', 'hinge')
