@@ -28,16 +28,16 @@ anything.
   and a board can have rounded or cut corners.
 - **Place them by hand.** Drag a part along the floor or up and down, snap it flush against other
   parts, nudge it with the arrow keys, or turn it 90° at a time so it can face any way.
-- **Join parts like the real thing.** Screw, nail, glue or bracket two parts that touch, or hang
-  a door or lid on hinges. Joined parts move and turn together, and a hinged part swings open to
-  any angle when you drag it.
-- **Hardware list.** Hinges, angle brackets, screws and nails are counted and sized from the
-  parts they join, ready to take to the shop.
+- **Join parts like the real thing.** Screw, nail, glue or bracket two parts that touch, house one
+  in a dado, give it a mortise and tenon or dowel it, or hang a door or lid on hinges. Joined parts
+  move and turn together, and a hinged part swings open to any angle when you drag it.
+- **Hardware list.** Hinges, angle brackets, screws, nails and dowel pins are counted and sized from
+  the parts they join, ready to take to the shop.
 - **Lock what's finished.** A locked part can't be moved, turned, resized or deleted by mistake.
 - **Catch mistakes.** Parts that overlap are flagged in the list.
 - **Cut list.** Identical parts of the same wood are grouped, each with the board size to cut it
-  from (dowels as rod), and totals for count, volume, face area, approximate weight and the overall
-  size.
+  from (dowels as rod, and longer by any tenon or dado), and totals for count, volume, face area,
+  approximate weight and the overall size.
 - **Undo and redo** with Ctrl+Z and Ctrl+Shift+Z.
 - **Your project stays yours.** It saves itself in the browser, and you can save and open it as a
   `.woodplan.json` file.
@@ -48,8 +48,7 @@ It opens with an example bookshelf to look around in.
 ## Known limitations
 
 - Millimetres only, for now.
-- No cut joints yet (dados, tenons), and a swinging door is not stopped by parts in its way:
-  they are flagged as overlapping instead.
+- A swinging door is not stopped by parts in its way: they are flagged as overlapping instead.
 - Joints are offered only between faces that meet square on, so two parts meeting on a slope, or a
   disc set inside a ring, are not offered for a joint.
 - No cutting plan that fits parts onto standard boards or plywood sheets.
