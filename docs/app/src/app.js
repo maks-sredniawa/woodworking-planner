@@ -40,6 +40,7 @@ import {
   joinParts,
   joinedTo,
   joineryXray,
+  jointFace,
   jointFaces,
   jointProblem,
   jointRemoval,
@@ -952,16 +953,14 @@ const JOINT_FORMS = {
   ],
 };
 
+const NO_FACE = 'No face fits';
+
 function faceOptions(joint) {
-  return Object.fromEntries(jointFaces(project, joint).map((face) => [face, FACES[face]]));
-}
-
-function shownFace(joint) {
   const faces = jointFaces(project, joint);
-  return faces.includes(joint.face) ? joint.face : faces[0] ?? null;
+  return faces.length ? Object.fromEntries(faces.map((face) => [face, FACES[face]])) : { '': NO_FACE };
 }
 
-const faceWord = (joint) => FACES[shownFace(joint)]?.replace(' face', '').toLowerCase();
+const faceWord = (joint) => FACES[jointFace(project, joint)]?.replace(' face', '').toLowerCase();
 
 function restingStop(hinge) {
   const stop = hinge && swingStop(project, hinge.id);
@@ -1160,7 +1159,7 @@ function fillJointCard(card, joint, part) {
     if (control === document.activeElement && control.type === 'number') continue;
     const through = joint.kind === 'tenon' && field === 'length' && joint.through;
     if (control.type === 'checkbox') control.checked = Boolean(joint[field]);
-    else control.value = String(field === 'face' ? shownFace(joint) : through ? cutJoint(project, joint)?.reach ?? joint.length : joint[field]);
+    else control.value = field === 'face' ? jointFace(project, joint) ?? '' : String(through ? cutJoint(project, joint)?.reach ?? joint.length : joint[field]);
     if (control.getAttribute('aria-invalid') === 'true') showJointError(control, null);
   }
   const live = card.querySelector('[data-live]');
@@ -1174,6 +1173,8 @@ function fillJointCard(card, joint, part) {
     stop.dataset.said = said;
     announce(stop, said);
   }
+  const faceSelect = card.querySelector('select[data-jf="face"]');
+  if (faceSelect) offWithReason(faceSelect, jointFace(project, joint) ? null : problem ?? NO_FACE);
   card.querySelector('[data-jf-act="suggest"]').hidden = !differsFromSuggestion(joint);
   const removal = jointRemoval(project, joint.id);
   offWithReason(card.querySelector('[data-jf-act="remove"]'), removal.refused && lockedMoveMessage(removal.piece));

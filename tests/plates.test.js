@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { legacyPose, makePart, updatePart } from '../docs/app/src/model.js';
-import { hardwareList, hardwarePieces, joinParts, jointFaces, jointProblem, rotateAssembly, suggestedSizes, updateJoint } from '../docs/app/src/joints.js';
+import { applySuggestedSizes, hardwareList, hardwarePieces, joinParts, jointFace, jointFaces, jointProblem, rotateAssembly, suggestedSizes, updateJoint } from '../docs/app/src/joints.js';
 
 const project = (parts, joints = []) => ({ name: 'Frame', parts, joints });
 const stile = (fields = {}) => makePart({ name: 'Stile', length: 600, width: 60, thickness: 18, pose: legacyPose('yxz'), ...fields });
@@ -107,6 +107,49 @@ test('plate warnings: screws longer than a piece is thick, a plate wider than it
   const moved = { ...state, parts: state.parts.map((part) => (part.id === right.id ? { ...part, y: 5, z: 5 } : part)) };
   assert.match(jointProblem(moved, joint.id), /needs one flat face running across both pieces/);
   assert.equal(suggestedSizes(moved, moved.joints[0]), null);
+});
+
+test('a plate whose chosen face stops being flush is shown, drawn, checked and suggested on the one face it falls back to', () => {
+  const panel = (fields) => makePart({ name: 'Panel', length: 400, width: 300, thickness: 9, pose: legacyPose('xzy'), ...fields });
+  const a = panel({ x: 0 });
+  const b = panel({ name: 'Next', x: 400 });
+  const joined = joinParts(project([a, b]), 'mendingPlate', b.id, a.id).project;
+  const onTop = updateJoint(joined, joined.joints[0].id, 'face', '+y');
+  assert.equal(jointFace(onTop, onTop.joints[0]), '+y');
+  const thicker = { ...onTop, parts: onTop.parts.map((part) => (part.id === b.id ? updatePart(part, 'thickness', 12) : part)) };
+  const [joint] = thicker.joints;
+  assert.equal(jointFaces(thicker, joint).includes('+y'), false);
+  assert.equal(jointFace(thicker, joint), '-y');
+  const heads = hardwarePieces(thicker).filter((piece) => piece.kind === 'plateScrew');
+  assert.ok(heads.length > 0);
+  assert.ok(heads.every((head) => head.normal.join() === '0,-1,0'));
+  assert.equal(suggestedSizes(thicker, joint).face, '-y');
+  assert.equal(applySuggestedSizes(thicker, joint.id).joints[0].face, '-y');
+});
+
+test('pockets on a face that no longer fits fall back to the face a new joint would get, wherever they are shown', () => {
+  const left = side();
+  const right = side({ name: 'Right side', x: 782 });
+  const top = makePart({ name: 'Top', length: 800, width: 244, thickness: 18, pose: legacyPose('xzy'), y: 1000 });
+  const joined = joinParts(project([left, right, top]), 'pocketScrews', top.id, left.id);
+  const stale = { ...joined.project, joints: [{ ...joined.joint, face: '+z' }] };
+  const [joint] = stale.joints;
+  assert.equal(jointFace(stale, joint), '+x');
+  const normals = hardwarePieces(stale).filter((piece) => piece.type === 'pocket').map((pocket) => pocket.normal.join());
+  assert.deepEqual(normals, ['1,0,0', '1,0,0']);
+  assert.equal(suggestedSizes(stale, joint).face, '+x');
+});
+
+test('a plate or pockets with no face that fits have no face', () => {
+  const left = rail({ x: 0 });
+  const right = rail({ name: 'Right rail', x: 400 });
+  const { project: state, joint } = joinParts(project([left, right]), 'mendingPlate', right.id, left.id);
+  const moved = { ...state, parts: state.parts.map((part) => (part.id === right.id ? { ...part, y: 5, z: 5 } : part)) };
+  assert.equal(jointFace(moved, joint), null);
+  const board = shelf();
+  const under = makePart({ name: 'Under', length: 764, width: 244, thickness: 18, pose: legacyPose('xzy'), x: 18, y: 282 });
+  const pockets = { ...project([under, board]), joints: [{ id: 'j', kind: 'pocketScrews', part: board.id, to: under.id, count: 2, diameter: 4, length: 32, face: '-y', glued: false }] };
+  assert.equal(jointFace(pockets, pockets.joints[0]), null);
 });
 
 test('a corner plate whose pieces no longer share a flush face is warned about and suggests no sizes', () => {
