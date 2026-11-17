@@ -1758,7 +1758,7 @@ try:
         download.value.save_as(planned)
         saved_plan = json.loads(planned.read_text())
         planned.unlink()
-        assert saved_plan['version'] == 4 and saved_plan['cutting']['kerf'] == 0, saved_plan.get('cutting')
+        assert saved_plan['version'] == 6 and saved_plan['cutting']['kerf'] == 0, saved_plan.get('cutting')
         assert all('grain' in part for part in saved_plan['parts'])
         planner.click('#view-list')
         expect(planner.locator('#plan')).to_be_hidden()
