@@ -281,11 +281,11 @@ test('saving drops stock choices that no piece uses any more', () => {
   assert.deepEqual(project.cutting.stock['oak:20'], own(1234, 321));
 });
 
-test('a project saves its cutting settings and grain ticks in format version 4 and older files still open', () => {
+test('a project saves its cutting settings and grain ticks in format version 6 and older files still open', () => {
   const project = { ...starterProject(), cutting: { kerf: 4, trim: 5, stock: { 'pine:18': own(3000, 244) } } };
   project.parts[1] = { ...project.parts[1], grain: false };
   const text = serialize(project);
-  assert.match(text, /"version": 4/);
+  assert.match(text, /"version": 6/);
   const loaded = parseProject(text);
   assert.deepEqual(loaded.cutting, project.cutting);
   assert.equal(loaded.parts[1].grain, false);
@@ -293,4 +293,18 @@ test('a project saves its cutting settings and grain ticks in format version 4 a
   const old = parseProject('{"format":"woodworking-planner","version":3,"parts":[{"species":"mdf"}],"joints":[]}');
   assert.deepEqual(old.cutting, DEFAULT_CUTTING);
   assert.equal(old.parts[0].grain, false);
+});
+
+test('a version 4 file, saved before cutting settings, opens with the cutting defaults and each wood grain', () => {
+  const outline = [point(0, 0), point(400, 0), point(400, 300)];
+  const file = JSON.stringify({
+    format: 'woodworking-planner',
+    version: 4,
+    parts: [{ species: 'oak', shape: 'free', points: outline }, { species: 'mdf' }],
+    joints: [],
+  });
+  const loaded = parseProject(file);
+  assert.deepEqual(loaded.cutting, DEFAULT_CUTTING);
+  assert.deepEqual(loaded.parts.map((part) => part.grain), [true, false]);
+  assert.match(serialize(loaded), /"version": 6/);
 });
