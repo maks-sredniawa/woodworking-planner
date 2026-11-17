@@ -35,6 +35,14 @@ test('a mending plate needs a flat face running across both pieces', () => {
   );
 });
 
+test('plate screws are no longer than stock under 14 thick, the plate under the head keeping them inside, and at least 2 shorter from 14 up', () => {
+  for (const [thickness, length] of [[6, 6], [9, 8], [11, 10], [12, 12], [13, 12], [14, 12], [17, 12], [18, 16], [21, 16], [22, 20], [40, 20]]) {
+    const left = rail({ x: 0, thickness });
+    const right = rail({ name: 'Right rail', x: 400, thickness });
+    assert.equal(joinParts(project([left, right]), 'mendingPlate', right.id, left.id).joint.screwLength, length, `${thickness} thick`);
+  }
+});
+
 test('two plates for a joint line over 300 long, and plates sized to fit the pieces', () => {
   const wide = (fields) => makePart({ name: 'Panel', length: 400, width: 350, thickness: 18, pose: legacyPose('xyz'), ...fields });
   const a = wide({ x: 0 });
