@@ -28,11 +28,12 @@ anything.
   and a board can have rounded or cut corners.
 - **Place them by hand.** Drag a part along the floor or up and down, snap it flush against other
   parts, nudge it with the arrow keys, or turn it 90° at a time so it can face any way.
-- **Join parts like the real thing.** Screw, nail, glue or bracket two parts that touch, house one
-  in a dado, give it a mortise and tenon or dowel it, or hang a door or lid on hinges. Joined parts
-  move and turn together, and a hinged part swings open to any angle when you drag it.
-- **Hardware list.** Hinges, angle brackets, screws, nails and dowel pins are counted and sized from
-  the parts they join, ready to take to the shop.
+- **Join parts like the real thing.** Screw, nail, glue, bracket, plate or pocket-screw two parts
+  that touch, house one in a dado, give it a mortise and tenon or dowel it, or hang a door or lid
+  on hinges. Joined parts move and turn together, and a hinged part swings open when you drag it,
+  stopping at the first part in its way.
+- **Hardware list.** Hinges, angle brackets, mending and corner plates, screws, pocket screws, nails
+  and dowel pins are counted and sized from the parts they join, ready to take to the shop.
 - **Lock what's finished.** A locked part can't be moved, turned, resized or deleted by mistake.
 - **Catch mistakes.** Parts that overlap are flagged in the list.
 - **Cut list.** Identical parts of the same wood are grouped, each with the board size to cut it
@@ -48,7 +49,6 @@ It opens with an example bookshelf to look around in.
 ## Known limitations
 
 - Millimetres only, for now.
-- A swinging door is not stopped by parts in its way: they are flagged as overlapping instead.
 - Joints are offered only between faces that meet square on, so two parts meeting on a slope, or a
   disc set inside a ring, are not offered for a joint.
 - No cutting plan that fits parts onto standard boards or plywood sheets.
