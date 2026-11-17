@@ -54,7 +54,7 @@ import {
   updateJoint,
 } from './joints.js';
 import { starterProject } from './project.js';
-import { cuttingOf, misfitIds, planPieces } from './cutplan.js';
+import { cuttingOf, misfitIds, projectPieces } from './cutplan.js';
 import { createPlanView } from './planview.js';
 import { createScene } from './scene.js';
 import { mm } from './format.js';
@@ -488,7 +488,7 @@ function jointWarnings(part) {
 
 function renderParts() {
   const clashing = new Set(assemblyOverlaps(project).flat());
-  const misfits = misfitIds(planPieces(cutList(project.parts)), cuttingOf(project));
+  const misfits = misfitIds(projectPieces(project), cuttingOf(project));
   const focusKey = $('parts').contains(document.activeElement) ? document.activeElement.dataset.focus : null;
   $('parts').replaceChildren(
     ...project.parts.map((part) => {
