@@ -36,8 +36,8 @@ anything.
 - **Lock what's finished.** A locked part can't be moved, turned, resized or deleted by mistake.
 - **Catch mistakes.** Parts that overlap are flagged in the list.
 - **Cut list.** Identical parts of the same wood are grouped, each with the board size to cut it
-  from (dowels as rod, and longer by any tenon or dado), and totals for count, volume, face area,
-  approximate weight and the overall size.
+  from (dowels as rod, longer by any tenon or dado on an end, and wider by any dado along an edge),
+  and totals for count, volume, face area, approximate weight and the overall size.
 - **Undo and redo** with Ctrl+Z and Ctrl+Shift+Z.
 - **Your project stays yours.** It saves itself in the browser, and you can save and open it as a
   `.woodplan.json` file.
