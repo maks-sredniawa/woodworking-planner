@@ -1195,15 +1195,17 @@ try:
         plate = lambda kind, part, to, **size: {'kind': kind, 'part': part, 'to': to, **size, 'screwsEach': 4, 'screwDiameter': 3.5, 'screwLength': 16, 'face': '-z', 'glued': False}
         off_flush = json.dumps({'format': 'woodworking-planner', 'version': 4, 'name': 'Off flush', 'parts': [
             piece('Rail', 400, 60, '+x+y+z'), piece('Offset rail', 400, 60, '+x+y+z', x=400, y=5, z=5),
-            piece('Stile', 600, 60, '+y-x+z', x=1000), piece('Low rail', 400, 60, '+x+y+z', x=1060, y=5, z=5)], 'joints': [
-            plate('mendingPlate', 1, 0, count=1, length=80, width=16), plate('cornerPlate', 3, 2, leg=80, width=16)]})
+            piece('Stile', 600, 60, '+y-x+z', x=1000), piece('Low rail', 400, 60, '+x+y+z', x=1060, y=5, z=5),
+            piece('Panel', 400, 300, '+x-z+y', thickness=9, x=2000), piece('Thick panel', 400, 300, '+x-z+y', thickness=12, x=2400)], 'joints': [
+            plate('mendingPlate', 1, 0, count=1, length=80, width=16), plate('cornerPlate', 3, 2, leg=80, width=16),
+            {**plate('mendingPlate', 5, 4, count=1, length=80, width=16), 'screwLength': 8, 'face': '+y'}]})
         loose = browser.new_page(viewport={'width': 1280, 'height': 900})
         loose.on('console', lambda m: m.type == 'error' and errors.append(m.text))
         loose.on('pageerror', lambda e: errors.append(str(e)))
         loose.goto(URL)
         loose.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(off_flush)})')
         loose.reload()
-        expect(loose.locator('#parts li')).to_have_count(4)
+        expect(loose.locator('#parts li')).to_have_count(6)
         for name, other, needs in [('Offset rail', 'Rail', 'A mending plate needs one flat face running across both pieces'),
                                    ('Low rail', 'Stile', 'A corner plate needs two pieces meeting at a right angle with one flat face across both')]:
             pick(loose, name)
@@ -1213,8 +1215,21 @@ try:
             loose_card.locator('summary').click()
             expect(loose_card.locator('.joint-body > .warn')).to_have_text(f'{needs}. Line up a face of {name} with a face of {other} first.')
             expect(loose_card.locator('[data-jf-act=suggest]')).to_be_hidden()
+            no_face = loose_card.locator('[data-jf=face]')
+            expect(no_face.locator('option')).to_have_text(['No face fits'])
+            expect(no_face).to_have_attribute('aria-disabled', 'true')
+            expect(no_face).to_have_attribute('title', f'{needs}. Line up a face of {name} with a face of {other} first.')
             loose_card.locator('[data-jf-act=remove]').click()
             expect(loose.locator('details.joint')).to_have_count(0)
+        pick(loose, 'Thick panel')
+        stale_card = loose.locator('details.joint')
+        expect(stale_card.locator('summary .dim')).to_have_text('1 × 80 × 16 · bottom face')
+        stale_card.locator('summary').click()
+        expect(stale_card.locator('[data-jf=face]')).to_have_value('-y')
+        expect(stale_card.locator('[data-jf=face]')).not_to_have_attribute('aria-disabled', 'true')
+        stale_card.locator('[data-jf-act=suggest]').click()
+        loose.wait_for_function('woodworkingPlanner.project.joints.find((j) => j.kind === "mendingPlate").face === "-y"')
+        expect(stale_card.locator('summary .dim')).to_have_text('1 × 80 × 16 · bottom face')
         loose.close()
 
         inset = json.dumps({'format': 'woodworking-planner', 'version': 3, 'name': 'Inset door', 'parts': [
