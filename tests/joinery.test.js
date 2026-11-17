@@ -111,6 +111,25 @@ test('a cut joint on a piece switched away from Board is its own problem, adds n
   assert.equal(cutAllowances(triangle).size, 0);
 });
 
+test('a free shape can house a cut joint but never goes in, even when its outline is still a rectangle', () => {
+  const project = tenoned();
+  const id = project.joints[0].id;
+  const railId = project.joints[0].part;
+  const free = changePart(project, updatePart(named(project, 'Rail'), 'shape', 'free')).project;
+  assert.equal(jointProblem(free, id), 'Only a board can have a tenon. Rail is a free shape.');
+  assert.equal(cutAllowances(free).has(railId), false);
+  assert.equal(cutList(free.parts, cutAllowances(free)).find((row) => row.names.includes('Rail')).length, 600);
+  assert.deepEqual(joineryXray(free, railId), []);
+  const loose = { ...free, joints: [] };
+  assert.equal(joinParts(loose, 'tenon', named(loose, 'Leg').id, railId).error, 'Only a board can have a tenon. Rail is a free shape.');
+
+  const housed = case_();
+  const freeSide = { ...housed, parts: housed.parts.map((part, i) => (i === 0 ? updatePart(part, 'shape', 'free') : part)) };
+  const { project: dadoed, joint } = joinParts(freeSide, 'dado', freeSide.parts[0].id, freeSide.parts[1].id);
+  assert.deepEqual([joint.part, joint.to, joint.depth], [freeSide.parts[1].id, freeSide.parts[0].id, 6]);
+  assert.equal(cutAllowances(dadoed).get(freeSide.parts[0].id).cuts, 'Dado 18 × 6');
+});
+
 test('a tenon is drawn inside the housing piece when the rail is wider than where they meet', () => {
   const left = leg();
   const high = rail({ y: 650 });
