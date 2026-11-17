@@ -53,9 +53,13 @@ const presetsOf = (kind) => STOCK_PRESETS[kind].flatMap((group) => group.sizes);
 
 export function defaultStock(kind, pieces, trim = 0) {
   if (kind === 'sheet') return FALLBACK_STOCK.sheet;
-  const fitting = presetsOf(kind).filter((stock) => pieces.every((piece) => !fit(piece, stock, trim)));
-  const smallest = fitting.reduce((best, stock) => (!best || stock.length * stock.width < best.length * best.width ? stock : best), null);
-  return smallest ?? FALLBACK_STOCK[kind];
+  let best = null;
+  for (const stock of presetsOf(kind)) {
+    const fitting = pieces.filter((piece) => !fit(piece, stock, trim)).length;
+    const smaller = best && fitting === best.fitting && stock.length * stock.width < best.stock.length * best.stock.width;
+    if (!best || fitting > best.fitting || smaller) best = { stock, fitting };
+  }
+  return best?.fitting ? best.stock : FALLBACK_STOCK[kind];
 }
 
 function stockFor(key, kind, pieces, settings) {
