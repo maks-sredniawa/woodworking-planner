@@ -1223,8 +1223,27 @@ try:
             expect(cut.locator('#hardware-rows tr', has_text='Wood glue')).to_contain_text('Rail – Leg')
             assert cut.locator('#parts .warn').count() == 0, 'pieces in a cut joint are flagged'
             cut.screenshot(path=str(HERE / name.replace('joinery', 'joinery-cut')), full_page=True)
+            tab('edit')
+            cut.locator('#editor input[name=shape][value=free]').check(force=True)
+            tab('parts')
+            rail_item = cut.locator('#parts li').filter(has=cut.locator('.nm', has_text=re.compile('^Rail$')))
+            expect(rail_item.locator('.warn')).to_have_text('Not a board')
             cut.evaluate('localStorage.clear()')
             cut.close()
+
+        turned_file = json.dumps({'format': 'woodworking-planner', 'version': 5, 'name': 'Frame', 'parts': [
+            {'name': 'Leg', 'length': 45, 'width': 700, 'thickness': 45, 'pose': '+x+y+z'},
+            {'name': 'Rail', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+x+y+z', 'x': 45, 'y': 600, 'z': 10}],
+            'joints': [{'kind': 'tenon', 'part': 1, 'to': 0, 'length': 30, 'thickness': 8, 'width': 60, 'through': False, 'glued': True}]})
+        turned = browser.new_page(viewport={'width': 1280, 'height': 900})
+        turned.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        turned.on('pageerror', lambda e: errors.append(str(e)))
+        turned.goto(URL)
+        turned.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(turned_file)})')
+        turned.reload()
+        expect(turned.locator('#parts li .warn')).to_have_text(['Joint no longer fits', 'Joint no longer fits'])
+        turned.evaluate('localStorage.clear()')
+        turned.close()
 
         offline_context = browser.new_context(viewport={'width': 1280, 'height': 900})
         away = offline_context.new_page()
