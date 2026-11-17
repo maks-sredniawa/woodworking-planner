@@ -24,8 +24,8 @@ anything.
 
 - **Parts in 3D.** Each part has its size in millimetres and its wood, and you see it with wood
   colour and grain. Add, copy, delete and edit them.
-- **More than boards.** A part can be a board, a round disc, a dowel, a curved arc or a triangle,
-  and a board can have rounded or cut corners.
+- **More than boards.** A part can be a board, a round disc, a dowel, a curved arc, a triangle or a
+  free shape you draw point by point or by hand, and a board can have rounded or cut corners.
 - **Place them by hand.** Drag a part along the floor or up and down, snap it flush against other
   parts, nudge it with the arrow keys, or turn it 90° at a time so it can face any way.
 - **Join parts like the real thing.** Screw, nail, glue, bracket, plate or pocket-screw two parts
@@ -39,6 +39,8 @@ anything.
 - **Cut list.** Identical parts of the same wood are grouped, each with the board size to cut it
   from (dowels as rod, longer by any tenon or dado on an end, and wider by any dado along an edge),
   and totals for count, volume, face area, approximate weight and the overall size.
+- **Cutting plan.** Lay each part onto standard boards and plywood sheets with saw kerf and edge
+  trim, keeping the grain along the length, and see how many to buy and what is left over.
 - **Undo and redo** with Ctrl+Z and Ctrl+Shift+Z.
 - **Your project stays yours.** It saves itself in the browser, and you can save and open it as a
   `.woodplan.json` file.
@@ -51,7 +53,6 @@ It opens with an example bookshelf to look around in.
 - Millimetres only, for now.
 - Joints are offered only between faces that meet square on, so two parts meeting on a slope, or a
   disc set inside a ring, are not offered for a joint.
-- No cutting plan that fits parts onto standard boards or plywood sheets.
 
 ## Help and feedback
 
