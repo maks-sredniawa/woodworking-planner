@@ -1,4 +1,5 @@
 import { SPECIES, cutList, roundMm } from './model.js';
+import { cutAllowances } from './joints.js';
 
 export const KERF_LIMITS = { min: 0, max: 10 };
 export const TRIM_LIMITS = { min: 0, max: 100 };
@@ -258,8 +259,10 @@ export function cuttingFromFile(raw) {
 
 export const cuttingOf = (project) => project.cutting ?? DEFAULT_CUTTING;
 
+export const projectPieces = (project) => planPieces(cutList(project.parts, cutAllowances(project)));
+
 export function cuttingToFile(project) {
   const cutting = cuttingOf(project);
-  const used = new Set(planPieces(cutList(project.parts)).map(groupKey));
+  const used = new Set(projectPieces(project).map(groupKey));
   return { ...cutting, stock: Object.fromEntries(Object.entries(cutting.stock).filter(([key]) => used.has(key))) };
 }

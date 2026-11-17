@@ -1,5 +1,5 @@
 import { SPECIES, cutList, roundMm } from './model.js';
-import { KERF_LIMITS, STOCK_LIMITS, STOCK_PRESETS, TRIM_LIMITS, cuttingOf, cuttingPlan, planPieces } from './cutplan.js';
+import { KERF_LIMITS, STOCK_LIMITS, STOCK_PRESETS, TRIM_LIMITS, cuttingOf, cuttingPlan, projectPieces } from './cutplan.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const OWN = 'own';
@@ -38,7 +38,7 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
   };
   const sections = new Map();
   const drawings = new Map();
-  let cached = { parts: null, cutting: null, plan: null };
+  let cached = { parts: null, joints: null, cutting: null, plan: null };
   let selected = null;
   const size = (length, width) => `${mm(length)} × ${mm(width)}`;
 
@@ -55,8 +55,8 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
 
   function planOf(project) {
     const cutting = cuttingOf(project);
-    if (cached.parts !== project.parts || cached.cutting !== cutting) {
-      cached = { parts: project.parts, cutting, plan: cuttingPlan(planPieces(cutList(project.parts)), cutting) };
+    if (cached.parts !== project.parts || cached.joints !== project.joints || cached.cutting !== cutting) {
+      cached = { parts: project.parts, joints: project.joints, cutting, plan: cuttingPlan(projectPieces(project), cutting) };
     }
     return cached.plan;
   }
