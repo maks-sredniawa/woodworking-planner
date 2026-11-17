@@ -50,8 +50,8 @@ It opens with an example bookshelf to look around in.
 - Millimetres only, for now.
 - No cut joints yet (dados, tenons), and a swinging door is not stopped by parts in its way:
   they are flagged as overlapping instead.
-- Overlaps and snapping use each part's bounding box, so round or angled parts can be flagged as
-  overlapping when their boxes overlap even though the parts themselves don't touch.
+- Joints are offered only between faces that meet square on, so two parts meeting on a slope, or a
+  disc set inside a ring, are not offered for a joint.
 - No cutting plan that fits parts onto standard boards or plywood sheets.
 
 ## Help and feedback
