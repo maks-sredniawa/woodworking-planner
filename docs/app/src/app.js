@@ -462,7 +462,8 @@ function jointWarnings(part) {
     if (!problem) continue;
     if (joint.kind === 'hinge') words.add(/thick/.test(problem) ? 'Too thin for concealed hinges' : 'Hinge can’t swing');
     else if (/no longer touches/.test(problem)) words.add('Joint no longer touches');
-    else if (/no longer meets/.test(problem)) words.add('Joint no longer fits');
+    else if (/^Only a board/.test(problem)) words.add('Not a board');
+    else if (/no longer meets|no longer offers a face/.test(problem)) words.add('Joint no longer fits');
     else if (joint.kind in CUT_WARNINGS) words.add(CUT_WARNINGS[joint.kind]);
     else words.add('Fixing too long');
   }
