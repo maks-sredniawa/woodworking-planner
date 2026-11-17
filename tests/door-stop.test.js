@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart, updatePart } from '../docs/app/src/model.js';
+import { legacyPose, makePart, makeShape, updatePart } from '../docs/app/src/model.js';
 import { assemblyOverlaps, changeJoint, joinParts, jointProblem, swingStop, updateJoint } from '../docs/app/src/joints.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
 
@@ -82,12 +82,35 @@ test('a stop never swings a locked door', () => {
   assert.equal(changeJoint(locked, joint.id, 'open', 150).refused, 'locked');
 });
 
-test('a free-shape door stops at the wall where a board door of the same blank does', () => {
+test('a free-shape door stops at the wall where a board door of the same outline does', () => {
   const frame = side();
   const leaf = updatePart(door(), 'shape', 'free');
   const wall = block('Wall', [-100, -18], [244, 700]);
   const { project, joint } = joinParts({ name: 'Cabinet', parts: [frame, leaf, wall], joints: [] }, 'hinge', leaf.id, frame.id);
   assert.deepEqual(swingStop(project, joint.id), { angle: 90, by: wall.id });
+});
+
+function roundDoorWith(...others) {
+  const frame = side();
+  const leaf = { ...makeShape('disc'), name: 'Round door', pose: legacyPose('yxz'), z: 244 };
+  return joinParts({ name: 'Cabinet', parts: [frame, leaf, ...others], joints: [] }, 'hinge', leaf.id, frame.id);
+}
+
+const cube = (name, x, z) => makePart({ name, length: 50, width: 50, thickness: 50, pose: legacyPose('xyz'), x, y: 0, z });
+
+test('a round door swings past a block in the corner of its box and stops at one on its rim', () => {
+  const corner = cube('Corner', -30, 594);
+  const past = roundDoorWith(corner);
+  assert.equal(swingStop(past.project, past.joint.id), null);
+  assert.equal(changeJoint(past.project, past.joint.id, 'open', 90).project.joints[0].open, 90);
+  const rim = cube('Rim', -30, 419);
+  const stopped = roundDoorWith(rim);
+  const stop = swingStop(stopped.project, stopped.joint.id);
+  assert.equal(stop.by, rim.id);
+  assert.ok(stop.angle > 45 && stop.angle < 90, stop.angle);
+  const opened = changeJoint(stopped.project, stopped.joint.id, 'open', 90);
+  assert.equal(opened.project.joints[0].open, stop.angle);
+  assert.deepEqual(assemblyOverlaps(opened.project), []);
 });
 
 function insetDoor(width, ...others) {
