@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SPECIES, cutList, makePart, makeShape, partFromFile, updatePart } from '../docs/app/src/model.js';
 import { DEFAULT_CUTTING, cuttingFromFile, cuttingPlan, defaultStock, misfitIds, planPieces } from '../docs/app/src/cutplan.js';
+import { point } from '../docs/app/src/free.js';
 import { parseProject, serialize, starterProject } from '../docs/app/src/project.js';
 
 const settings = (fields = {}) => ({ ...DEFAULT_CUTTING, ...fields });
@@ -173,6 +174,23 @@ test('the example bookshelf needs one plywood sheet and three pine boards', () =
 test('dowels are not laid out', () => {
   const plan = planOf([makeShape('dowel'), board({ length: 500, width: 100 })]);
   assert.deepEqual(plan.groups.map((group) => group.key), ['pine:18']);
+});
+
+test('a free shape is laid out as the box round its outline, bent edges included, and keeps its grain tick', () => {
+  const bulging = [point(0, 0), point(800, 0), point(800, 200, 100), point(0, 200)];
+  const free = updatePart(makeShape('free'), 'points', bulging);
+  assert.equal(free.grain, true);
+  const [piece] = piecesOf([free]);
+  assert.deepEqual([piece.length, piece.width, piece.thickness, piece.grain], [800, 300, 18, true]);
+  const stock = { 'pine:18': own(400, 1000) };
+  assert.deepEqual(planOf([free], { stock }).groups[0].misfits.map((misfit) => misfit.reason), ['grain']);
+  const [placed] = planOf([updatePart(free, 'grain', false)], { stock }).groups[0].sheets[0].placements;
+  assert.deepEqual([placed.length, placed.width, placed.turned], [300, 800, true]);
+  const unticked = updatePart(makePart({ length: 600, width: 300 }), 'grain', false);
+  assert.equal(updatePart(unticked, 'shape', 'free').grain, false, 'switching to a free shape keeps the tick');
+  assert.equal(updatePart(makeShape('free'), 'species', 'mdf').grain, false);
+  const [loaded] = parseProject(serialize({ name: 'n', parts: [updatePart(free, 'grain', false)] })).parts;
+  assert.deepEqual([loaded.shape, loaded.grain, piecesOf([loaded])[0].width], ['free', false, 300]);
 });
 
 test('sheets come first, then boards, each by wood name and then thickness', () => {
