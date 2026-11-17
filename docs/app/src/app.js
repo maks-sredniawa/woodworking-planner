@@ -130,7 +130,7 @@ function swingDrag(swing, invertSnap) {
   const start = jointById(dragStart.project, dragStart.hinge.id);
   const angle = swingTo(start.open + swing, start.opensTo, snapOn !== invertSnap, dragStart.stop?.angle ?? null);
   if (angle === jointById(project, start.id).open) return;
-  const next = updateJoint({ ...dragStart.project, parts: project.parts }, start.id, 'open', angle);
+  const next = updateJoint(dragStart.project, start.id, 'open', angle);
   if (!next) return;
   project = next;
   placeView();
