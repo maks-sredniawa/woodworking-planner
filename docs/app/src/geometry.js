@@ -194,6 +194,36 @@ export function solidsClash(a, b) {
   return a.pieces.some((piece) => boxesCross(piece.box, b.box) && b.pieces.some((other) => piecesClash(piece, other)));
 }
 
+function boxGap(a, b) {
+  let widest = -Infinity;
+  for (let i = 0; i < 3; i++) widest = Math.max(widest, b.min[i] - a.max[i], a.min[i] - b.max[i]);
+  return widest;
+}
+
+function pieceGap(a, b) {
+  let widest = boxGap(a.box, b.box);
+  const [one, two] = [[0, 0], [0, 0]];
+  eachAxis(a, b, (x, y, z) => {
+    castShadow(a, x, y, z, one);
+    castShadow(b, x, y, z, two);
+    widest = Math.max(widest, -overlapOf(one, two));
+    return true;
+  });
+  return widest;
+}
+
+export function solidsGap(a, b) {
+  let least = boxGap(a.box, b.box);
+  if (least > 0) return least;
+  least = Infinity;
+  for (const piece of a.pieces) {
+    for (const other of b.pieces) {
+      if (boxGap(piece.box, other.box) < least) least = Math.min(least, pieceGap(piece, other));
+    }
+  }
+  return least;
+}
+
 function hull(points) {
   const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   if (sorted.length < 3) return sorted;

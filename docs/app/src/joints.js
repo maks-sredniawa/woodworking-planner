@@ -19,7 +19,7 @@ import {
   solidOf,
   turnAxis,
 } from './model.js';
-import { TOUCH_MM, depthBehind, meetingRegion, woodRuns } from './geometry.js';
+import { TOUCH_MM, depthBehind, meetingRegion, solidsGap, woodRuns } from './geometry.js';
 
 const AXES = ['x', 'y', 'z'];
 
@@ -1112,57 +1112,13 @@ export function insideCorner(to, part) {
   return candidates.sort((a, b) => rank(a) - rank(b) || b.span[1] - b.span[0] - (a.span[1] - a.span[0]))[0] ?? null;
 }
 
-function orientedBox(part, placement) {
-  const box = bounds(part);
-  const centre = transformPoint(placement, AXES.map((axis) => (box.min[axis] + box.max[axis]) / 2));
-  const half = AXES.map((axis) => (box.max[axis] - box.min[axis]) / 2);
-  const axes = [0, 1, 2].map((col) => [placement.m[col], placement.m[3 + col], placement.m[6 + col]]);
-  return { centre, half, axes };
-}
-
-function boxGap(a, b) {
-  const tests = [...a.axes, ...b.axes];
-  for (const first of a.axes) for (const second of b.axes) tests.push(cross(first, second));
-  const gap = b.centre.map((value, i) => value - a.centre[i]);
-  let widest = -Infinity;
-  for (const axis of tests) {
-    const size = Math.hypot(...axis);
-    if (size < 1e-6) continue;
-    const unitAxis = axis.map((value) => value / size);
-    const reach = (box) => box.axes.reduce((sum, each, i) => sum + box.half[i] * Math.abs(dot(each, unitAxis)), 0);
-    widest = Math.max(widest, Math.abs(dot(gap, unitAxis)) - reach(a) - reach(b));
-  }
-  return widest;
-}
-
-function separated(a, b) {
-  const tests = [...a.axes, ...b.axes];
-  for (const first of a.axes) for (const second of b.axes) tests.push(cross(first, second));
-  const gap = b.centre.map((value, i) => value - a.centre[i]);
-  return tests.some((axis) => {
-    const size = Math.hypot(...axis);
-    if (size < 1e-6) return false;
-    const unitAxis = axis.map((value) => value / size);
-    const reach = (box) => box.axes.reduce((sum, each, i) => sum + box.half[i] * Math.abs(dot(each, unitAxis)), 0);
-    return Math.abs(dot(gap, unitAxis)) >= reach(a) + reach(b) - TOUCH_MM;
-  });
-}
-
-function boxCorners(box) {
-  const corners = [];
-  for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) {
-    corners.push(box.centre.map((value, i) => value + [a, b, c].reduce((sum, sign, k) => sum + sign * box.half[k] * box.axes[k][i], 0)));
-  }
-  return corners;
-}
-
 function aroundLine(point, origin, direction) {
   const offset = point.map((value, i) => value - origin[i]);
   const along = dot(offset, direction);
   return { along, distance: Math.hypot(...offset.map((value, i) => value - along * direction[i])) };
 }
 
-const gapTo = (boxes, box) => Math.min(...boxes.map((each) => boxGap(each, box)));
+const gapTo = (solids, solid) => Math.min(...solids.map((each) => solidsGap(each, solid)));
 
 const STOP_TRAVEL_MM = 0.5;
 const GRAZE_MM = 1;
@@ -1190,36 +1146,38 @@ function findStop(project, jointId) {
   const doors = project.parts.filter((part) => moving.has(part.id)).map((part) => ({ part, placement: shut.placement(part.id) }));
   const swung = (angle) => {
     const turn = rotationAbout(origin, direction, angle);
-    return doors.map(({ part, placement }) => orientedBox(part, compose(turn, placement)));
+    return doors.map(({ part, placement }) => solidOf(part, compose(turn, placement)));
   };
   const closed = swung(0);
-  const reach = closed.flatMap(boxCorners).map((corner) => aroundLine(corner, origin, direction));
+  const reach = closed.flatMap((solid) => solid.pieces.flatMap((piece) => piece.corners)).map((corner) => aroundLine(corner, origin, direction));
   const radius = Math.max(...reach.map((each) => each.distance));
   const [low, high] = [Math.min(...reach.map((each) => each.along)), Math.max(...reach.map((each) => each.along))];
-  const inSwing = (box) => {
-    const size = Math.hypot(...box.half);
-    const centre = aroundLine(box.centre, origin, direction);
+  const inSwing = ({ box }) => {
+    const size = Math.hypot(...box.max.map((value, i) => (value - box.min[i]) / 2));
+    const centre = aroundLine(box.max.map((value, i) => (value + box.min[i]) / 2), origin, direction);
     return centre.distance <= radius + size && centre.along >= low - size && centre.along <= high + size;
   };
   const obstacles = project.parts
     .filter((part) => !moving.has(part.id) && part.id !== joint.to)
-    .map((part) => ({ part, box: orientedBox(part, mech.placement(part.id)) }))
-    .filter(({ box }) => inSwing(box) && closed.every((each) => separated(each, box)))
-    .map((obstacle) => ({ ...obstacle, give: gapTo(closed, obstacle.box) < GRAZE_MM ? GRAZE_MM : TOUCH_MM }));
+    .map((part) => ({ part, solid: solidOf(part, mech.placement(part.id)) }))
+    .filter(({ solid }) => inSwing(solid))
+    .map((obstacle) => ({ ...obstacle, gap: gapTo(closed, obstacle.solid) }))
+    .filter(({ gap }) => gap >= -TOUCH_MM)
+    .map(({ part, solid, gap }) => ({ part, solid, give: gap < GRAZE_MM ? GRAZE_MM : TOUCH_MM }));
   if (!obstacles.length) return null;
   const blocker = (angle) => {
-    const boxes = swung(angle);
-    return obstacles.find(({ box, give }) => gapTo(boxes, box) < -give) ?? null;
+    const solids = swung(angle);
+    return obstacles.find(({ solid, give }) => gapTo(solids, solid) < -give) ?? null;
   };
   const toDegrees = (mm) => (mm / Math.max(radius, 1)) * (180 / Math.PI);
   const due = obstacles.map(() => 0);
   let clear = 0;
   for (let angle = 0; ; angle = Math.min(joint.opensTo, ...due)) {
-    const boxes = swung(angle);
+    const solids = swung(angle);
     let hit = false;
-    obstacles.forEach(({ box, give }, i) => {
+    obstacles.forEach(({ solid, give }, i) => {
       if (due[i] > angle) return;
-      const gap = gapTo(boxes, box);
+      const gap = gapTo(solids, solid);
       if (gap < -give) hit = true;
       else due[i] = angle + toDegrees(Math.max(STOP_TRAVEL_MM, gap + give));
     });
