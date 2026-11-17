@@ -3,7 +3,7 @@ import { JOINT_FIELDS, JOINT_KINDS, jointFieldValue } from './joints.js';
 import { cuttingFromFile, cuttingToFile } from './cutplan.js';
 
 export const FORMAT = 'woodworking-planner';
-export const FORMAT_VERSION = 5;
+export const FORMAT_VERSION = 6;
 
 export function serialize(project) {
   const index = new Map(project.parts.map((part, i) => [part.id, i]));

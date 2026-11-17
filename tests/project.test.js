@@ -14,7 +14,7 @@ const hungDoor = () => {
 test('joints are saved with the project and load back joining the same pieces', () => {
   const saved = hungDoor();
   const text = serialize(saved);
-  assert.match(text, /"version": 5/);
+  assert.match(text, /"version": 6/);
   const loaded = parseProject(text);
   assert.equal(loaded.joints.length, 1);
   const [joint] = loaded.joints;
@@ -35,7 +35,7 @@ test('a file with a broken joint is refused with the joint named', () => {
   assert.throws(() => parseProject(file([{ kind: 'glue', part: 0, to: 0 }])), /Joint 1 joins a piece to itself/);
   assert.throws(() => parseProject(file([{ kind: 'screws', part: 0, to: 1, count: 0, diameter: 4, length: 40, glued: false }])), /Joint 1 has an invalid count/);
   assert.throws(() => parseProject(file([{ kind: 'glue', part: 0, to: 1 }, { kind: 'glue', part: 1, to: 0 }])), /Joint 2 joins the same two pieces as an earlier joint/);
-  assert.throws(() => parseProject('{"format":"woodworking-planner","version":6,"parts":[]}'), /newer version/);
+  assert.throws(() => parseProject('{"format":"woodworking-planner","version":7,"parts":[]}'), /newer version/);
 });
 
 test('cut joints are saved with their sizes and load back with the same piece going in', () => {
@@ -67,7 +67,7 @@ test('a version 4 file with a free shape and no cut joints opens as before', () 
   assert.deepEqual([top.shape, top.length, top.width, top.points.map(({ x, y }) => [x, y])], ['free', 400, 300, outline.map(({ x, y }) => [x, y])]);
   assert.deepEqual([side.shape, side.length, side.width], ['board', 500, 200]);
   assert.deepEqual(loaded.joints.map(({ kind, part, to }) => [kind, part, to]), [['glue', top.id, side.id]]);
-  assert.match(serialize(loaded), /"version": 5/);
+  assert.match(serialize(loaded), /"version": 6/);
 });
 
 test('a version 5 file with cut joints saves back the same joints', () => {
@@ -78,6 +78,6 @@ test('a version 5 file with cut joints saves back the same joints', () => {
   ];
   const text = JSON.stringify({ format: 'woodworking-planner', version: 5, name: 'Frame', parts: [{}, {}, {}, {}], joints });
   const saved = JSON.parse(serialize(parseProject(text)));
-  assert.equal(saved.version, 5);
+  assert.equal(saved.version, 6);
   assert.deepEqual(saved.joints, joints);
 });
