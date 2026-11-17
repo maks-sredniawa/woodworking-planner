@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SPECIES, cutList, makePart, makeShape, partFromFile, updatePart } from '../docs/app/src/model.js';
-import { DEFAULT_CUTTING, cuttingFromFile, cuttingPlan, defaultStock, misfitIds, planPieces } from '../docs/app/src/cutplan.js';
+import { SPECIES, cutList, legacyPose, makePart, makeShape, partFromFile, updatePart } from '../docs/app/src/model.js';
+import { DEFAULT_CUTTING, cuttingFromFile, cuttingPlan, defaultStock, misfitIds, planPieces, projectPieces } from '../docs/app/src/cutplan.js';
+import { joinParts } from '../docs/app/src/joints.js';
 import { point } from '../docs/app/src/free.js';
 import { parseProject, serialize, starterProject } from '../docs/app/src/project.js';
 
@@ -10,6 +11,17 @@ const piecesOf = (parts) => planPieces(cutList(parts));
 const planOf = (parts, fields) => cuttingPlan(piecesOf(parts), settings(fields));
 const board = (fields) => makePart({ species: 'pine', thickness: 18, ...fields });
 const own = (length, width) => ({ length, width, own: true });
+
+function tenonedFrame() {
+  const leg = (x) => makePart({ name: 'Leg', length: 700, width: 45, thickness: 45, pose: legacyPose('yzx'), x });
+  const left = leg(0);
+  const right = leg(645);
+  const rail = makePart({ name: 'Rail', length: 600, width: 80, thickness: 24, pose: legacyPose('xyz'), x: 45, y: 600, z: 10 });
+  let project = { name: 'Frame', parts: [left, rail, right], joints: [] };
+  project = joinParts(project, 'tenon', left.id, rail.id).project;
+  project = joinParts(project, 'tenon', right.id, rail.id).project;
+  return { project, rail };
+}
 
 function assertSound(plan, { kerf, trim }) {
   for (const group of plan.groups) {
@@ -217,6 +229,38 @@ test('a board group defaults to the smallest preset every piece fits on; a sheet
   assert.deepEqual(size(defaultStock('sheet', pieces([2600, 1500]))), [2440, 1220]);
 });
 
+test('a board group with a piece no preset fits takes the smallest preset that fits the most of the rest', () => {
+  const door = board({ name: 'Door', length: 1000, width: 800 });
+  const side = board({ name: 'Side', length: 900, width: 300 });
+  const shelf = board({ name: 'Shelf', length: 600, width: 280 });
+  const plan = planOf([door, side, shelf]);
+  const [group] = plan.groups;
+  assert.deepEqual([group.stock.length, group.stock.width], [2000, 400]);
+  assert.deepEqual(group.misfits.map((piece) => piece.name), ['Door']);
+  assert.equal(plan.boards, 1);
+  assert.deepEqual([...misfitIds(piecesOf([door, side, shelf]), settings())], [door.id]);
+  const pieces = (...list) => list.map(([length, width]) => ({ length, width, grain: true }));
+  const size = (stock) => [stock.length, stock.width];
+  assert.deepEqual(size(defaultStock('board', pieces([1000, 800], [900, 300], [600, 280]))), [2000, 400]);
+  assert.deepEqual(size(defaultStock('board', pieces([2600, 150], [1500, 300]))), [3000, 194], 'a tie goes to the smaller preset');
+  assert.deepEqual(size(defaultStock('board', pieces([2600, 150], [1500, 300], [1600, 350]))), [2000, 400]);
+});
+
+test('a tenoned rail is laid out, counted and checked at its cut-list length', () => {
+  const { project, rail } = tenonedFrame();
+  const plan = cuttingPlan(projectPieces(project), settings());
+  const group = plan.groups.find((each) => each.key === 'pine:24');
+  const [placed] = group.sheets.flatMap((sheet) => sheet.placements);
+  assert.deepEqual([placed.name, placed.length, placed.width], ['Rail', 660, 80]);
+  assert.equal(group.used, 660 * 80);
+  assert.equal(plan.boards, 2);
+  const short = settings({ stock: { 'pine:24': own(640, 100) } });
+  assert.equal(cuttingPlan(planPieces(cutList(project.parts)), short).boards, 2, 'the bare rail would fit');
+  const tight = cuttingPlan(projectPieces(project), short);
+  assert.deepEqual([tight.boards, tight.misfits], [1, 1]);
+  assert.deepEqual([...misfitIds(projectPieces(project), short)], [rail.id]);
+});
+
 test('a chosen stock size is used for its group only', () => {
   const parts = [board({ length: 764, width: 244 }), board({ species: 'oak', length: 764, width: 244 })];
   const plan = planOf(parts, { stock: { 'pine:18': own(3000, 244) } });
@@ -307,4 +351,20 @@ test('a version 4 file, saved before cutting settings, opens with the cutting de
   assert.deepEqual(loaded.cutting, DEFAULT_CUTTING);
   assert.deepEqual(loaded.parts.map((part) => part.grain), [true, false]);
   assert.match(serialize(loaded), /"version": 6/);
+});
+
+test('a version 5 file with cut joints and no cutting settings opens with the cutting defaults and saves as version 6', () => {
+  const { project } = tenonedFrame();
+  const data = JSON.parse(serialize(project));
+  data.version = 5;
+  delete data.cutting;
+  for (const part of data.parts) delete part.grain;
+  const loaded = parseProject(JSON.stringify(data));
+  assert.deepEqual(loaded.cutting, DEFAULT_CUTTING);
+  assert.deepEqual(loaded.joints.map((joint) => joint.kind), ['tenon', 'tenon']);
+  assert.ok(loaded.parts.every((part) => part.grain === true));
+  assert.ok(projectPieces(loaded).some((piece) => piece.name === 'Rail' && piece.length === 660));
+  const saved = JSON.parse(serialize(loaded));
+  assert.equal(saved.version, 6);
+  assert.deepEqual(saved.cutting, DEFAULT_CUTTING);
 });

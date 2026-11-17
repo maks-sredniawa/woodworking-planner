@@ -1224,6 +1224,18 @@ try:
             expect(cut.locator('#hardware-rows tr', has_text='Wood glue')).to_contain_text('Rail – Leg')
             assert cut.locator('#parts .warn').count() == 0, 'pieces in a cut joint are flagged'
             cut.screenshot(path=str(HERE / name.replace('joinery', 'joinery-cut')), full_page=True)
+            if width == 1280 and scheme == 'light':
+                cut.click('#view-plan')
+                rail_key = cut.locator('.stock-key button', has_text='Rail')
+                expect(rail_key).to_contain_text('645 × 80')
+                tenon = cut.locator('#joints details.joint', has_text='into Leg')
+                if tenon.get_attribute('open') is None:
+                    tenon.locator('summary').click()
+                tenon.locator('[data-jf=through]').uncheck()
+                expect(rail_key).to_contain_text('630 × 80')
+                tenon.locator('[data-jf=through]').check()
+                expect(rail_key).to_contain_text('645 × 80')
+                cut.click('#view-list')
             tab('edit')
             cut.locator('#editor input[name=shape][value=free]').check(force=True)
             tab('parts')
