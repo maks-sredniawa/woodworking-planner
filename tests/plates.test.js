@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart } from '../docs/app/src/model.js';
+import { legacyPose, makePart, updatePart } from '../docs/app/src/model.js';
 import { hardwareList, hardwarePieces, joinParts, jointFaces, jointProblem, rotateAssembly, suggestedSizes, updateJoint } from '../docs/app/src/joints.js';
 
 const project = (parts, joints = []) => ({ name: 'Frame', parts, joints });
@@ -293,4 +293,14 @@ test('turning an assembly turns the face a plate or pocket is on with it', () =>
   assert.equal(turned.joints[0].face, '-x');
   assert.equal(jointProblem(turned, joint.id), null);
   assert.deepEqual(jointFaces(turned, turned.joints[0]), ['-x', '+x']);
+});
+
+test('free-shape pieces take a mending plate and pocket screws by their blank, like boards', () => {
+  const left = updatePart(rail({ x: 0 }), 'shape', 'free');
+  const right = updatePart(rail({ name: 'Right rail', x: 400 }), 'shape', 'free');
+  const plated = joinParts(project([left, right]), 'mendingPlate', right.id, left.id);
+  assert.equal(plated.error, undefined);
+  assert.deepEqual([plated.joint.length, plated.joint.face], [80, '-z']);
+  const pocketed = joinParts(project([left, right]), 'pocketScrews', right.id, left.id);
+  assert.equal(pocketed.error, undefined);
 });

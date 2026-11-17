@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart } from '../docs/app/src/model.js';
+import { legacyPose, makePart, updatePart } from '../docs/app/src/model.js';
 import { assemblyOverlaps, changeJoint, joinParts, jointProblem, swingStop, updateJoint } from '../docs/app/src/joints.js';
 
 const side = () => makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
@@ -79,4 +79,12 @@ test('a stop never swings a locked door', () => {
   const { project, joint } = hungWith(wall);
   const locked = { ...project, parts: project.parts.map((part) => (part.id === joint.part ? { ...part, locked: true } : part)) };
   assert.equal(changeJoint(locked, joint.id, 'open', 150).refused, 'locked');
+});
+
+test('a free-shape door stops at the wall where a board door of the same blank does', () => {
+  const frame = side();
+  const leaf = updatePart(door(), 'shape', 'free');
+  const wall = block('Wall', [-100, -18], [244, 700]);
+  const { project, joint } = joinParts({ name: 'Cabinet', parts: [frame, leaf, wall], joints: [] }, 'hinge', leaf.id, frame.id);
+  assert.deepEqual(swingStop(project, joint.id), { angle: 90, by: wall.id });
 });
