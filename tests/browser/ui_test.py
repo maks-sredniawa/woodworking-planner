@@ -1232,8 +1232,8 @@ try:
             cut.evaluate('localStorage.clear()')
             cut.close()
 
-        turned_file = json.dumps({'format': 'woodworking-planner', 'version': 5, 'name': 'Frame', 'parts': [
-            {'name': 'Leg', 'length': 45, 'width': 700, 'thickness': 45, 'pose': '+x+y+z'},
+        turned_file = json.dumps({'format': 'woodworking-planner', 'version': 6, 'name': 'Frame', 'parts': [
+            {'name': 'Leg', 'length': 45, 'width': 700, 'thickness': 45, 'pose': '+x+y+z', 'grain': False},
             {'name': 'Rail', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+x+y+z', 'x': 45, 'y': 600, 'z': 10}],
             'joints': [{'kind': 'tenon', 'part': 1, 'to': 0, 'length': 30, 'thickness': 8, 'width': 60, 'through': False, 'glued': True}]})
         turned = browser.new_page(viewport={'width': 1280, 'height': 900})
