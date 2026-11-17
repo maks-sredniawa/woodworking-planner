@@ -271,6 +271,69 @@ export function meetingRegion(a, b, axis, at) {
   return region;
 }
 
+function chord(piece, axis, point) {
+  for (let k = 0; k < 3; k++) {
+    if (k !== axis && (point[k] < piece.box.min[k] - TOUCH_MM || point[k] > piece.box.max[k] + TOUCH_MM)) return null;
+  }
+  let [from, to] = [-Infinity, Infinity];
+  for (const normal of piece.normals) {
+    let [low, high] = [Infinity, -Infinity];
+    for (const corner of piece.corners) {
+      const value = corner[0] * normal[0] + corner[1] * normal[1] + corner[2] * normal[2];
+      if (value < low) low = value;
+      if (value > high) high = value;
+    }
+    const offset = [0, 1, 2].reduce((sum, k) => (k === axis ? sum : sum + point[k] * normal[k]), 0);
+    const rate = normal[axis];
+    if (Math.abs(rate) < 1e-9) {
+      if (offset < low - TOUCH_MM || offset > high + TOUCH_MM) return null;
+      continue;
+    }
+    const [one, two] = [(low - offset) / rate, (high - offset) / rate];
+    from = Math.max(from, Math.min(one, two));
+    to = Math.min(to, Math.max(one, two));
+  }
+  return to - from > TOUCH_MM ? [from, to] : null;
+}
+
+export function woodRuns(solid, axis, point) {
+  const spans = solid.pieces.map((piece) => chord(piece, axis, point)).filter(Boolean);
+  spans.sort((one, two) => one[0] - two[0]);
+  return spans.reduce((merged, span) => {
+    const last = merged.at(-1);
+    if (last && span[0] <= last[1] + TOUCH_MM) last[1] = Math.max(last[1], span[1]);
+    else merged.push([...span]);
+    return merged;
+  }, []);
+}
+
+const STEP_MM = 0.01;
+
+function stops(solid, k, [low, high]) {
+  const inside = solid.pieces.flatMap((piece) => piece.corners.map((corner) => corner[k])).filter((value) => value > low && value < high);
+  const near = inside.flatMap((value) => [value - STEP_MM, value, value + STEP_MM]).filter((value) => value >= low && value <= high);
+  return [...new Set([low, high, ...near])];
+}
+
+export function depthBehind(solid, axis, at, sign, region) {
+  const [piece] = solid.pieces;
+  if (solid.pieces.every((each) => Math.abs(each.w[axis]) >= PARALLEL)) return piece ? 2 * Math.abs(piece.half[axis]) : null;
+  const [first, second] = [0, 1, 2].filter((k) => k !== axis);
+  let least = null;
+  const point = [0, 0, 0];
+  for (const a of stops(solid, first, region[first])) {
+    for (const b of stops(solid, second, region[second])) {
+      point[first] = a;
+      point[second] = b;
+      const run = woodRuns(solid, axis, point).find(([from, to]) => from <= at + TOUCH_MM && to >= at - TOUCH_MM);
+      if (!run) continue;
+      const depth = sign > 0 ? run[1] - at : at - run[0];
+      if (least === null || depth < least) least = depth;
+    }
+  }
+  return least;
+}
+
 function pieceSweep(a, b, axis) {
   let [from, to] = [-Infinity, Infinity];
   const [mine, theirs] = [[0, 0], [0, 0]];
