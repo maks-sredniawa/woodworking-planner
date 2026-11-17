@@ -81,3 +81,27 @@ test('a version 5 file with cut joints saves back the same joints', () => {
   assert.equal(saved.version, 6);
   assert.deepEqual(saved.joints, joints);
 });
+
+test('a hinge saved before doors could be stopped opens with the stop on; a hinge saved with it off keeps it off', () => {
+  const saved = JSON.parse(serialize(hungDoor()));
+  delete saved.joints[0].stops;
+  const old = parseProject(JSON.stringify({ ...saved, version: 3 }));
+  assert.equal(old.joints[0].stops, true);
+  saved.joints[0].stops = false;
+  assert.equal(parseProject(JSON.stringify(saved)).joints[0].stops, false);
+  saved.joints[0].stops = 'no';
+  assert.throws(() => parseProject(JSON.stringify(saved)), /Joint 1 has an invalid stops/);
+});
+
+test('plates and pocket screws are saved and load back with their face', () => {
+  const stile = makePart({ name: 'Stile', length: 600, width: 60, thickness: 18, pose: legacyPose('yxz') });
+  const rail = makePart({ name: 'Rail', length: 400, width: 60, thickness: 18, pose: legacyPose('xyz'), x: 60 });
+  const top = makePart({ name: 'Top rail', length: 400, width: 60, thickness: 18, pose: legacyPose('xyz'), x: 60, y: 540 });
+  let state = { name: 'Frame', parts: [stile, rail, top], joints: [] };
+  state = joinParts(state, 'cornerPlate', rail.id, stile.id).project;
+  state = joinParts(state, 'pocketScrews', top.id, stile.id).project;
+  state = updateJoint(state, state.joints[1].id, 'face', '+z');
+  const loaded = parseProject(serialize(state));
+  assert.deepEqual(loaded.joints.map((joint) => [joint.kind, joint.face]), [['cornerPlate', '-z'], ['pocketScrews', '+z']]);
+  assert.equal(loaded.joints[0].leg, 80);
+});
