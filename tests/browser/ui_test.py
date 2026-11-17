@@ -1245,6 +1245,41 @@ try:
         turned.evaluate('localStorage.clear()')
         turned.close()
 
+        sloped_file = json.dumps({'format': 'woodworking-planner', 'version': 5, 'name': 'Sloped', 'parts': [
+            {'name': 'Triangle', 'shape': 'triangle', 'length': 400, 'width': 400, 'thickness': 45, 'pose': '+x+y+z', 'y': 600},
+            {'name': 'Post', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+y-x+z', 'x': 300, 'z': 10},
+            {'name': 'Leg', 'length': 700, 'width': 45, 'thickness': 45, 'pose': '+y+z+x', 'x': 1000},
+            {'name': 'Top rail', 'length': 600, 'width': 80, 'thickness': 24, 'pose': '+x+y+z', 'x': 1045, 'y': 680, 'z': 10}],
+            'joints': [
+                {'kind': 'tenon', 'part': 1, 'to': 0, 'length': 265, 'thickness': 8, 'width': 60, 'through': False, 'glued': True},
+                {'kind': 'tenon', 'part': 3, 'to': 2, 'length': 30, 'thickness': 8, 'width': 60, 'through': False, 'glued': True}]})
+        sloped = browser.new_page(viewport={'width': 1280, 'height': 900})
+        sloped.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        sloped.on('pageerror', lambda e: errors.append(str(e)))
+        sloped.goto(URL)
+        sloped.evaluate(f'localStorage.setItem("woodworking-planner:project", {json.dumps(sloped_file)})')
+        sloped.reload()
+        expect(sloped.locator('#parts li .warn')).to_have_text(['Tenon too big'] * 4)
+        sloped_item = lambda name: sloped.locator('#parts li').filter(has=sloped.locator('.nm', has_text=re.compile(f'^{name}$')))
+        sloped_item('Post').locator('.row-main').click()
+        card = sloped.locator('details.joint').first
+        card.locator('summary').click()
+        expect(card.locator('.joint-body > .warn')).to_have_text('The tenon (265) is longer than Triangle is deep there (20). Shorten it or tick Through tenon.')
+        card.locator('[data-jf-act=suggest]').click()
+        expect(card.locator('summary .dim')).to_have_text('10 × 8 × 60 tenon · glued')
+        expect(card.locator('.joint-body > .warn')).to_be_hidden()
+        sloped_item('Top rail').locator('.row-main').click()
+        card = sloped.locator('details.joint').first
+        card.locator('summary').click()
+        expect(card.locator('.joint-body > .warn')).to_have_text('The tenon (60) is wider than where Top rail meets Leg (20). Make it narrower.')
+        card.locator('[data-jf=width]').fill('21')
+        expect(card.locator('.joint-error')).to_have_text('Enter a width up to 20, where Top rail meets Leg.')
+        card.locator('[data-jf-act=suggest]').click()
+        expect(card.locator('summary .dim')).to_have_text('30 × 8 × 10 tenon · glued')
+        expect(sloped.locator('#parts li .warn')).to_have_count(0)
+        sloped.evaluate('localStorage.clear()')
+        sloped.close()
+
         offline_context = browser.new_context(viewport={'width': 1280, 'height': 900})
         away = offline_context.new_page()
         away.on('pageerror', lambda e: errors.append(str(e)))
