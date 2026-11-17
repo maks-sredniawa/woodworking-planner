@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { legacyPose, makePart, makeShape, updatePart } from '../docs/app/src/model.js';
 import { assemblyOverlaps, changeJoint, joinParts, jointProblem, swingStop, updateJoint } from '../docs/app/src/joints.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
+import { projectPieces } from '../docs/app/src/cutplan.js';
 
 const side = () => makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
 const door = () => makePart({ name: 'Door', length: 800, width: 400, thickness: 18, pose: legacyPose('yxz'), z: 244 });
@@ -158,4 +159,18 @@ test('a version 3 project with a flush inset door open 90° loads without being 
   assert.equal(loaded.joints[0].stops, true);
   assert.equal(loaded.joints[0].open, 90);
   assert.equal(jointProblem(loaded, loaded.joints[0].id), null);
+});
+
+test('a door with cutting settings in the project stops the same, is laid out flat at its own size, and keeps both on saving', () => {
+  const wall = block('Wall', [-100, -18], [244, 700]);
+  const { project, joint } = hungWith(wall);
+  const cutting = { kerf: 4, trim: 2, stock: { 'pine:18': { length: 3000, width: 500, own: true } } };
+  const opened = changeJoint({ ...project, cutting }, joint.id, 'open', 150);
+  assert.deepEqual(opened.stopped, { angle: 90, by: wall.id });
+  const laid = projectPieces(opened.project).find((piece) => piece.name === 'Door');
+  assert.deepEqual([laid.length, laid.width, laid.thickness], [800, 400, 18]);
+  const loaded = parseProject(serialize(opened.project));
+  assert.deepEqual(loaded.cutting, cutting);
+  assert.deepEqual([loaded.joints[0].stops, loaded.joints[0].open], [true, 90]);
+  assert.deepEqual(swingStop(loaded, loaded.joints[0].id).angle, 90);
 });
