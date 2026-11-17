@@ -130,13 +130,86 @@ test('a free shape can house a cut joint but never goes in, even when its outlin
   assert.equal(cutAllowances(dadoed).get(freeSide.parts[0].id).cuts, 'Dado 18 × 6');
 });
 
-test('a tenon is drawn inside the housing piece when the rail is wider than where they meet', () => {
+test('a tenon is sized by where the pieces meet and drawn inside the housing piece', () => {
   const left = leg();
   const high = rail({ y: 650 });
-  const project = joinParts({ name: 'High', parts: [left, high], joints: [] }, 'tenon', left.id, high.id).project;
+  const { project, joint } = joinParts({ name: 'High', parts: [left, high], joints: [] }, 'tenon', left.id, high.id);
+  assert.equal(joint.width, 25, 'half of the 50 where the rail meets the leg');
   const [wood] = hardwarePieces(project).filter((piece) => piece.type === 'wood');
-  assert.deepEqual([wood.min, wood.max], [[15, 650, 18], [45, 700, 26]]);
-  assert.deepEqual(joineryXray(project, left.id), [{ type: 'box', owner: high.id, min: [15, 650, 18], max: [45, 700, 26] }]);
+  assert.deepEqual([wood.min, wood.max], [[15, 662.5, 18], [45, 687.5, 26]]);
+  assert.deepEqual(joineryXray(project, left.id), [{ type: 'box', owner: high.id, min: [15, 662.5, 18], max: [45, 687.5, 26] }]);
+});
+
+test('a tenon wider or thicker than where the pieces meet is suggested smaller, refused, flagged and drawn as wide as it is', () => {
+  const left = leg();
+  const top = rail({ y: 680 });
+  const { project, joint } = joinParts({ name: 'Top', parts: [left, top], joints: [] }, 'tenon', left.id, top.id);
+  assert.equal(joint.width, 10, 'half of the 20 where the rail meets the leg');
+  assert.equal(jointProblem(project, joint.id), null);
+  assert.equal(changeJoint(project, joint.id, 'width', '21').reason, 'Enter a width up to 20, where Rail meets Leg.');
+  assert.ok(changeJoint(project, joint.id, 'width', '20').project);
+  const wide = { ...project, joints: [{ ...joint, width: 60 }] };
+  assert.equal(jointProblem(wide, joint.id), 'The tenon (60) is wider than where Rail meets Leg (20). Make it narrower.');
+  assert.equal(suggestedSizes(wide, wide.joints[0]).width, 10);
+  const [wood] = hardwarePieces(wide).filter((piece) => piece.type === 'wood');
+  assert.deepEqual([wood.min, wood.max], [[15, 680, 18], [45, 740, 26]], 'the full 60 is drawn, kept on the rail’s end and out of the top of the leg');
+
+  const out = rail({ z: 40 });
+  const side = joinParts({ name: 'Out', parts: [left, out], joints: [] }, 'tenon', left.id, out.id);
+  assert.equal(side.joint.thickness, 2.5, 'half of the 5 where the rail meets the leg');
+  assert.equal(changeJoint(side.project, side.joint.id, 'thickness', '6').reason, 'Enter a thickness up to 5, where Rail meets Leg.');
+  const thick = { ...side.project, joints: [{ ...side.joint, thickness: 8 }] };
+  assert.equal(jointProblem(thick, side.joint.id), 'The tenon (8) is thicker than where Rail meets Leg (5). Make it thinner.');
+});
+
+test('a tenon on a rail with rounded corners is checked and drawn at the size it has', () => {
+  const project = tenoned();
+  const id = project.joints[0].id;
+  const rounded = changePart(project, updatePart(updatePart(named(project, 'Rail'), 'corners', 'rounded'), 'cornerRadius', '20')).project;
+  assert.equal(jointProblem(rounded, id), 'The tenon (60) is wider than where Rail meets Leg (40.6). Make it narrower.');
+  const [wood] = hardwarePieces(rounded).filter((piece) => piece.type === 'wood');
+  assert.deepEqual([wood.min, wood.max], [[15, 610, 18], [45, 670, 26]]);
+  assert.equal(suggestedSizes(rounded, rounded.joints[0]).width, 20.3);
+});
+
+const triangle = (fields = {}) => ({ ...makeShape('triangle'), name: 'Triangle', length: 400, width: 400, thickness: 45, pose: legacyPose('xyz'), y: 600, ...fields });
+const post = (fields = {}) => makePart({ name: 'Post', length: 600, width: 80, thickness: 24, pose: legacyPose('yxz'), x: 300, z: 10, ...fields });
+
+test('a tenon into a triangle is sized, checked, listed and drawn by the wood at the joint, not the triangle’s box', () => {
+  const housing = triangle();
+  const tall = post();
+  const { project, joint } = joinParts({ name: 'Slope', parts: [housing, tall], joints: [] }, 'tenon', housing.id, tall.id);
+  assert.deepEqual([joint.part, joint.to, joint.length], [tall.id, housing.id, 10], 'two thirds of the 20 left at the slope');
+  assert.equal(jointProblem(project, joint.id), null);
+  assert.equal(changeJoint(project, joint.id, 'length', '21').reason, 'Enter a length up to 20, the depth of Triangle there, or tick Through tenon.');
+  const long = { ...project, joints: [{ ...joint, length: 265 }] };
+  assert.equal(jointProblem(long, joint.id), 'The tenon (265) is longer than Triangle is deep there (20). Shorten it or tick Through tenon.');
+  assert.equal(cutAllowances(project).get(tall.id).length, 10);
+  const through = updateJoint(project, joint.id, 'through', true);
+  assert.equal(cutAllowances(through).get(tall.id).length, 20);
+  const [wood] = hardwarePieces(project).filter((piece) => piece.type === 'wood');
+  assert.deepEqual([wood.min, wood.max], [[310, 600, 18], [370, 610, 26]]);
+});
+
+test('dowels into a triangle drill no deeper than the wood at the joint', () => {
+  const housing = triangle();
+  const tall = post();
+  const project = joinParts({ name: 'Slope', parts: [housing, tall], joints: [] }, 'dowels', tall.id, housing.id).project;
+  const traced = joineryXray(project, housing.id);
+  assert.equal(traced.length, 2);
+  assert.ok(traced.every((piece) => piece.to[1] === 613), `two thirds of the 20 at the slope, got ${traced.map((piece) => piece.to[1])}`);
+});
+
+test('a dado groove across a triangle stops at its outline', () => {
+  const housing = updatePart(side(), 'shape', 'triangle');
+  const housed = shelf();
+  const project = joinParts({ name: 'Slope', parts: [housing, housed], joints: [] }, 'dado', housing.id, housed.id).project;
+  const [groove] = joineryXray(project, housed.id);
+  const [end] = hardwarePieces(project).filter((piece) => piece.type === 'wood');
+  const edgeAt = (y) => 244 * (1 - y / 1000);
+  assert.deepEqual([groove.min, groove.max.slice(0, 2)], [[12, 300, 0], [18, 318]]);
+  assert.ok(Math.abs(groove.max[2] - edgeAt(318)) < 0.5, `the groove stops at the slope, got ${groove.max[2]}`);
+  assert.ok(end.max[2] <= groove.max[2] + 1e-9, 'the housed end stays inside the groove');
 });
 
 

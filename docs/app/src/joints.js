@@ -19,7 +19,7 @@ import {
   solidOf,
   turnAxis,
 } from './model.js';
-import { TOUCH_MM, meetingRegion } from './geometry.js';
+import { TOUCH_MM, depthBehind, meetingRegion, woodRuns } from './geometry.js';
 
 const AXES = ['x', 'y', 'z'];
 
@@ -70,6 +70,28 @@ export function contact(a, b) {
   const known = contacts.get(a);
   if (!known.has(b)) known.set(b, trueContact(a, b));
   return known.get(b);
+}
+
+const depths = new WeakMap();
+
+function woodDepth(piece, other) {
+  if (!depths.has(piece)) depths.set(piece, new WeakMap());
+  const known = depths.get(piece);
+  if (!known.has(other)) {
+    const touch = contact(other, piece);
+    const region = Object.fromEntries(Object.entries(touch.region).map(([axis, span]) => [AXES.indexOf(axis), span]));
+    const depth = depthBehind(solidOf(piece), AXES.indexOf(touch.axis), touch.at, touch.sign, region);
+    known.set(other, roundMm(depth ?? extents(piece)[touch.axis]));
+  }
+  return known.get(other);
+}
+
+const spanOf = ([low, high]) => roundMm(high - low);
+
+function tenonRoom(part, touch) {
+  const across = poseAxes(part.pose).thickness[1];
+  const along = AXES.find((axis) => axis !== touch.axis && axis !== across);
+  return { across, along, thickness: spanOf(touch.region[across]), width: spanOf(touch.region[along]) };
 }
 
 export function touchingParts(parts, id) {
@@ -193,10 +215,10 @@ const DEFAULTS = {
     };
   },
   hinge: hingeDefaults,
-  dado: ({ axis }, part, to) => ({ depth: Math.max(1, Math.round(extents(to)[axis] / 3)), glued: true }),
-  tenon: ({ axis }, part, to) => {
-    const depth = extents(to)[axis];
-    const { width, thickness: across } = blank(part);
+  dado: (meet, part, to) => ({ depth: Math.max(1, Math.round(woodDepth(to, part) / 3)), glued: true }),
+  tenon: (meet, part, to) => {
+    const depth = woodDepth(to, part);
+    const { width, thickness: across } = tenonRoom(part, meet);
     return {
       length: Math.min(depth, Math.max(5, Math.floor((2 * depth) / 3 / 5) * 5)),
       thickness: Math.min(Math.max(6, Math.round(across / 3)), Math.floor(across * 5) / 10),
@@ -205,17 +227,17 @@ const DEFAULTS = {
       glued: true,
     };
   },
-  dowels: ({ axis, long }, part, to) => {
+  dowels: ({ long }, part, to) => {
     const thinner = Math.min(thickness(part), thickness(to));
     const diameter = thinner < 15 ? 6 : thinner <= 25 ? 8 : 10;
-    const length = Math.min({ 6: 30, 8: 40, 10: 50 }[diameter], largestUpTo(DOWEL_LENGTHS, holeRoom(part, to, axis)));
+    const length = Math.min({ 6: 30, 8: 40, 10: 50 }[diameter], largestUpTo(DOWEL_LENGTHS, holeRoom(part, to)));
     return { count: Math.max(2, Math.floor(long / 50)), diameter, length, glued: true };
   },
 };
 
 const DOWEL_LENGTHS = [20, 25, 30, 35, 40, 50, 60];
-const holeDepth = (piece, axis) => Math.floor((2 * extents(piece)[axis]) / 3);
-const holeRoom = (part, to, axis) => holeDepth(part, axis) + holeDepth(to, axis);
+const holeDepth = (piece, other) => Math.floor((2 * woodDepth(piece, other)) / 3);
+const holeRoom = (part, to) => holeDepth(part, to) + holeDepth(to, part);
 
 const sideOf = (part, axis) => Object.entries(poseAxes(part.pose)).find(([, signed]) => signed[1] === axis)?.[0];
 const SIDE_WORDS = { length: 'end', width: 'edge', thickness: 'face' };
@@ -256,9 +278,9 @@ export function cutJoint(project, joint) {
   if (!touch) return null;
   const side = sideOf(part, touch.axis);
   if (GOES_IN[joint.kind] && (part.shape !== 'board' || !GOES_IN[joint.kind].includes(side) || !housesIn(joint.kind, to, touch.axis))) return null;
-  const depth = extents(to)[touch.axis];
+  const depth = woodDepth(to, part);
   const reach = { dado: joint.depth, tenon: joint.through ? depth : joint.length, dowels: joint.length }[joint.kind];
-  return { part, to, touch, side, depth, reach };
+  return { part, to, touch, side, depth, reach, room: GOES_IN[joint.kind] && tenonRoom(part, touch) };
 }
 
 export function joinedTo(project, id) {
@@ -478,8 +500,9 @@ function cutProblem(project, joint) {
     const end = joint.kind === 'tenon' ? 'end' : 'end or edge';
     return `${nameOf(part)} no longer meets ${nameOf(to)} with its ${end}. Turn it back, or remove the joint.`;
   }
-  const { part, to, depth, reach } = cut;
+  const { part, to, depth, reach, room } = cut;
   const size = blank(part);
+  const where = `where ${nameOf(part)} meets ${nameOf(to)}`;
   if (joint.kind === 'dado') {
     if (reach >= depth) return `The dado (${mm(reach)}) is as deep as ${nameOf(to)} is thick (${mm(depth)}). Make it shallower.`;
     if (reach > depth / 2) return `The dado is deeper than half of ${nameOf(to)} (${mm(depth / 2)}). That weakens it.`;
@@ -488,13 +511,15 @@ function cutProblem(project, joint) {
     if (reach > depth) return `The tenon (${mm(reach)}) is longer than ${nameOf(to)} is deep there (${mm(depth)}). Shorten it or tick Through tenon.`;
     if (joint.thickness >= size.thickness) return `The tenon (${mm(joint.thickness)}) is as thick as ${nameOf(part)} (${mm(size.thickness)}). Make it thinner.`;
     if (joint.width > size.width) return `The tenon (${mm(joint.width)}) is wider than ${nameOf(part)} (${mm(size.width)}). Make it narrower.`;
+    if (joint.width > room.width) return `The tenon (${mm(joint.width)}) is wider than ${where} (${mm(room.width)}). Make it narrower.`;
+    if (joint.thickness > room.thickness) return `The tenon (${mm(joint.thickness)}) is thicker than ${where} (${mm(room.thickness)}). Make it thinner.`;
     if (joint.thickness > size.thickness / 2) return `The tenon is thicker than half of ${nameOf(part)} (${mm(size.thickness / 2)}). That leaves thin shoulders.`;
   }
   if (joint.kind === 'dowels') {
     const thinner = Math.min(thickness(part), thickness(to));
-    const room = holeRoom(part, to, cut.touch.axis);
+    const holes = holeRoom(part, to);
     if (joint.diameter >= thinner) return `The dowels (⌀${mm(joint.diameter)}) are as thick as the thinner piece (${mm(thinner)}). Use thinner dowels.`;
-    if (joint.length > room) return `The dowels (${mm(joint.length)}) are longer than the two holes can hold (${mm(room)}).`;
+    if (joint.length > holes) return `The dowels (${mm(joint.length)}) are longer than the two holes can hold (${mm(holes)}).`;
   }
   return null;
 }
@@ -502,13 +527,16 @@ function cutProblem(project, joint) {
 function cutLimit(project, joint, field, value) {
   const cut = cutJoint(project, joint);
   if (!cut) return null;
-  const { part, to, depth } = cut;
+  const { part, to, depth, room } = cut;
   const size = blank(part);
+  const where = `where ${nameOf(part)} meets ${nameOf(to)}`;
   if (joint.kind === 'dado' && field === 'depth' && value >= depth) return `Enter a depth under ${mm(depth)}, the thickness of ${nameOf(to)}.`;
   if (joint.kind === 'tenon') {
     if (field === 'length' && value > depth) return `Enter a length up to ${mm(depth)}, the depth of ${nameOf(to)} there, or tick Through tenon.`;
     if (field === 'thickness' && value >= size.thickness) return `Enter a thickness under ${mm(size.thickness)}, the thickness of ${nameOf(part)}.`;
     if (field === 'width' && value > size.width) return `Enter a width up to ${mm(size.width)}, the width of ${nameOf(part)}.`;
+    if (field === 'width' && value > room.width) return `Enter a width up to ${mm(room.width)}, ${where}.`;
+    if (field === 'thickness' && value > room.thickness) return `Enter a thickness up to ${mm(room.thickness)}, ${where}.`;
   }
   if (joint.kind === 'dowels' && field === 'diameter') {
     const thinner = Math.min(thickness(part), thickness(to));
@@ -1012,12 +1040,29 @@ const corners = (box) => ({ min: AXES.map((axis) => Math.min(...box[axis])), max
 function dowelTraces(joint, { part, to, touch }) {
   const { axis, sign, at: plane, region } = touch;
   const [long, short] = Object.keys(region).sort((a, b) => region[b][1] - region[b][0] - (region[a][1] - region[a][0]));
-  const intoTo = Math.min(holeDepth(to, axis), Math.max(joint.length / 2, joint.length - holeDepth(part, axis)));
+  const intoTo = Math.min(holeDepth(to, part), Math.max(joint.length / 2, joint.length - holeDepth(part, to)));
   const ends = [plane - sign * (joint.length - intoTo), plane + sign * intoTo];
   return spread(joint.count, ...region[long], 25).map((value) => {
     const [from, end] = ends.map((coordinate) => at({ [axis]: coordinate, [long]: value, [short]: middleOf(region[short]) }));
     return { type: 'dowel', owner: part.id, from, to: end, radius: joint.diameter / 2 };
   });
+}
+
+function onEnd(span, size, end) {
+  const low = middleOf(span) - size / 2;
+  const shift = size > end[1] - end[0] ? 0 : Math.max(0, end[0] - low) - Math.max(0, low + size - end[1]);
+  return [low + shift, low + shift + size];
+}
+
+function grooveSpan({ to, touch, room, reach }) {
+  const { axis, sign, at: plane, region } = touch;
+  const middle = middleOf(region[room.along]);
+  const runs = region[room.across].map((edge) => {
+    const point = at({ [axis]: plane + (sign * reach) / 2, [room.across]: edge, [room.along]: middle });
+    return woodRuns(solidOf(to), AXES.indexOf(room.along), point).find(([from, end]) => from <= middle && end >= middle);
+  });
+  if (runs.some((run) => !run)) return region[room.along];
+  return [Math.max(...runs.map(([from]) => from)) + 0, Math.min(...runs.map(([, end]) => end)) + 0];
 }
 
 function cutPieces(project, joint) {
@@ -1026,20 +1071,19 @@ function cutPieces(project, joint) {
   if (joint.kind === 'dowels') return { wood: [], xray: dowelTraces(joint, cut) };
   const { part, to, touch, reach } = cut;
   const { axis, sign, at: plane, region } = touch;
-  const across = poseAxes(part.pose).thickness[1];
-  const along = AXES.find((each) => each !== axis && each !== across);
+  const { across, along } = cut.room;
   const box = { [axis]: [plane, plane + sign * reach], [across]: region[across], [along]: region[along] };
   if (joint.kind === 'tenon') {
-    const centred = (each, size) => [Math.max(region[each][0], middleOf(region[each]) - size / 2), Math.min(region[each][1], middleOf(region[each]) + size / 2)];
-    box[across] = centred(across, joint.thickness);
-    box[along] = centred(along, joint.width);
+    const own = bounds(part);
+    box[across] = onEnd(region[across], joint.thickness, [own.min[across], own.max[across]]);
+    box[along] = onEnd(region[along], joint.width, [own.min[along], own.max[along]]);
+    const end = corners(box);
+    return { wood: [{ type: 'wood', joint: joint.id, owner: part.id, species: part.species, ...end }], xray: [{ type: 'box', owner: part.id, ...end }] };
   }
-  const end = corners(box);
-  const wood = [{ type: 'wood', joint: joint.id, owner: part.id, species: part.species, ...end }];
-  if (joint.kind === 'tenon') return { wood, xray: [{ type: 'box', owner: part.id, ...end }] };
-  const housing = bounds(to);
-  const groove = corners({ ...box, [along]: [housing.min[along], housing.max[along]] });
-  return { wood, xray: [{ type: 'box', owner: to.id, ...groove }] };
+  const length = grooveSpan(cut);
+  box[along] = [Math.max(region[along][0], length[0]), Math.min(region[along][1], length[1])];
+  const wood = [{ type: 'wood', joint: joint.id, owner: part.id, species: part.species, ...corners(box) }];
+  return { wood, xray: [{ type: 'box', owner: to.id, ...corners({ ...box, [along]: length }) }] };
 }
 
 export function joineryXray(project, id) {
