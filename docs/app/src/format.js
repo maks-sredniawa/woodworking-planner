@@ -49,8 +49,8 @@ export const approx = (values) => (values.some(isRounded) ? '≈ ' : '');
 export const dims = (values, lead = '') => `${approx(values)}${lead}${values.map(len).join(' × ')}`;
 
 const steps = (value) => exactMm(value / current.fine);
-export const floorLen = (value) => len(Math.floor(steps(value) + 1e-6) * current.fine);
-export const ceilLen = (value) => len(Math.ceil(steps(value) - 1e-6) * current.fine);
+export const floorLen = (value) => len(Math.floor(steps(value) + 1e-6) * current.fine + 0);
+export const ceilLen = (value) => len(Math.ceil(steps(value) - 1e-6) * current.fine + 0);
 
 export function fieldText(value) {
   if (current.den) return fraction(value, current.den, ' ');

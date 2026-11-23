@@ -1,3 +1,5 @@
+import { exactMm } from './format.js';
+
 export const MIN_POINTS = 3;
 export const MAX_POINTS = 64;
 const MAX_DRAWN_POINTS = 24;
@@ -6,6 +8,7 @@ const STEP_RAD = (4 * Math.PI) / 180;
 const CHECK_SEGMENTS = 8;
 
 const round = (value) => Math.round(value * 10) / 10;
+const keptBy = (points) => (points.some((each) => each.bend) ? round : exactMm);
 const next = (points, i) => points[(i + 1) % points.length];
 
 export function point(x, y, bend = 0) {
@@ -216,11 +219,11 @@ function fitBends(points) {
 }
 
 export function movePoint(points, i, x, y) {
-  return fitBends(points.map((each, k) => (k === i ? { ...each, x: round(x), y: round(y) } : each)));
+  return fitBends(points.map((each, k) => (k === i ? { ...each, x: exactMm(x), y: exactMm(y) } : each)));
 }
 
 export function setBend(points, i, bend) {
-  return points.map((each, k) => (k === i ? { ...each, bend: round(bend) } : each));
+  return points.map((each, k) => (k === i ? { ...each, bend: exactMm(bend) } : each));
 }
 
 export function insertPoint(points, i, [x, y]) {
@@ -261,15 +264,17 @@ export function removePoint(points, i) {
 
 export function rebase(points) {
   const size = box(points);
-  return points.map(({ x, y, bend }) => ({ x: round(x - size.minX), y: round(y - size.minY), bend: round(bend) }));
+  const kept = keptBy(points);
+  return points.map(({ x, y, bend }) => ({ x: kept(x - size.minX), y: kept(y - size.minY), bend: kept(bend) }));
 }
 
 export function scale(points, sx, sy) {
   const size = box(points);
   const at = (x, y) => [size.minX + (x - size.minX) * sx, size.minY + (y - size.minY) * sy];
+  const kept = keptBy(points);
   const moved = points.map(({ x, y }) => {
     const [nx, ny] = at(x, y);
-    return { x: round(nx), y: round(ny), bend: 0 };
+    return { x: kept(nx), y: kept(ny), bend: 0 };
   });
   return fitBends(
     moved.map((each, i) => {

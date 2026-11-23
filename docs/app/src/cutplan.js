@@ -1,4 +1,5 @@
-import { SPECIES, cutList, roundMm } from './model.js';
+import { SPECIES, cutList } from './model.js';
+import { exactMm } from './format.js';
 import { cutAllowances } from './joints.js';
 
 export const KERF_LIMITS = { min: 0, max: 10 };
@@ -106,8 +107,8 @@ const SPLITS = [
 ];
 
 function splitRect(rect, w, h, kerf, alongLength) {
-  const right = { x: roundMm(rect.x + w + kerf), y: rect.y, w: roundMm(rect.w - w - kerf), h: alongLength ? h : rect.h };
-  const below = { x: rect.x, y: roundMm(rect.y + h + kerf), w: alongLength ? rect.w : w, h: roundMm(rect.h - h - kerf) };
+  const right = { x: exactMm(rect.x + w + kerf), y: rect.y, w: exactMm(rect.w - w - kerf), h: alongLength ? h : rect.h };
+  const below = { x: rect.x, y: exactMm(rect.y + h + kerf), w: alongLength ? rect.w : w, h: exactMm(rect.h - h - kerf) };
   return [right, below].filter((part) => part.w > EPSILON && part.h > EPSILON);
 }
 
@@ -241,7 +242,7 @@ function stockFromFile(key, raw) {
     within(raw?.width, STOCK_LIMITS) &&
     (raw.own === undefined || typeof raw.own === 'boolean');
   if (!sound) throw new Error(`This project has an invalid stock size for ${key}.`);
-  return { length: roundMm(raw.length), width: roundMm(raw.width), own: Boolean(raw.own) };
+  return { length: exactMm(raw.length), width: exactMm(raw.width), own: Boolean(raw.own) };
 }
 
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -254,7 +255,7 @@ export function cuttingFromFile(raw) {
   if (!within(kerf, KERF_LIMITS)) throw new Error('This project has an invalid saw kerf.');
   if (!within(trim, TRIM_LIMITS)) throw new Error('This project has an invalid edge trim.');
   const stock = Object.fromEntries(Object.entries(raw.stock ?? {}).map(([key, value]) => [key, stockFromFile(key, value)]));
-  return { kerf: roundMm(kerf), trim: roundMm(trim), stock };
+  return { kerf: exactMm(kerf), trim: exactMm(trim), stock };
 }
 
 export const cuttingOf = (project) => project.cutting ?? DEFAULT_CUTTING;
