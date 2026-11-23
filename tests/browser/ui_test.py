@@ -1563,7 +1563,7 @@ try:
         expect(free.locator('#parts li')).to_have_count(7)
         dialog = free.locator('#outline-dialog')
         rows = free.locator('#outline-points li')
-        field = lambda n, axis: free.get_by_label(f'Point {n}, {axis}', exact=True)
+        field = lambda n, axis: free.get_by_label(f'Point {n}, {axis}, in millimetres', exact=True)
         piece = lambda: free.evaluate('woodworkingPlanner.project.parts.at(-1)')
         outline_of = lambda: [[p['x'], p['y'], p['bend']] for p in piece()['points']]
         DEFAULT = [[0, 0, 0], [400, 0, 0], [400, 200, 0], [300, 300, 0], [0, 300, 0]]
@@ -1756,9 +1756,10 @@ try:
         keys.on('console', lambda m: m.type == 'error' and errors.append(m.text))
         keys.on('pageerror', lambda e: errors.append(str(e)))
         keys.goto(URL)
-        point = lambda n, axis: keys.get_by_label(f'Point {n}, {axis}', exact=True)
+        point = lambda n, axis: keys.get_by_label(f'Point {n}, {axis}, in millimetres', exact=True)
         note = keys.locator('#outline-note')
         keys.get_by_role('button', name='Add free shape').click()
+        expect(keys.locator('#outline-snap')).to_have_attribute('title', 'Points land on a 10 mm grid while dragging (hold Alt for the opposite)')
         point(3, 'from left').fill('450')
         keys.focus('#outline-undo')
         keys.keyboard.press('Enter')
@@ -1818,7 +1819,7 @@ try:
             short.goto(URL)
             short.locator('[data-add-shape=free]:visible').first.click()
             expect(short.locator('#outline-dialog')).to_be_visible()
-            for label in ['Point 1, from left', 'Point 5, bend']:
+            for label in ['Point 1, from left, in millimetres', 'Point 5, bend, in millimetres']:
                 cell = short.get_by_label(label, exact=True)
                 cell.click(timeout=5000)
                 expect(cell).to_be_focused()
@@ -1862,7 +1863,7 @@ try:
                 small.screenshot(path=str(HERE / f'outline-{width}-{scheme}.png'))
                 small.evaluate(f"""document.getElementById("outline-svg").dispatchEvent(new PointerEvent("pointerup", {{ bubbles: true, pointerId: 7, pointerType: "touch", isPrimary: true, clientX: {px + 40}, clientY: {py + 20} }}))""")
                 expect(small.locator('#outline-chip')).to_be_hidden()
-                assert small.get_by_label('Point 3, from left', exact=True).input_value() != '400', 'a touch drag did not move point 3'
+                assert small.get_by_label('Point 3, from left, in millimetres', exact=True).input_value() != '400', 'a touch drag did not move point 3'
             else:
                 small.screenshot(path=str(HERE / f'outline-{width}-{scheme}.png'))
             small.click('#outline-done')
@@ -2335,7 +2336,8 @@ try:
         shown.click('[data-add-shape=free]')
         expect(shown.locator('#outline-dialog')).to_be_visible()
         expect(shown.locator('.points-head')).to_contain_text('From left (in)')
-        point = lambda n, axis: shown.get_by_label(f'Point {n}, {axis}', exact=True)
+        expect(shown.locator('#outline-snap')).to_have_attribute('title', 'Points land on a roughly 3/8 in grid while dragging (hold Alt for the opposite)')
+        point = lambda n, axis: shown.get_by_label(f'Point {n}, {axis}, in inches', exact=True)
         expect(point(2, 'from left')).to_have_value('16')
         point(2, 'from left').fill('16 1/2')
         expect(point(2, 'from left')).to_have_value('16 1/2')
