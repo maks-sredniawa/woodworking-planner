@@ -784,6 +784,7 @@ function meetingTargets(at, moving, axis, position, fixed) {
 
 const roundClear = ({ target, side }) => (side < 0 ? Math.floor(target * 10 + 1e-6) : Math.ceil(target * 10 - 1e-6)) / 10 + 0;
 const nearest = (value, targets) => targets.reduce((best, each) => (best && Math.abs(best.target - value) <= Math.abs(each.target - value) ? best : each), null);
+const roundTo = (value, step) => exactMm(Math.round(exactMm(value / step)) * step);
 
 export function snapPosition(part, proposed, others, options) {
   const fixed = others.filter((other) => other.id !== part.id).map((other) => bodyOf(other));
@@ -791,8 +792,6 @@ export function snapPosition(part, proposed, others, options) {
 }
 
 // Meetings are settled one axis at a time, nearest first, each with the axes already settled in place: an axis tested before its neighbour moved would meet the wrong face, or none.
-const roundTo = (value, step) => exactMm(Math.round(exactMm(value / step)) * step);
-
 export function snapBodies(at, moving, proposed, fixed, { snap = true, fine = 0.1, grid = SNAP_GRID_MM } = {}) {
   const axes = POSITION.filter((axis) => axis in proposed);
   if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundTo(proposed[axis], fine)]));
