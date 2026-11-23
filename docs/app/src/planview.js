@@ -1,4 +1,5 @@
 import { SPECIES, cutList, roundMm } from './model.js';
+import { ceilLen, dims, floorLen, len, unitName } from './format.js';
 import { KERF_LIMITS, STOCK_LIMITS, STOCK_PRESETS, TRIM_LIMITS, cuttingOf, cuttingPlan, projectPieces } from './cutplan.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -26,7 +27,7 @@ function svgNode(tag, attributes = {}, className) {
   return node;
 }
 
-export function createPlanView({ root, mm, element, visible, getProject, onPick, onChange }) {
+export function createPlanView({ root, element, visible, getProject, onPick, onChange }) {
   const $ = (id) => root.querySelector(`#${id}`);
   const nodes = {
     empty: $('plan-empty'),
@@ -40,7 +41,7 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
   const drawings = new Map();
   let cached = { parts: null, joints: null, cutting: null, plan: null };
   let selected = null;
-  const size = (length, width) => `${mm(length)} × ${mm(width)}`;
+  const size = (length, width) => dims([length, width]);
 
   const measure = (() => {
     const context = document.createElement('canvas').getContext('2d');
@@ -82,7 +83,7 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
     input.addEventListener('input', () => {
       const value = readMm(input, limits);
       if (value === null) {
-        showError(input, `Enter a ${word} from ${mm(limits.min)} to ${mm(limits.max)}.`);
+        showError(input, `Enter a ${word} from ${ceilLen(limits.min)} to ${floorLen(limits.max)}.`);
         return;
       }
       showError(input, null);
@@ -112,7 +113,7 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
     input.addEventListener('input', () => {
       const value = readMm(input, STOCK_LIMITS);
       if (value === null) {
-        showError(input, `Enter a ${side} from ${mm(STOCK_LIMITS.min)} to ${mm(STOCK_LIMITS.max)}.`);
+        showError(input, `Enter a ${side} from ${ceilLen(STOCK_LIMITS.min)} to ${floorLen(STOCK_LIMITS.max)}.`);
         return;
       }
       showError(input, null);
@@ -176,7 +177,7 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
 
   function fillSection(controls, group) {
     const [name, summary] = controls.heading.querySelectorAll('span');
-    name.textContent = `${SPECIES[group.species].label} · ${mm(group.thickness)} mm`;
+    name.textContent = `${SPECIES[group.species].label} · ${dims([group.thickness])} ${unitName()}`;
     const count = group.sheets.length;
     const waste = count ? ` · ${percent(group.waste)} waste` : '';
     summary.textContent = `Buy ${count} ${stockWord(group.kind, count)} · ${size(group.stock.length, group.stock.width)}${waste}`;
@@ -267,11 +268,10 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
     const room = box.width - 2 * CHIP_PAD_PX - 4;
     if (box.width >= FULL_LABEL.width && box.height >= FULL_LABEL.height) {
       const title = clipped(`${placement.number} ${placement.name}`, room);
-      const dims = size(placement.length, placement.width);
-      return chip(...centre, [
-        { text: title, width: measure(title) },
-        { text: dims, width: Math.min(measure(dims, true), room), mono: true },
-      ], box, keepClear);
+      const sizes = `${len(placement.length)} × ${len(placement.width)}`;
+      const lines = [{ text: title, width: measure(title) }];
+      if (measure(sizes, true) <= room) lines.push({ text: sizes, width: measure(sizes, true), mono: true });
+      return chip(...centre, lines, box, keepClear);
     }
     if (box.width >= NUMBER_LABEL.width && box.height >= NUMBER_LABEL.height) {
       const number = String(placement.number);
@@ -313,7 +313,7 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
     for (const offcut of sheet.offcuts) {
       const box = { x: at(offcut.x), y: at(offcut.y), width: offcut.length * scale, height: offcut.width * scale };
       layers.push(svgNode('rect', box, 'offcut'));
-      const text = size(offcut.length, offcut.width);
+      const text = `${len(offcut.length)} × ${len(offcut.width)}`;
       if (measure(text, true) + 2 * CHIP_PAD_PX <= box.width && LINE_PX + 4 <= box.height) {
         const label = svgNode('text', { x: box.x + box.width / 2, y: box.y + box.height / 2 + 4, 'text-anchor': 'middle' }, 'mono muted note');
         label.textContent = text;
@@ -380,7 +380,7 @@ export function createPlanView({ root, mm, element, visible, getProject, onPick,
     const rows = cutList(project.parts).filter((row) => row.shape === 'dowel');
     nodes.rods.hidden = rows.length === 0;
     nodes.rods.textContent = rows.length
-      ? `Dowels are bought as rod and are not laid out: ${rows.map((row) => `${row.count} × ⌀${mm(row.width)} × ${mm(row.length)}`).join(', ')}.`
+      ? `Dowels are bought as rod and are not laid out: ${rows.map((row) => `${row.count} × ${dims([row.width, row.length], '⌀')}`).join(', ')}.`
       : '';
   }
 

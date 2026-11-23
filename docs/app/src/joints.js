@@ -1,4 +1,4 @@
-import { mm } from './format.js';
+import { ceilLen, exactMm, floorLen, len, lenUnit, num, unitName } from './format.js';
 import {
   MAX_SIZE_MM,
   SHAPES,
@@ -283,25 +283,25 @@ function pocketProblem(joint, part, to, touch) {
   if (thicknessAxis(part) === touch.axis) return pocketRefusal;
   const out = joint.length - extents(part)[thicknessAxis(part)];
   const depth = extents(to)[touch.axis];
-  return out > depth ? `The pocket screws (${joint.length}) come out the far side of ${nameOf(to)} (${roundBox(depth)} thick).` : null;
+  return out > depth ? `The pocket screws (${len(joint.length)}) come out the far side of ${nameOf(to)} (${len(depth)} thick).` : null;
 }
 
 const plateFits = (room, [length, width]) => width <= room.width && length <= room.length(width);
 const stockPlate = (room) => PLATES.filter((plate) => plateFits(room, plate)).at(-1) ?? null;
-const plateSize = (kind, length, width) => (kind === 'mendingPlate' ? [length, width] : [length, length, width]).join(' × ');
+const plateSize = (kind, length, width) => (kind === 'mendingPlate' ? [length, width] : [length, length, width]).map(len).join(' × ');
 
 function plateMissing(kind, part, to, touch) {
   const { room } = roomiestPlate(kind, part, to, touch);
   if (stockPlate(room)) return null;
   const [length, width] = PLATES[0];
   const smallest = `Even the smallest ${JOINT_KINDS[kind].toLowerCase()} (${plateSize(kind, length, width)})`;
-  if (width > room.width) return `${smallest} is wider than the face it would sit on (${roundBox(room.width)}).`;
-  return `${smallest} is longer than these pieces leave room for (${roundBox(room.length(width))}).`;
+  if (width > room.width) return `${smallest} is wider than the face it would sit on (${len(room.width)}).`;
+  return `${smallest} is longer than these pieces leave room for (${len(room.length(width))}).`;
 }
 
 function screwsTooLong(length, holds) {
   const thin = holds.filter(({ depth }) => length > depth).sort((a, b) => a.depth - b.depth)[0];
-  return thin ? `The screws (${length}) are longer than ${nameOf(thin.piece)} is thick (${roundBox(thin.depth)}).` : null;
+  return thin ? `The screws (${len(length)}) are longer than ${nameOf(thin.piece)} is thick (${len(thin.depth)}).` : null;
 }
 
 function plateScrews(part, to, face) {
@@ -670,12 +670,12 @@ export function jointProblem(project, jointId) {
     const stop = swingStop(project, jointId);
     if (stop && joint.open > stop.angle) {
       const by = nameOf(findPart(project, stop.by));
-      return `${nameOf(findPart(project, joint.part))} is open ${roundBox(joint.open)}°, past ${by} at ${stop.angle}°. Close it to ${stop.angle}° or move ${by}.`;
+      return `${nameOf(findPart(project, joint.part))} is open ${num(joint.open)}°, past ${by} at ${num(stop.angle)}°. Close it to ${num(stop.angle)}° or move ${by}.`;
     }
     const door = findPart(project, joint.part);
     const touch = door && findPart(project, joint.to) && contact(findPart(project, joint.to), door);
     if (joint.hingeType === 'concealed' && touch && thickness(door) < CONCEALED_DOOR_MM) {
-      return `Concealed hinges need a door at least ${CONCEALED_DOOR_MM} mm thick; ${nameOf(door)} is ${roundMm(thickness(door))} mm.`;
+      return `Concealed hinges need a door at least ${ceilLen(CONCEALED_DOOR_MM)} ${unitName()} thick; ${nameOf(door)} is ${lenUnit(thickness(door))}.`;
     }
     return null;
   }
@@ -686,7 +686,7 @@ export function jointProblem(project, jointId) {
   if (!meet) return `${nameOf(part)} no longer touches ${nameOf(to)}. Move them back together, or remove the joint.`;
   if (CUT_KINDS.includes(joint.kind)) return cutProblem(project, joint);
   if ((joint.kind === 'screws' || joint.kind === 'nails') && joint.length > meet.through + meet.into) {
-    return `Longer than both pieces together (${roundBox(meet.through + meet.into)} mm): it will come out the other side.`;
+    return `Longer than both pieces together (${lenUnit(meet.through + meet.into)}): it will come out the other side.`;
   }
   if (plateKind(joint.kind)) return plateProblem(joint, part, to, meet);
   if (joint.kind === 'pocketScrews') return pocketProblem(joint, part, to, meet);
@@ -711,22 +711,22 @@ function cutProblem(project, joint) {
   const size = blank(part);
   const where = `where ${nameOf(part)} meets ${nameOf(to)}`;
   if (joint.kind === 'dado') {
-    if (reach >= depth) return `The dado (${mm(reach)}) is as deep as ${nameOf(to)} is thick (${mm(depth)}). Make it shallower.`;
-    if (reach > depth / 2) return `The dado is deeper than half of ${nameOf(to)} (${mm(depth / 2)}). That weakens it.`;
+    if (reach >= depth) return `The dado (${len(reach)}) is as deep as ${nameOf(to)} is thick (${len(depth)}). Make it shallower.`;
+    if (reach > depth / 2) return `The dado is deeper than half of ${nameOf(to)} (${len(depth / 2)}). That weakens it.`;
   }
   if (joint.kind === 'tenon') {
-    if (reach > depth) return `The tenon (${mm(reach)}) is longer than ${nameOf(to)} is deep there (${mm(depth)}). Shorten it or tick Through tenon.`;
-    if (joint.thickness >= size.thickness) return `The tenon (${mm(joint.thickness)}) is as thick as ${nameOf(part)} (${mm(size.thickness)}). Make it thinner.`;
-    if (joint.width > size.width) return `The tenon (${mm(joint.width)}) is wider than ${nameOf(part)} (${mm(size.width)}). Make it narrower.`;
-    if (joint.width > room.width) return `The tenon (${mm(joint.width)}) is wider than ${where} (${mm(room.width)}). Make it narrower.`;
-    if (joint.thickness > room.thickness) return `The tenon (${mm(joint.thickness)}) is thicker than ${where} (${mm(room.thickness)}). Make it thinner.`;
-    if (joint.thickness > size.thickness / 2) return `The tenon is thicker than half of ${nameOf(part)} (${mm(size.thickness / 2)}). That leaves thin shoulders.`;
+    if (reach > depth) return `The tenon (${len(reach)}) is longer than ${nameOf(to)} is deep there (${len(depth)}). Shorten it or tick Through tenon.`;
+    if (joint.thickness >= size.thickness) return `The tenon (${len(joint.thickness)}) is as thick as ${nameOf(part)} (${len(size.thickness)}). Make it thinner.`;
+    if (joint.width > size.width) return `The tenon (${len(joint.width)}) is wider than ${nameOf(part)} (${len(size.width)}). Make it narrower.`;
+    if (joint.width > room.width) return `The tenon (${len(joint.width)}) is wider than ${where} (${len(room.width)}). Make it narrower.`;
+    if (joint.thickness > room.thickness) return `The tenon (${len(joint.thickness)}) is thicker than ${where} (${len(room.thickness)}). Make it thinner.`;
+    if (joint.thickness > size.thickness / 2) return `The tenon is thicker than half of ${nameOf(part)} (${len(size.thickness / 2)}). That leaves thin shoulders.`;
   }
   if (joint.kind === 'dowels') {
     const thinner = Math.min(thickness(part), thickness(to));
     const holes = holeRoom(part, to, joint);
-    if (joint.diameter >= thinner) return `The dowels (⌀${mm(joint.diameter)}) are as thick as the thinner piece (${mm(thinner)}). Use thinner dowels.`;
-    if (joint.length > holes) return `The dowels (${mm(joint.length)}) are longer than the two holes can hold (${mm(holes)}).`;
+    if (joint.diameter >= thinner) return `The dowels (⌀${len(joint.diameter)}) are as thick as the thinner piece (${len(thinner)}). Use thinner dowels.`;
+    if (joint.length > holes) return `The dowels (${len(joint.length)}) are longer than the two holes can hold (${len(holes)}).`;
   }
   return null;
 }
@@ -737,17 +737,17 @@ function cutLimit(project, joint, field, value) {
   const { part, to, depth, room } = cut;
   const size = blank(part);
   const where = `where ${nameOf(part)} meets ${nameOf(to)}`;
-  if (joint.kind === 'dado' && field === 'depth' && value >= depth) return `Enter a depth under ${mm(depth)}, the thickness of ${nameOf(to)}.`;
+  if (joint.kind === 'dado' && field === 'depth' && value >= depth) return `Enter a depth under ${floorLen(depth)}, the thickness of ${nameOf(to)}.`;
   if (joint.kind === 'tenon') {
-    if (field === 'length' && value > depth) return `Enter a length up to ${mm(depth)}, the depth of ${nameOf(to)} there, or tick Through tenon.`;
-    if (field === 'thickness' && value >= size.thickness) return `Enter a thickness under ${mm(size.thickness)}, the thickness of ${nameOf(part)}.`;
-    if (field === 'width' && value > size.width) return `Enter a width up to ${mm(size.width)}, the width of ${nameOf(part)}.`;
-    if (field === 'width' && value > room.width) return `Enter a width up to ${mm(room.width)}, ${where}.`;
-    if (field === 'thickness' && value > room.thickness) return `Enter a thickness up to ${mm(room.thickness)}, ${where}.`;
+    if (field === 'length' && value > depth) return `Enter a length up to ${floorLen(depth)}, the depth of ${nameOf(to)} there, or tick Through tenon.`;
+    if (field === 'thickness' && value >= size.thickness) return `Enter a thickness under ${floorLen(size.thickness)}, the thickness of ${nameOf(part)}.`;
+    if (field === 'width' && value > size.width) return `Enter a width up to ${floorLen(size.width)}, the width of ${nameOf(part)}.`;
+    if (field === 'width' && value > room.width) return `Enter a width up to ${floorLen(room.width)}, ${where}.`;
+    if (field === 'thickness' && value > room.thickness) return `Enter a thickness up to ${floorLen(room.thickness)}, ${where}.`;
   }
   if (joint.kind === 'dowels' && field === 'diameter') {
     const thinner = Math.min(thickness(part), thickness(to));
-    if (value >= thinner) return `Enter a diameter under ${mm(thinner)}, the thickness of the thinner piece.`;
+    if (value >= thinner) return `Enter a diameter under ${floorLen(thinner)}, the thickness of the thinner piece.`;
   }
   return null;
 }
@@ -759,8 +759,8 @@ function plateProblem(joint, part, to, touch) {
   const room = plateRoom(joint.kind, part, to, touch, face);
   const length = joint.kind === 'mendingPlate' ? joint.length : joint.leg;
   const size = plateSize(joint.kind, length, joint.width);
-  if (joint.width > room.width) return `The plate (${size}) is wider than the face it sits on (${roundBox(room.width)}).`;
-  if (length > room.length(joint.width)) return `The plate (${size}) is longer than the pieces leave room for (${roundBox(room.length(joint.width))}).`;
+  if (joint.width > room.width) return `The plate (${size}) is wider than the face it sits on (${len(room.width)}).`;
+  if (length > room.length(joint.width)) return `The plate (${size}) is longer than the pieces leave room for (${len(room.length(joint.width))}).`;
   return screwsTooLong(joint.screwLength, [part, to].map((piece) => ({ piece, depth: extents(piece)[edgeAxis(face)] })));
 }
 
@@ -784,7 +784,7 @@ export function joinParts(project, kind, pickedId, otherId) {
   for (const piece of [part, to]) {
     const hinge = mech.hangsOn(piece.id);
     if (hinge && !isIdentity(mech.placement(piece.id))) {
-      return { error: `${nameOf(piece)} is open ${roundBox(openAngle(project, piece.id))}°. Close it first to join anything to it.` };
+      return { error: `${nameOf(piece)} is open ${num(openAngle(project, piece.id))}°. Close it first to join anything to it.` };
     }
   }
   if (kind === 'hinge' && mech.hangsOn(partId)) {
@@ -1251,24 +1251,52 @@ function tally(keys) {
 
 function addedText(adds) {
   return listed(
-    tally(adds).map(([key, count]) => {
-      const [kind, size] = key.split('|');
+    adds.map(([key, count]) => {
+      const [kind, reach] = key.split('|');
+      const size = len(Number(reach));
       if (kind === 'tenon') return count === 1 ? `${article(size)} ${size} tenon` : `${count} × ${size} tenons`;
       return count === 1 ? `${size} for a dado` : `${count} × ${size} for dados`;
     }),
   );
 }
 
-function cutText({ mortises, grooves, holes }) {
-  const notes = tally(mortises).map(([depth, count]) => {
-    if (depth === 'through') return count === 1 ? 'Through mortise' : `${count} through mortises`;
-    return count === 1 ? `Mortise ${depth} deep` : `${count} mortises ${depth} deep`;
-  });
-  notes.push(...tally(grooves).map(([size, count]) => (count === 1 ? `Dado ${size}` : `${count} dados ${size}`)));
+function drilledHoles(holes) {
   const drilled = new Map();
   for (const [diameter, count] of holes) drilled.set(diameter, (drilled.get(diameter) ?? 0) + count);
-  notes.push(...[...drilled].map(([diameter, count]) => (count === 1 ? `Dowel hole ⌀${diameter}` : `${count} dowel holes ⌀${diameter}`)));
+  return [...drilled];
+}
+
+function cutText({ mortises, grooves, holes }) {
+  const notes = mortises.map(([depth, count]) => {
+    if (depth === 'through') return count === 1 ? 'Through mortise' : `${count} through mortises`;
+    return count === 1 ? `Mortise ${len(depth)} deep` : `${count} mortises ${len(depth)} deep`;
+  });
+  notes.push(
+    ...grooves.map(([size, count]) => {
+      const text = size.split('|').map((each) => len(Number(each))).join(' × ');
+      return count === 1 ? `Dado ${text}` : `${count} dados ${text}`;
+    }),
+  );
+  notes.push(...holes.map(([diameter, count]) => (count === 1 ? `Dowel hole ⌀${len(diameter)}` : `${count} dowel holes ⌀${len(diameter)}`)));
   return notes.join(' · ');
+}
+
+function allowanceOf(info) {
+  const tallied = {
+    length: tally(info.adds.length),
+    width: tally(info.adds.width),
+    mortises: tally(info.mortises),
+    grooves: tally(info.grooves),
+    holes: drilledHoles(info.holes),
+  };
+  return {
+    length: exactMm(info.length),
+    width: exactMm(info.width),
+    lengthItems: addedText(tallied.length),
+    widthItems: addedText(tallied.width),
+    cuts: cutText(tallied),
+    key: JSON.stringify(tallied),
+  };
 }
 
 export function cutAllowances(project) {
@@ -1281,22 +1309,18 @@ export function cutAllowances(project) {
     const cut = cutJoint(project, joint);
     if (!cut) continue;
     if (joint.kind === 'dowels') {
-      for (const id of [joint.part, joint.to]) entry(id).holes.push([mm(joint.diameter), joint.count]);
+      for (const id of [joint.part, joint.to]) entry(id).holes.push([exactMm(joint.diameter), joint.count]);
       continue;
     }
     const into = entry(joint.part);
+    const reach = exactMm(cut.reach);
     into[cut.side] += cut.reach;
-    into.adds[cut.side].push(`${joint.kind}|${mm(cut.reach)}`);
+    into.adds[cut.side].push(`${joint.kind}|${reach}`);
     const housing = entry(joint.to);
-    if (joint.kind === 'tenon') housing.mortises.push(joint.through ? 'through' : mm(cut.reach));
-    else housing.grooves.push(`${mm(blank(cut.part).thickness)} × ${mm(cut.reach)}`);
+    if (joint.kind === 'tenon') housing.mortises.push(joint.through ? 'through' : reach);
+    else housing.grooves.push(`${exactMm(blank(cut.part).thickness)}|${reach}`);
   }
-  return new Map(
-    [...pieces].map(([id, info]) => [
-      id,
-      { length: roundMm(info.length), width: roundMm(info.width), lengthItems: addedText(info.adds.length), widthItems: addedText(info.adds.width), cuts: cutText(info) },
-    ]),
-  );
+  return new Map([...pieces].map(([id, info]) => [id, allowanceOf(info)]));
 }
 
 const HARDWARE_ORDER = ['Butt hinge', 'Concealed hinge', 'Piano hinge', 'Angle bracket', 'Mending plate', 'Corner plate', 'Screw', 'Pocket screw', 'Nail', 'Dowel pin', 'Wood glue'];

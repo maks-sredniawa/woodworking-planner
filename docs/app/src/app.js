@@ -61,7 +61,7 @@ import { starterProject } from './project.js';
 import { cuttingOf, misfitIds, projectPieces } from './cutplan.js';
 import { createPlanView } from './planview.js';
 import { createScene } from './scene.js';
-import { mm } from './format.js';
+import { approx, ceilLen, dims, floorLen, gaugeOf, inInches, len, lenUnit, nailSize, num, screwSize, unitName } from './format.js';
 import {
   download,
   loadCutView,
@@ -378,37 +378,46 @@ function element(tag, className, text) {
   return node;
 }
 
-const trio = (length, width, thickness) => `${mm(length)} × ${mm(width)} × ${mm(thickness)}`;
+const trio = (part) => [part.length, part.width, part.thickness];
 
 function blankText(part, size = blank(part)) {
-  return part.shape === 'dowel' ? `⌀${mm(size.width)} × ${mm(size.length)}` : trio(size.length, size.width, size.thickness);
+  return part.shape === 'dowel' ? dims([size.width, size.length], '⌀') : dims(trio(size));
 }
 
-function sizeText(part) {
-  if (part.shape === 'disc') return `⌀${mm(part.diameter)} × ${mm(part.thickness)}`;
-  if (part.shape === 'dowel') return `⌀${mm(part.dowelDiameter)} × ${mm(part.length)} dowel`;
-  if (part.shape === 'arc') return `Arc R${mm(part.outerRadius)} × ${mm(part.bandWidth)} × ${mm(part.sweep)}° × ${mm(part.thickness)}`;
-  if (part.shape === 'triangle') return `Triangle ${trio(part.length, part.width, part.thickness)}`;
-  if (part.shape === 'free') return `Free ${trio(part.length, part.width, part.thickness)}`;
-  const plain = trio(part.length, part.width, part.thickness);
+function cornerSizes(part) {
   const count = cornerCount(part);
-  if (!count) return plain;
-  if (part.corners === 'rounded') return `${plain} · R${mm(part.cornerRadius)} ×${count}`;
-  return `${plain} · cut ${mm(part.cutLength)} × ${mm(part.cutWidth)} ×${count}`;
+  if (!count) return { values: [], text: '' };
+  if (part.corners === 'rounded') return { values: [part.cornerRadius], text: ` · R${len(part.cornerRadius)} ×${count}` };
+  return { values: [part.cutLength, part.cutWidth], text: ` · cut ${len(part.cutLength)} × ${len(part.cutWidth)} ×${count}` };
+}
+
+const chain = (values) => values.map(len).join(' × ');
+
+function sizeText(part) {
+  if (part.shape === 'disc') return dims([part.diameter, part.thickness], '⌀');
+  if (part.shape === 'dowel') return `${dims([part.dowelDiameter, part.length], '⌀')} dowel`;
+  if (part.shape === 'arc') {
+    const { outerRadius, bandWidth, thickness } = part;
+    return `Arc ${approx([outerRadius, bandWidth, thickness])}R${len(outerRadius)} × ${len(bandWidth)} × ${num(part.sweep)}° × ${len(thickness)}`;
+  }
+  if (part.shape === 'triangle') return `Triangle ${dims(trio(part))}`;
+  if (part.shape === 'free') return `Free ${dims(trio(part))}`;
+  const corners = cornerSizes(part);
+  return `${approx([...trio(part), ...corners.values])}${chain(trio(part))}${corners.text}`;
 }
 
 function shapeNote(part) {
-  if (part.shape === 'disc') return `Disc ⌀${mm(part.diameter)}`;
+  if (part.shape === 'disc') return `Disc ⌀${len(part.diameter)}`;
   if (part.shape === 'dowel') return 'Dowel rod';
-  if (part.shape === 'arc') return `Arc R${mm(part.outerRadius)} × ${mm(part.bandWidth)} × ${mm(part.sweep)}°`;
-  if (part.shape === 'triangle') return `Triangle ${mm(part.length)} × ${mm(part.width)}`;
+  if (part.shape === 'arc') return `Arc R${len(part.outerRadius)} × ${len(part.bandWidth)} × ${num(part.sweep)}°`;
+  if (part.shape === 'triangle') return `Triangle ${len(part.length)} × ${len(part.width)}`;
   if (part.shape === 'free') return `Free shape, ${part.points.length} points`;
   const count = cornerCount(part);
   if (!count) return null;
   const corners = count === 1 ? 'corner' : 'corners';
   const layout = cornerLayout(part) ? ` (${cornerLayout(part)})` : '';
-  if (part.corners === 'rounded') return `R${mm(part.cornerRadius)} ×${count} ${corners}${layout}`;
-  return `${count} ${corners} cut ${mm(part.cutLength)} × ${mm(part.cutWidth)}${layout}`;
+  if (part.corners === 'rounded') return `R${len(part.cornerRadius)} ×${count} ${corners}${layout}`;
+  return `${count} ${corners} cut ${len(part.cutLength)} × ${len(part.cutWidth)}${layout}`;
 }
 
 const SHAPE_PLURALS = { board: 'boards', disc: 'discs', dowel: 'dowels', arc: 'arcs', triangle: 'triangles', free: 'free shapes' };
@@ -470,7 +479,7 @@ function jointTag(part) {
   const joints = jointsOn(part.id);
   if (!joints.length) return null;
   const hinge = swingingHinge(project, part.id);
-  if (hinge?.part === part.id) return `Swings on ${partName(hinge.to)}${hinge.open ? ` · open ${mm(hinge.open)}°` : ''}`;
+  if (hinge?.part === part.id) return `Swings on ${partName(hinge.to)}${hinge.open ? ` · open ${num(hinge.open)}°` : ''}`;
   const partners = new Set(joints.map((joint) => (joint.part === part.id ? joint.to : joint.part)));
   return partners.size === 1 ? `Joined to ${partName([...partners][0])}` : `Joined to ${partners.size} pieces`;
 }
@@ -560,14 +569,14 @@ function renderSelectionChip() {
   chip.replaceChildren(
     ...(part.locked ? ['🔒 '] : []),
     element('b', '', part.name || 'Unnamed'),
-    ` · ${open === null ? sizeText(part) : open ? `open ${mm(open)}°` : 'closed'}${stop ? ` · stopped by ${partName(stop.by)}` : ''}`,
+    ` · ${open === null ? sizeText(part) : open ? `open ${num(open)}°` : 'closed'}${stop ? ` · stopped by ${partName(stop.by)}` : ''}`,
   );
 }
 
 function describeView() {
   const box = projectBounds(project.parts);
   const count = countText(project.parts);
-  const size = box ? `, ${mm(box.max.x - box.min.x)} wide × ${mm(box.max.y - box.min.y)} high × ${mm(box.max.z - box.min.z)} deep (mm)` : '';
+  const size = box ? `, ${overallText(box)}` : '';
   const part = selectedPart();
   const picked = part ? `. Picked: ${part.name || 'Unnamed'}, ${sizeText(part)}` : '';
   view.canvas.setAttribute('aria-label', `${project.name}: ${count}${size}${picked}`);
@@ -664,7 +673,7 @@ function renderShapeFields(part) {
     for (const name of wanted) sizes.append(sizes.querySelector(`[data-field="${name}"]`));
   }
   $('arc-inner').hidden = part.shape !== 'arc';
-  $('arc-inner').textContent = `Inner radius ${mm(part.outerRadius - part.bandWidth)} mm (outer radius less the band width).`;
+  $('arc-inner').textContent = `Inner radius ${lenUnit(part.outerRadius - part.bandWidth)} (outer radius less the band width).`;
   const allowance = cutAllowances(project).get(part.id);
   const extras = allowance ? [includesText(allowance, true), allowance.cuts].filter(Boolean) : [];
   $('cut-from').textContent = [`Cut from ${blankText(part, cutSize(part, allowance))}${part.shape === 'dowel' ? ' dowel rod' : ''}`, ...extras].join(' · ');
@@ -695,7 +704,6 @@ function showFreePreview(part) {
 
 const outlineEditor = createOutlineEditor({
   maxSize: MAX_SIZE_MM,
-  mm,
   announce,
   offWithReason,
   snap: { get: () => snapOn, set: (on) => setSnap(on) },
@@ -770,14 +778,21 @@ function renderCutList() {
   const fixings = hardwareList(project).reduce((count, row) => count + (row.count ?? 0), 0);
   if (fixings) $('totals').append(stat(String(fixings), fixings === 1 ? 'hardware item' : 'hardware items'));
   const box = projectBounds(project.parts);
-  $('overall').textContent = box
-    ? `Overall ${mm(box.max.x - box.min.x)} wide × ${mm(box.max.y - box.min.y)} high × ${mm(box.max.z - box.min.z)} deep (mm)`
-    : '';
+  $('overall').textContent = box ? `Overall ${approx(overallSizes(box))}${overallText(box)}` : '';
 }
 
-const SIZE_ERROR = `Enter a size above 0, up to ${mm(MAX_SIZE_MM)} mm.`;
-const POSITION_ERROR = `Enter a number from −${mm(MAX_SIZE_MM)} to ${mm(MAX_SIZE_MM)} mm.`;
-const half = (value) => mm(Math.floor((value / 2) * 10) / 10);
+const overallSizes = (box) => ['x', 'y', 'z'].map((axis) => box.max[axis] - box.min[axis]);
+
+function overallText(box) {
+  const [wide, high, deep] = overallSizes(box).map(len);
+  return `${wide} wide × ${high} high × ${deep} deep (${unitName()})`;
+}
+
+const sizeError = () => `Enter a size above 0, up to ${floorLen(MAX_SIZE_MM)} ${unitName()}.`;
+const positionError = () => `Enter a number from −${floorLen(MAX_SIZE_MM)} to ${floorLen(MAX_SIZE_MM)} ${unitName()}.`;
+const half = (value) => floorLen(value / 2);
+const CLOSE_TEXT = { mm: '1 mm', in: 'about 1/32 in' };
+const together = () => CLOSE_TEXT[unitName()];
 
 function cornersNeed(part, side) {
   if (!cornerCount(part)) return 0;
@@ -788,34 +803,34 @@ function cornersNeed(part, side) {
 const FIELD_ERRORS = {
   length: (part, value) => sideError(part, 'length', value),
   width: (part, value) => sideError(part, 'width', value),
-  thickness: () => SIZE_ERROR,
-  diameter: () => `Enter a diameter above 0, up to ${mm(MAX_SIZE_MM)} mm.`,
-  dowelDiameter: () => `Enter a diameter above 0, up to ${mm(MAX_SIZE_MM)} mm.`,
+  thickness: () => sizeError(),
+  diameter: () => `Enter a diameter above 0, up to ${floorLen(MAX_SIZE_MM)} ${unitName()}.`,
+  dowelDiameter: () => `Enter a diameter above 0, up to ${floorLen(MAX_SIZE_MM)} ${unitName()}.`,
   outerRadius: (part, value) =>
     value > 0 && value <= part.bandWidth
-      ? `Outer radius must be more than the band width (${mm(part.bandWidth)} mm).`
-      : `Enter an outer radius above 0, up to ${mm(MAX_RADIUS_MM)} mm.`,
+      ? `Outer radius must be more than the band width (${lenUnit(part.bandWidth)}).`
+      : `Enter an outer radius above 0, up to ${floorLen(MAX_RADIUS_MM)} ${unitName()}.`,
   bandWidth: (part, value) =>
     value >= part.outerRadius
-      ? `Band width must be less than the outer radius (${mm(part.outerRadius)} mm).`
-      : `Enter a band width above 0, less than the outer radius (${mm(part.outerRadius)} mm).`,
+      ? `Band width must be less than the outer radius (${lenUnit(part.outerRadius)}).`
+      : `Enter a band width above 0, less than the outer radius (${lenUnit(part.outerRadius)}).`,
   sweep: () => 'Enter a sweep from 1° to 360°.',
   cornerRadius: (part) => {
     const side = part.width <= part.length ? 'width' : 'length';
-    return `Enter a radius above 0, up to ${half(part[side])} mm (half the ${side}).`;
+    return `Enter a radius above 0, up to ${half(part[side])} ${unitName()} (half the ${side}).`;
   },
-  cutLength: (part) => `Enter a cut above 0, up to ${half(part.length)} mm (half the length).`,
-  cutWidth: (part) => `Enter a cut above 0, up to ${half(part.width)} mm (half the width).`,
-  x: () => POSITION_ERROR,
-  y: () => POSITION_ERROR,
-  z: () => POSITION_ERROR,
+  cutLength: (part) => `Enter a cut above 0, up to ${half(part.length)} ${unitName()} (half the length).`,
+  cutWidth: (part) => `Enter a cut above 0, up to ${half(part.width)} ${unitName()} (half the width).`,
+  x: () => positionError(),
+  y: () => positionError(),
+  z: () => positionError(),
 };
 
 const STRETCH_ERRORS = {
-  together: (side) => `Enter a bigger ${side}: at this one, points of the outline come within 1 mm of each other.`,
+  together: (side) => `Enter a bigger ${side}: at this one, points of the outline come within ${together()} of each other.`,
   flat: (side) => `Enter a bigger ${side}: at this one, the outline has no area.`,
   crossing: (side) => `At this ${side} the outline crosses itself. Enter another ${side} or change the outline.`,
-  big: (side) => `At this ${side} the outline is over ${mm(MAX_SIZE_MM)} mm across.`,
+  big: (side) => `At this ${side} the outline is over ${floorLen(MAX_SIZE_MM)} ${unitName()} across.`,
 };
 
 function sideError(part, side, value) {
@@ -824,15 +839,15 @@ function sideError(part, side, value) {
   }
   const need = cornersNeed(part, side);
   if (value > 0 && value <= MAX_SIZE_MM && value < need) {
-    return `Enter at least ${mm(need)} mm: twice the corner ${part.corners === 'rounded' ? 'radius' : 'cut'}.`;
+    return `Enter at least ${ceilLen(need)} ${unitName()}: twice the corner ${part.corners === 'rounded' ? 'radius' : 'cut'}.`;
   }
-  return SIZE_ERROR;
+  return sizeError();
 }
 
 const FREE_SWITCH_ERRORS = {
-  ring: 'A full ring has a hole, and a free shape can’t. Make the sweep less than 360° first.',
-  together: 'This piece is too small for a free shape: points of its outline would be less than 1 mm apart.',
-  flat: 'This piece has no area to make a free shape from.',
+  ring: () => 'A full ring has a hole, and a free shape can’t. Make the sweep less than 360° first.',
+  together: () => `This piece is too small for a free shape: points of its outline would be less than ${together()} apart.`,
+  flat: () => 'This piece has no area to make a free shape from.',
 };
 
 const fieldError = (part, input) => FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.';
@@ -885,69 +900,69 @@ function dadoHelp(joint) {
   const cut = cutJoint(project, joint);
   if (!cut) return '';
   const grows = cut.side === 'width' ? 'wider at this edge' : 'longer at this end';
-  return `A groove ${mm(blank(cut.part).thickness)} wide and ${mm(cut.reach)} deep across ${partName(cut.to.id)}. ${partName(cut.part.id)} is cut ${mm(cut.reach)} ${grows}.`;
+  return `A groove ${len(blank(cut.part).thickness)} wide and ${len(cut.reach)} deep across ${partName(cut.to.id)}. ${partName(cut.part.id)} is cut ${len(cut.reach)} ${grows}.`;
 }
 
 function tenonHelp(joint) {
   const cut = cutJoint(project, joint);
   if (!cut) return '';
   const size = blank(cut.part);
-  const shoulder = (whole, part) => mm(Math.max(0, (whole - part) / 2));
-  return `Shoulders: ${shoulder(size.thickness, joint.thickness)} on each face, ${shoulder(size.width, joint.width)} on each edge. ${partName(cut.part.id)} is cut ${mm(cut.reach)} longer at this end.`;
+  const shoulder = (whole, part) => len(Math.max(0, (whole - part) / 2));
+  return `Shoulders: ${shoulder(size.thickness, joint.thickness)} on each face, ${shoulder(size.width, joint.width)} on each edge. ${partName(cut.part.id)} is cut ${len(cut.reach)} longer at this end.`;
 }
 
 const JOINT_FORMS = {
   screws: [
-    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
+    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'length'], ['length', 'Length (mm)', 'length']] },
     { check: ['glued', 'Also glued'] },
   ],
   nails: [
-    { group: 'trio', fields: [['count', 'Nails', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
+    { group: 'trio', fields: [['count', 'Nails', 'count'], ['diameter', 'Diameter (mm)', 'length'], ['length', 'Length (mm)', 'length']] },
     { check: ['glued', 'Also glued'] },
   ],
   glue: [{ help: 'Nothing to set. Counts as one glued joint in the hardware list.' }],
   bracket: [
-    { group: 'trio', fields: [['count', 'Brackets', 'count'], ['leg', 'Leg (mm)', 'mm'], ['width', 'Width (mm)', 'mm']] },
-    { legend: 'Screws for each bracket', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'mm'], ['screwLength', 'Length (mm)', 'mm']] },
+    { group: 'trio', fields: [['count', 'Brackets', 'count'], ['leg', 'Leg (mm)', 'length'], ['width', 'Width (mm)', 'length']] },
+    { legend: 'Screws for each bracket', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'length'], ['screwLength', 'Length (mm)', 'length']] },
     { check: ['glued', 'Also glued'] },
   ],
   dado: [
-    { group: 'duo', fields: [['depth', 'Depth (mm)', 'mm']] },
+    { group: 'duo', fields: [['depth', 'Depth (mm)', 'length']] },
     { live: dadoHelp },
     { check: ['glued', 'Glued'] },
   ],
   tenon: [
-    { group: 'trio', fields: [['length', 'Tenon length (mm)', 'mm'], ['thickness', 'Thickness (mm)', 'mm'], ['width', 'Width (mm)', 'mm']] },
+    { group: 'trio', fields: [['length', 'Tenon length (mm)', 'length'], ['thickness', 'Thickness (mm)', 'length'], ['width', 'Width (mm)', 'length']] },
     { check: ['through', 'Through tenon'] },
     { live: tenonHelp },
     { check: ['glued', 'Glued'] },
   ],
   dowels: [
-    { group: 'trio', fields: [['count', 'Dowels', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
+    { group: 'trio', fields: [['count', 'Dowels', 'count'], ['diameter', 'Diameter (mm)', 'length'], ['length', 'Length (mm)', 'length']] },
     { check: ['glued', 'Glued'] },
   ],
   pocketScrews: [
-    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'mm'], ['length', 'Length (mm)', 'mm']] },
+    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'length'], ['length', 'Length (mm)', 'length']] },
     { select: ['face', 'Pockets on the', faceOptions] },
     { check: ['glued', 'Also glued'] },
   ],
   mendingPlate: [
-    { group: 'trio', fields: [['count', 'Plates', 'count'], ['length', 'Length (mm)', 'mm'], ['width', 'Width (mm)', 'mm']] },
-    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'mm'], ['screwLength', 'Length (mm)', 'mm']] },
+    { group: 'trio', fields: [['count', 'Plates', 'count'], ['length', 'Length (mm)', 'length'], ['width', 'Width (mm)', 'length']] },
+    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'length'], ['screwLength', 'Length (mm)', 'length']] },
     { select: ['face', 'On the', faceOptions] },
     { check: ['glued', 'Also glued'] },
   ],
   cornerPlate: [
-    { group: 'duo', fields: [['leg', 'Leg (mm)', 'mm'], ['width', 'Width (mm)', 'mm']] },
-    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'mm'], ['screwLength', 'Length (mm)', 'mm']] },
+    { group: 'duo', fields: [['leg', 'Leg (mm)', 'length'], ['width', 'Width (mm)', 'length']] },
+    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'length'], ['screwLength', 'Length (mm)', 'length']] },
     { select: ['face', 'On the', faceOptions] },
     { check: ['glued', 'Also glued'] },
   ],
   hinge: [
     { swing: true },
     { select: ['hingeType', 'Type', () => HINGE_TYPES] },
-    { group: 'trio', fields: [['count', 'Hinges', 'count'], ['size', 'Length (mm)', 'mm'], ['screwsEach', 'Screws each', 'whole']] },
-    { group: 'duo', fields: [['screwDiameter', 'Screw diameter (mm)', 'mm'], ['screwLength', 'Screw length (mm)', 'mm']] },
+    { group: 'trio', fields: [['count', 'Hinges', 'count'], ['size', 'Length (mm)', 'length'], ['screwsEach', 'Screws each', 'whole']] },
+    { group: 'duo', fields: [['screwDiameter', 'Screw diameter (mm)', 'length'], ['screwLength', 'Screw length (mm)', 'length']] },
     { group: 'duo', select: ['edge', 'Hinge edge', (joint) => Object.fromEntries(hingeEdges(project, joint).map((edge) => [edge, EDGES[edge]]))], fields: [['opensTo', 'Opens up to (°)', 'deg']] },
     { check: ['stops', 'Stops at the first piece in its way'] },
   ],
@@ -971,13 +986,15 @@ function stopNote(joint) {
   const stop = joint.kind === 'hinge' && restingStop(joint);
   if (!stop) return '';
   if (stop.angle === 0) return `Can’t open: ${partName(stop.by)} is in the way.`;
-  return `Stopped by ${partName(stop.by)} at ${mm(stop.angle)}°. The hinge itself opens to ${mm(joint.opensTo)}°.`;
+  return `Stopped by ${partName(stop.by)} at ${num(stop.angle)}°. The hinge itself opens to ${num(joint.opensTo)}°.`;
 }
 
 const JOINT_ERRORS = {
   count: 'Enter a whole number, at least 1.',
   whole: 'Enter a whole number, 0 or more.',
-  mm: 'Enter a size above 0 mm.',
+  get length() {
+    return `Enter a size above 0 ${unitName()}.`;
+  },
   deg: 'Enter an angle from 1° to 270°.',
   open: 'Enter an angle from 0° up to how far it opens.',
   apart: 'These pieces no longer touch, so there are no sizes to suggest.',
@@ -997,34 +1014,35 @@ function jointTitle(joint, part) {
 
 function jointSummary(joint) {
   const glued = joint.glued ? ' · glued' : '';
-  if (joint.kind === 'screws' || joint.kind === 'nails') return `${joint.count} × ${mm(joint.diameter)} × ${mm(joint.length)}${glued}`;
-  if (joint.kind === 'bracket') return `${joint.count} × ${mm(joint.leg)} × ${mm(joint.leg)} × ${mm(joint.width)}${glued}`;
-  if (joint.kind === 'dado') return `${mm(joint.depth)} deep${glued}`;
+  if (joint.kind === 'screws') return `${joint.count} × ${screwSize(joint.diameter, joint.length)}${glued}`;
+  if (joint.kind === 'nails') return `${joint.count} × ${nailSize(joint.diameter, joint.length)}${glued}`;
+  if (joint.kind === 'bracket') return `${joint.count} × ${chain([joint.leg, joint.leg, joint.width])}${glued}`;
+  if (joint.kind === 'dado') return `${len(joint.depth)} deep${glued}`;
   if (joint.kind === 'tenon') {
     const length = cutJoint(project, joint)?.reach ?? joint.length;
-    return `${mm(length)} × ${mm(joint.thickness)} × ${mm(joint.width)} ${joint.through ? 'through tenon' : 'tenon'}${glued}`;
+    return `${chain([length, joint.thickness, joint.width])} ${joint.through ? 'through tenon' : 'tenon'}${glued}`;
   }
-  if (joint.kind === 'dowels') return `${joint.count} × ⌀${mm(joint.diameter)} × ${mm(joint.length)}${glued}`;
+  if (joint.kind === 'dowels') return `${joint.count} × ⌀${chain([joint.diameter, joint.length])}${glued}`;
   const face = faceWord(joint);
-  if (joint.kind === 'mendingPlate') return `${joint.count} × ${mm(joint.length)} × ${mm(joint.width)}${face ? ` · ${face} face` : ''}${glued}`;
-  if (joint.kind === 'cornerPlate') return `${mm(joint.leg)} × ${mm(joint.leg)} × ${mm(joint.width)}${face ? ` · ${face} face` : ''}${glued}`;
-  if (joint.kind === 'pocketScrews') return `${joint.count} × ${mm(joint.diameter)} × ${mm(joint.length)}${face ? ` · pockets on ${face}` : ''}${glued}`;
+  if (joint.kind === 'mendingPlate') return `${joint.count} × ${chain([joint.length, joint.width])}${face ? ` · ${face} face` : ''}${glued}`;
+  if (joint.kind === 'cornerPlate') return `${chain([joint.leg, joint.leg, joint.width])}${face ? ` · ${face} face` : ''}${glued}`;
+  if (joint.kind === 'pocketScrews') return `${joint.count} × ${screwSize(joint.diameter, joint.length)}${face ? ` · pockets on ${face}` : ''}${glued}`;
   if (joint.kind === 'hinge') {
-    const type = joint.hingeType === 'concealed' ? 'concealed, 35 mm cup' : `${joint.hingeType} ${mm(joint.size)} mm`;
-    return `${joint.count} × ${type} · open ${mm(joint.open)}°${restingStop(joint) ? ' · stopped' : ''}`;
+    const type = joint.hingeType === 'concealed' ? 'concealed, 35 mm cup' : `${joint.hingeType} ${lenUnit(joint.size)}`;
+    return `${joint.count} × ${type} · open ${num(joint.open)}°${restingStop(joint) ? ' · stopped' : ''}`;
   }
   return '';
 }
 
 function jointInput(joint, field, kind) {
   const input = element('input', 'num');
-  Object.assign(input, { type: 'number', step: kind === 'mm' || kind === 'deg' ? 'any' : '1', inputMode: kind === 'mm' || kind === 'deg' ? 'decimal' : 'numeric' });
+  Object.assign(input, { type: 'number', step: kind === 'length' || kind === 'deg' ? 'any' : '1', inputMode: kind === 'length' || kind === 'deg' ? 'decimal' : 'numeric' });
   input.min = kind === 'whole' ? '0' : kind === 'deg' ? '1' : kind === 'count' ? '1' : '0.1';
-  if (kind === 'mm') input.dataset.length = '';
+  if (kind === 'length') input.dataset.length = '';
   input.dataset.jf = field;
   input.dataset.joint = joint.id;
   input.dataset.check = kind;
-  if (kind === 'mm') input.dataset.length = '';
+  if (kind === 'length') input.dataset.length = '';
   return input;
 }
 
@@ -1294,7 +1312,7 @@ function refusalMessage({ refused, piece, reason }, control) {
   if (refused === 'apart') return JOINT_ERRORS.apart;
   if (reason) return reason;
   if (control.dataset.jf === 'open') return JOINT_ERRORS.open;
-  return JOINT_ERRORS[control.dataset.check] ?? JOINT_ERRORS.mm;
+  return JOINT_ERRORS[control.dataset.check] ?? JOINT_ERRORS.length;
 }
 
 $('joints').addEventListener('input', (event) => {
@@ -1362,6 +1380,15 @@ $('joints').addEventListener('click', keepingFocus((event) => {
   if (result.stopped) sayStop(joint.id);
 }));
 
+function hardwareSize({ item, size }) {
+  if (!size) return '–';
+  const [diameter, length] = size;
+  const labelled = inInches() && (item === 'Nail' || gaugeOf(diameter));
+  if (item === 'Screw' || item === 'Pocket screw') return `${approx(labelled ? [length] : size)}${screwSize(diameter, length)}`;
+  if (item === 'Nail') return `${approx(labelled ? [length] : size)}${nailSize(diameter, length)}`;
+  return dims(size, item === 'Dowel pin' ? '⌀' : '');
+}
+
 const HARDWARE_LABELS = [...document.querySelectorAll('.hardware-list thead th')].map((th) => th.textContent);
 const USED_ON_SHOWN = 2;
 
@@ -1376,7 +1403,7 @@ function renderHardware() {
       const cells = [
         [row.count === null ? '–' : `${row.count} ×`, 'num'],
         [row.item],
-        [row.size ? `${row.item === 'Dowel pin' ? '⌀' : ''}${row.size.map(mm).join(' × ')}` : '–'],
+        [hardwareSize(row)],
         [usedOn],
       ];
       cells.forEach(([text, className], i) => {
@@ -1424,7 +1451,6 @@ function renderAll() {
 
 const planView = createPlanView({
   root: $('plan'),
-  mm,
   element,
   visible,
   getProject: () => project,
@@ -1509,7 +1535,7 @@ $('editor').addEventListener('input', (event) => {
   const next = updatePart(part, input.name, input.type === 'checkbox' ? input.checked : input.value);
   if (!next && input.name === 'shape' && input.value === 'free' && !part.locked) {
     renderEditor();
-    announce($('shape-error'), FREE_SWITCH_ERRORS[freeSwitchProblem(part)] ?? 'This piece can’t become a free shape.');
+    announce($('shape-error'), FREE_SWITCH_ERRORS[freeSwitchProblem(part)]?.() ?? 'This piece can’t become a free shape.');
     return;
   }
   if (!next && typed) {
@@ -1521,7 +1547,7 @@ $('editor').addEventListener('input', (event) => {
     const move = changePosition(project, part.id, { [input.name]: next[input.name] });
     if (move.refused) {
       const name = move.piece.name || 'Unnamed';
-      showFieldError(input, `That would move ${move.piece.id === part.id ? name : `${name}, joined to it,`} past ±${mm(MAX_SIZE_MM)} mm.`);
+      showFieldError(input, `That would move ${move.piece.id === part.id ? name : `${name}, joined to it,`} past ±${floorLen(MAX_SIZE_MM)} ${unitName()}.`);
       return;
     }
     showFieldError(input, null);
