@@ -154,10 +154,10 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     const heading = element('h3', 'stock-h');
     heading.append(element('span', 'jn'), ' ', element('span', 'dim'));
     const select = stockSelect(group.key, group.kind);
-    const pick = element('label', 'stock-pick', 'Stock size (mm) ');
+    const pick = element('label', 'stock-pick', `Stock size (${unitName()}) `);
     pick.append(select);
     const own = element('div', 'duo own');
-    own.append(ownField(group.key, 'length', 'Length (mm)'), ownField(group.key, 'width', 'Width (mm)'));
+    own.append(ownField(group.key, 'length', `Length (${unitName()})`), ownField(group.key, 'width', `Width (${unitName()})`));
     const warnings = element('div', 'stock-warnings');
     const diagrams = element('div', 'stock-diagrams');
     node.append(heading, pick, own, warnings, diagrams);
@@ -426,5 +426,11 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     redraw();
   }
 
-  return { render };
+  function reset() {
+    for (const each of sections.values()) each.node.remove();
+    sections.clear();
+    drawings.clear();
+  }
+
+  return { render, reset };
 }

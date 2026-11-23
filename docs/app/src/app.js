@@ -76,6 +76,7 @@ import {
   num,
   parseLength,
   screwSize,
+  setUnits,
   unitName,
   units,
 } from './format.js';
@@ -86,12 +87,14 @@ import {
   loadPotato,
   loadSaved,
   loadSnap,
+  loadUnits,
   readFile,
   save,
   saveCutView,
   saveDebug,
   savePotato,
   saveSnap,
+  saveUnits,
 } from './storage.js';
 import { createDebugPanel } from './debug.js';
 import { createOutlineEditor } from './outline-editor.js';
@@ -113,8 +116,6 @@ const undoStack = [];
 const redoStack = [];
 let lastEdit = null;
 
-const NUDGE_MM = 10;
-const FINE_NUDGE_MM = 1;
 let dragStart = null;
 let snapOn = loadSnap();
 let liftOn = false;
@@ -182,7 +183,7 @@ const handleDrag = timed(({ phase, id, delta, vertical, invertSnap, swing }) => 
     showDragModes(vertical, snapOn !== invertSnap);
     const from = dragStart.part;
     const proposed = Object.fromEntries(Object.entries(delta).map(([axis, change]) => [axis, from[axis] + change]));
-    const target = snapAssembly(dragStart.base, id, proposed, { snap: snapOn !== invertSnap });
+    const target = snapAssembly(dragStart.base, id, proposed, { snap: snapOn !== invertSnap, grid: units().snap, fine: units().fine });
     const next = moveAssembly(dragStart.base, id, target);
     const same = next.parts.every((part, i) => ['x', 'y', 'z'].every((axis) => part[axis] === project.parts[i][axis]));
     if (same) return;
@@ -330,7 +331,7 @@ function replacePart(next, mergeKey = null) {
 }
 
 function addPart(shape = 'board') {
-  const part = newPartBeside(project.parts, shape);
+  const part = newPartBeside(project.parts, shape, { gap: units().gap, inches: inInches() });
   commit({ ...project, parts: [...project.parts, part] });
   select(part.id);
 }
@@ -338,7 +339,7 @@ function addPart(shape = 'board') {
 function duplicateSelected() {
   const part = selectedPart();
   if (!part) return;
-  const copy = duplicatePart(part, project.parts);
+  const copy = duplicatePart(part, project.parts, units().gap);
   if (copy === part) return;
   const index = project.parts.indexOf(part);
   commit({ ...project, parts: [...project.parts.slice(0, index + 1), copy, ...project.parts.slice(index + 1)] });
@@ -757,10 +758,11 @@ function includesText({ lengthItems, widthItems }, short = false) {
   return short ? sentences.map((each) => each[0].toLowerCase() + each.slice(1)).join(' · ') : sentences.join(' · ');
 }
 
-const CUT_LABELS = [...document.querySelectorAll('.cut-list thead th')].map((th) => th.textContent);
+const headings = (table) => [...document.querySelectorAll(`${table} thead th`)].map((th) => th.textContent);
 
 function renderCutList() {
   const allowances = cutAllowances(project);
+  const labels = headings('.cut-list:not(.hardware-list)');
   $('cut-rows').replaceChildren(
     ...cutList(project.parts, allowances).map((row) => {
       const tr = document.createElement('tr');
@@ -778,7 +780,7 @@ function renderCutList() {
       cells.forEach(([text, className], i) => {
         const td = element('td', className, text);
         td.setAttribute('role', 'cell');
-        td.dataset.label = CUT_LABELS[i];
+        td.dataset.label = labels[i];
         tr.append(td);
       });
       const note = [shapeNote(row.piece), includesText(row), row.cuts].filter(Boolean).join(' · ');
@@ -1152,7 +1154,7 @@ function jointBody(joint) {
     for (const [field, text, kind] of row.fields ?? []) {
       const wrap = element('div', 'field');
       wrap.dataset.jfField = field;
-      wrap.append(labelled(text, jointInput(joint, field, kind)));
+      wrap.append(labelled(kind === 'length' ? text.replace('(mm)', `(${unitName()})`) : text, jointInput(joint, field, kind)));
       group.append(wrap);
     }
     if (group !== holder) holder.append(group);
@@ -1430,11 +1432,11 @@ function hardwareSize({ item, size }) {
   return dims(size, item === 'Dowel pin' ? '⌀' : '');
 }
 
-const HARDWARE_LABELS = [...document.querySelectorAll('.hardware-list thead th')].map((th) => th.textContent);
 const USED_ON_SHOWN = 2;
 
 function renderHardware() {
   const rows = hardwareList(project);
+  const labels = headings('.hardware-list');
   $('hardware-rows').replaceChildren(
     ...rows.map((row) => {
       const tr = document.createElement('tr');
@@ -1450,7 +1452,7 @@ function renderHardware() {
       cells.forEach(([text, className], i) => {
         const td = element('td', className, text);
         td.setAttribute('role', 'cell');
-        td.dataset.label = HARDWARE_LABELS[i];
+        td.dataset.label = labels[i];
         tr.append(td);
       });
       return tr;
@@ -1762,6 +1764,30 @@ for (const button of document.querySelectorAll('.move-tools [data-rotate]')) {
 setSnap(snapOn);
 setLift(false);
 
+function renderUnitTexts() {
+  const unit = units();
+  for (const node of document.querySelectorAll('[data-unit]')) node.textContent = unit.name;
+  const steps = { grid: unit.snap, nudge: unit.nudge, fine: unit.fineNudge };
+  for (const node of document.querySelectorAll('[data-step]')) node.textContent = lenUnit(steps[node.dataset.step]);
+  $('snap').title = `Snap to other boards and a ${lenUnit(unit.snap)} grid while dragging (hold Alt for the opposite)`;
+  for (const input of document.querySelectorAll('input[data-length]')) lengthField(input);
+  $('units').value = unit.id;
+}
+
+function changeUnits(id) {
+  setUnits(id);
+  saveUnits(units().id);
+  renderUnitTexts();
+  jointsShape = '';
+  planView.reset();
+  view.setFloorGrid(units().floor, units().block);
+  render();
+}
+$('units').addEventListener('change', (event) => changeUnits(event.target.value));
+setUnits(loadUnits());
+renderUnitTexts();
+view.setFloorGrid(units().floor, units().block);
+
 function setDebug(on) {
   saveDebug(on);
   debug.show(on);
@@ -1793,7 +1819,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key in ARROWS && selectedId && !event.ctrlKey && !event.metaKey && !inField) {
     event.preventDefault();
     const [axis, sign] = ARROWS[event.key](event.altKey);
-    nudge(axis, sign * (event.shiftKey ? FINE_NUDGE_MM : NUDGE_MM));
+    nudge(axis, sign * (event.shiftKey ? units().fineNudge : units().nudge));
     return;
   }
   const rotateAxis = ROTATE_KEYS[event.key.toLowerCase()];
