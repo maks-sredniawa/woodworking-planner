@@ -15,7 +15,7 @@ import {
   removePoint,
   setBend,
 } from './free.js';
-import { dims, fieldText, floorLen, floorToGrid, len, lengthField, parseLength, unitName } from './format.js';
+import { dims, fieldText, floorLen, floorToGrid, inInches, isRounded, len, lengthField, lenUnit, parseLength, unitName } from './format.js';
 import { roundMm } from './model.js';
 
 const SNAP_MM = 10;
@@ -81,6 +81,7 @@ export function createOutlineEditor({ maxSize, announce, offWithReason, snap, on
   function open({ name, color, points, returnFocus }) {
     state = { color, original: points, points, picked: null, undo: [], redo: [], last: null, drawing: false, stroke: null, returnFocus };
     $('outline-title').textContent = `Outline of ${name || 'Unnamed'}`;
+    $('outline-snap').title = `Points land on a ${isRounded(SNAP_MM) ? 'roughly ' : ''}${lenUnit(SNAP_MM)} grid while dragging (hold Alt for the opposite)`;
     showDiscard(false);
     list.replaceChildren();
     announce(note, '');
@@ -220,7 +221,7 @@ export function createOutlineEditor({ maxSize, announce, offWithReason, snap, on
       const input = lengthField(Object.assign(document.createElement('input'), { className: 'num' }));
       input.dataset.index = String(i);
       input.dataset.axis = axis;
-      input.setAttribute('aria-label', `Point ${i + 1}, ${words}`);
+      input.setAttribute('aria-label', `Point ${i + 1}, ${words}, in ${inInches() ? 'inches' : 'millimetres'}`);
       item.append(input);
     }
     item.append(error);
