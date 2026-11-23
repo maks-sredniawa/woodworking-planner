@@ -1,4 +1,5 @@
 import { parseProject, serialize } from './project.js';
+import { UNITS } from './format.js';
 
 const KEY = 'woodworking-planner:project';
 const UNREADABLE_KEY = 'woodworking-planner:unreadable-project';
@@ -40,6 +41,23 @@ export function loadDebug() {
 export function saveDebug(on) {
   try {
     localStorage.setItem(DEBUG_KEY, on ? 'on' : 'off');
+  } catch {}
+}
+
+const UNITS_KEY = 'woodworking-planner:units';
+
+export function loadUnits() {
+  try {
+    const stored = localStorage.getItem(UNITS_KEY);
+    return Object.hasOwn(UNITS, stored ?? '') ? stored : 'mm';
+  } catch {
+    return 'mm';
+  }
+}
+
+export function saveUnits(id) {
+  try {
+    localStorage.setItem(UNITS_KEY, id);
   } catch {}
 }
 

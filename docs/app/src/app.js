@@ -61,7 +61,24 @@ import { starterProject } from './project.js';
 import { cuttingOf, misfitIds, projectPieces } from './cutplan.js';
 import { createPlanView } from './planview.js';
 import { createScene } from './scene.js';
-import { approx, ceilLen, dims, floorLen, gaugeOf, inInches, len, lenUnit, nailSize, num, screwSize, unitName } from './format.js';
+import {
+  approx,
+  ceilLen,
+  dims,
+  fieldText,
+  floorLen,
+  gaugeOf,
+  inInches,
+  len,
+  lenUnit,
+  lengthField,
+  nailSize,
+  num,
+  parseLength,
+  screwSize,
+  unitName,
+  units,
+} from './format.js';
 import {
   download,
   loadCutView,
@@ -78,6 +95,12 @@ import {
 } from './storage.js';
 import { createDebugPanel } from './debug.js';
 import { createOutlineEditor } from './outline-editor.js';
+
+const isLengthField = (input) => Boolean(input?.dataset && 'length' in input.dataset);
+const typing = (input) => !('final' in input.dataset);
+const readField = (input, text = input.value) => parseLength(text, { unit: units().id, typing: typing(input) });
+const lengthRaw = (read) => (read.empty ? '' : read.mm);
+const shownValue = (input, value) => (isLengthField(input) ? fieldText(value) : String(value));
 
 const HISTORY_LIMIT = 100;
 const TYPING_MERGE_MS = 1200;
@@ -596,7 +619,7 @@ function renderEditor() {
       continue;
     }
     if (input.tagName === 'INPUT' && document.activeElement === input && input.dataset.partId === part.id) continue;
-    input.value = String(part[input.name]);
+    input.value = shownValue(input, part[input.name]);
     input.dataset.partId = part.id;
     showFieldError(input, null);
   }
@@ -850,7 +873,12 @@ const FREE_SWITCH_ERRORS = {
   flat: () => 'This piece has no area to make a free shape from.',
 };
 
-const fieldError = (part, input) => FIELD_ERRORS[input.name]?.(part, Number(input.value)) ?? 'This value is not allowed.';
+function fieldError(part, input) {
+  const read = isLengthField(input) ? readField(input) : null;
+  if (read?.error) return read.error;
+  const value = read ? read.mm ?? NaN : Number(input.value);
+  return FIELD_ERRORS[input.name]?.(part, value) ?? 'This value is not allowed.';
+}
 
 function pendingFields(changed) {
   return [...$('editor').querySelectorAll('[name][aria-invalid="true"]')]
@@ -864,11 +892,11 @@ function recheckPendingFields(pending) {
     const part = selectedPart();
     if (!part) return;
     if (!usable(field)) {
-      field.value = String(part[field.name]);
+      field.value = shownValue(field, part[field.name]);
       showFieldError(field, null);
       continue;
     }
-    const next = updatePart(part, field.name, typed);
+    const next = updatePart(part, field.name, isLengthField(field) ? lengthRaw(readField(field, typed)) : typed);
     const result = next && replacePart(next, field.name);
     if (!result?.project) stillInvalid.push({ field, typed, refusal: result?.refused && lockedMoveMessage(result.piece) });
   }
@@ -1034,15 +1062,19 @@ function jointSummary(joint) {
   return '';
 }
 
+const NUMBER_INPUTS = {
+  deg: { step: 'any', inputMode: 'decimal', min: '1' },
+  count: { step: '1', inputMode: 'numeric', min: '1' },
+  whole: { step: '1', inputMode: 'numeric', min: '0' },
+};
+
 function jointInput(joint, field, kind) {
   const input = element('input', 'num');
-  Object.assign(input, { type: 'number', step: kind === 'length' || kind === 'deg' ? 'any' : '1', inputMode: kind === 'length' || kind === 'deg' ? 'decimal' : 'numeric' });
-  input.min = kind === 'whole' ? '0' : kind === 'deg' ? '1' : kind === 'count' ? '1' : '0.1';
-  if (kind === 'length') input.dataset.length = '';
+  if (kind === 'length') lengthField(input);
+  else Object.assign(input, { type: 'number', ...NUMBER_INPUTS[kind] });
   input.dataset.jf = field;
   input.dataset.joint = joint.id;
   input.dataset.check = kind;
-  if (kind === 'length') input.dataset.length = '';
   return input;
 }
 
@@ -1174,10 +1206,10 @@ function fillJointCard(card, joint, part) {
     if (field === 'open') control.disabled = stuck;
     if (joint.kind === 'tenon' && field === 'length') control.disabled = joint.through;
     if (control === document.activeElement && control.getAttribute('aria-invalid') === 'true') continue;
-    if (control === document.activeElement && control.type === 'number') continue;
+    if (control === document.activeElement && 'check' in control.dataset) continue;
     const through = joint.kind === 'tenon' && field === 'length' && joint.through;
     if (control.type === 'checkbox') control.checked = Boolean(joint[field]);
-    else control.value = field === 'face' ? jointFace(project, joint) ?? '' : String(through ? cutJoint(project, joint)?.reach ?? joint.length : joint[field]);
+    else control.value = field === 'face' ? jointFace(project, joint) ?? '' : shownValue(control, through ? cutJoint(project, joint)?.reach ?? joint.length : joint[field]);
     if (control.getAttribute('aria-invalid') === 'true') showJointError(control, null);
   }
   const live = card.querySelector('[data-live]');
@@ -1319,9 +1351,18 @@ $('joints').addEventListener('input', (event) => {
   const control = event.target;
   const { jf: field, joint: jointId } = control.dataset;
   if (!field || !jointId) return;
-  const raw = control.type === 'checkbox' ? control.checked : control.value;
+  let raw = control.type === 'checkbox' ? control.checked : control.value;
+  if (isLengthField(control)) {
+    const read = readField(control);
+    if (read.incomplete) return;
+    if (read.error) {
+      showJointError(control, read.error);
+      return;
+    }
+    raw = lengthRaw(read);
+  }
   const result = changeJoint(project, jointId, field, raw);
-  const typed = control.type === 'number' || control.type === 'range';
+  const typed = 'check' in control.dataset || control.type === 'range';
   if (result.refused) {
     const message = refusalMessage(result, control);
     if (typed) {
@@ -1344,9 +1385,9 @@ function sayStop(jointId) {
 
 $('joints').addEventListener('focusout', (event) => {
   const control = event.target;
-  if (control.type !== 'number' || control.getAttribute('aria-invalid') === 'true') return;
+  if (!('check' in control.dataset) || control.getAttribute('aria-invalid') === 'true') return;
   const joint = jointById(project, control.dataset.joint);
-  if (joint && control.dataset.jf in joint) control.value = String(joint[control.dataset.jf]);
+  if (joint && control.dataset.jf in joint) control.value = shownValue(control, joint[control.dataset.jf]);
 });
 
 $('joints').addEventListener('click', keepingFocus((event) => {
@@ -1532,7 +1573,17 @@ $('editor').addEventListener('input', (event) => {
   if (!part || !input.name) return;
   if (input.type === 'radio' && !input.checked) return;
   const typed = input.tagName === 'INPUT' && input.type !== 'radio' && input.type !== 'checkbox';
-  const next = updatePart(part, input.name, input.type === 'checkbox' ? input.checked : input.value);
+  let raw = input.type === 'checkbox' ? input.checked : input.value;
+  if (isLengthField(input)) {
+    const read = readField(input);
+    if (read.incomplete) return;
+    if (read.error) {
+      showFieldError(input, read.error);
+      return;
+    }
+    raw = lengthRaw(read);
+  }
+  const next = updatePart(part, input.name, raw);
   if (!next && input.name === 'shape' && input.value === 'free' && !part.locked) {
     renderEditor();
     announce($('shape-error'), FREE_SWITCH_ERRORS[freeSwitchProblem(part)]?.() ?? 'This piece can’t become a free shape.');
@@ -1565,6 +1616,39 @@ $('editor').addEventListener('input', (event) => {
   recheckPendingFields(pending);
 });
 $('editor').addEventListener('submit', (event) => event.preventDefault());
+$('editor').addEventListener('focusout', (event) => {
+  const input = event.target;
+  const part = selectedPart();
+  if (part && isLengthField(input) && input.getAttribute('aria-invalid') !== 'true') input.value = fieldText(part[input.name]);
+});
+
+document.addEventListener(
+  'focusout',
+  (event) => {
+    const input = event.target;
+    if (!isLengthField(input) || !readField(input).incomplete) return;
+    input.dataset.final = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    delete input.dataset.final;
+  },
+  true,
+);
+
+document.addEventListener(
+  'keydown',
+  (event) => {
+    const input = event.target;
+    const up = event.key === 'ArrowUp';
+    if ((!up && event.key !== 'ArrowDown') || !isLengthField(input) || event.altKey || event.ctrlKey || event.metaKey) return;
+    const read = readField(input);
+    if (!('mm' in read)) return;
+    event.preventDefault();
+    const step = units().fineNudge;
+    input.value = fieldText(read.mm + (up ? step : -step));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  },
+  true,
+);
 
 function refusePartEdit(input, message, typed) {
   if (!typed) renderEditor();

@@ -2100,6 +2100,57 @@ try:
             heights = keyed.evaluate('[...document.querySelectorAll(".stock-key button")].map((b) => b.getBoundingClientRect().height)')
             assert min(heights) >= 36, f'at {width} px a key button is under 36 px tall: {min(heights)}'
         keyed.close()
+
+        picked = '(field) => woodworkingPlanner.project.parts.find((each) => document.getElementById("part-" + each.id).classList.contains("sel"))[field]'
+        typed = browser.new_page(viewport={'width': 1280, 'height': 900})
+        typed.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        typed.on('pageerror', lambda e: errors.append(str(e)))
+        typed.goto(URL)
+        typed.locator('#parts li').first.locator('.row-main').click()
+        length = typed.locator('#editor [name=length]')
+        expect(length).to_have_attribute('type', 'text')
+        expect(length).to_have_attribute('inputmode', 'decimal')
+        length.fill('3 1/2"')
+        assert typed.evaluate(picked, 'length') == 88.9, 'an inch length typed in millimetres is not kept exactly'
+        expect(length).to_have_value('3 1/2"')
+        typed.keyboard.press('Tab')
+        expect(length).to_have_value('88.9')
+        length.fill('')
+        length.press_sequentially('3 1/')
+        expect(length).not_to_have_attribute('aria-invalid', 'true')
+        assert typed.evaluate(picked, 'length') == 3, 'a half-typed fraction was not left alone'
+        length.press_sequentially('2')
+        assert typed.evaluate(picked, 'length') == 3.5
+        length.fill('abc')
+        expect(length).to_have_attribute('aria-invalid', 'true')
+        expect(typed.locator('#length-error')).to_have_text('Enter a length such as 89, 89.5 or 3 1/2".')
+        typed.keyboard.press('Tab')
+        expect(length).to_have_value('abc')
+        length.fill('612.345')
+        typed.keyboard.press('Tab')
+        expect(length).to_have_value('612.3')
+        assert typed.evaluate(picked, 'length') == 612.3, 'the form did not round a millimetre length to 0.1 mm'
+        length.focus()
+        typed.keyboard.press('ArrowUp')
+        expect(length).to_have_value('613.3')
+        assert typed.evaluate(picked, 'length') == 613.3
+        typed.keyboard.press('ArrowDown')
+        typed.keyboard.press('ArrowDown')
+        assert typed.evaluate(picked, 'length') == 611.3
+        x = typed.locator('#editor [name=x]')
+        x.fill('')
+        x.press_sequentially('3 1')
+        typed.keyboard.press('Tab')
+        expect(x).to_have_attribute('aria-invalid', 'true')
+        expect(typed.locator('#x-error')).to_have_text('Enter a length such as 89, 89.5 or 3 1/2".')
+        typed.click('#view-plan')
+        typed.fill('#kerf', '1/8"')
+        assert typed.evaluate('woodworkingPlanner.project.cutting.kerf') == 3.175, 'a 1/8 in kerf is not kept'
+        typed.keyboard.press('Tab')
+        expect(typed.locator('#kerf')).to_have_value('3.2')
+        typed.fill('#kerf', '11')
+        expect(typed.locator('#kerf-error')).to_have_text('Enter a kerf from 0 to 10.')
+        typed.close()
         browser.close()
 finally:
     server.terminate()

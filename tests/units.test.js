@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cutList, legacyPose, makePart, movePart, overlaps, snapPosition, updatePart } from '../docs/app/src/model.js';
+import { cutList, duplicatePart, legacyPose, makePart, makeShape, movePart, newPartBeside, overlaps, snapPosition, updatePart } from '../docs/app/src/model.js';
 import { cutAllowances, joinParts, rotateAssembly, touchingParts, updateJoint } from '../docs/app/src/joints.js';
 import { setUnits } from '../docs/app/src/format.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
@@ -127,4 +127,27 @@ test('cut-list rows group on millimetres, so the row count never depends on the 
   } finally {
     setUnits('mm');
   }
+});
+
+test('in inches a new piece starts at inch sizes and lands 2 in beside the others', () => {
+  const board = makeShape('board', { inches: true });
+  assert.deepEqual([board.length, board.width, board.thickness, board.cornerRadius, board.cutLength, board.cutWidth], [609.6, 203.2, 19.05, 19.05, 50.8, 50.8]);
+  assert.equal(makeShape('disc', { inches: true }).diameter, 406.4);
+  const dowel = makeShape('dowel', { inches: true });
+  assert.deepEqual([dowel.dowelDiameter, dowel.length], [31.75, 457.2]);
+  const arc = makeShape('arc', { inches: true });
+  assert.deepEqual([arc.outerRadius, arc.bandWidth, arc.sweep, arc.thickness], [406.4, 63.5, 90, 19.05]);
+  const triangle = makeShape('triangle', { inches: true });
+  assert.deepEqual([triangle.length, triangle.width], [203.2, 203.2]);
+  const free = makeShape('free', { inches: true });
+  assert.deepEqual([free.length, free.width], [406.4, 304.8]);
+  assert.deepEqual(free.points.map(({ x, y }) => [x, y]), [[0, 0], [406.4, 0], [406.4, 203.2], [304.8, 304.8], [0, 304.8]]);
+  assert.equal(makeShape('board').length, 600);
+
+  const first = flat({ x: 0 });
+  assert.equal(newPartBeside([first], 'board', { gap: INCH * 2, inches: true }).x, 660.4);
+  assert.equal(newPartBeside([first], 'board').x, 659.6);
+  assert.equal(newPartBeside([first], 'board', { gap: 50.8, inches: true }).length, 609.6);
+  assert.equal(duplicatePart(first, [first], 50.8).x, 660.4);
+  assert.equal(duplicatePart(first, [first]).x, 659.6);
 });

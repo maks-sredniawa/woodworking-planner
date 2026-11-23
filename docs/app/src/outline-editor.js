@@ -15,7 +15,7 @@ import {
   removePoint,
   setBend,
 } from './free.js';
-import { dims, floorLen, len, unitName } from './format.js';
+import { dims, fieldText, floorLen, floorToGrid, len, lengthField, parseLength, unitName } from './format.js';
 import { roundMm } from './model.js';
 
 const SNAP_MM = 10;
@@ -217,8 +217,7 @@ export function createOutlineEditor({ maxSize, announce, offWithReason, snap, on
     error.id = `point-error-${i}`;
     error.setAttribute('aria-live', 'polite');
     for (const [axis, words] of AXES) {
-      const input = Object.assign(document.createElement('input'), { type: 'number', step: 'any', className: 'num' });
-      input.dataset.length = '';
+      const input = lengthField(Object.assign(document.createElement('input'), { className: 'num' }));
       input.dataset.index = String(i);
       input.dataset.axis = axis;
       input.setAttribute('aria-label', `Point ${i + 1}, ${words}`);
@@ -241,7 +240,7 @@ export function createOutlineEditor({ maxSize, announce, offWithReason, snap, on
       item.classList.toggle('sel', i === picked);
       for (const input of item.querySelectorAll('input')) {
         if (input === skip || (input === document.activeElement && input.getAttribute('aria-invalid') === 'true' && !skip)) continue;
-        input.value = String(points[i][input.dataset.axis]);
+        input.value = fieldText(points[i][input.dataset.axis]);
         showError(input, null);
       }
     });
@@ -420,12 +419,17 @@ export function createOutlineEditor({ maxSize, announce, offWithReason, snap, on
     if (!state || !input.dataset.axis) return;
     const index = Number(input.dataset.index);
     const { axis } = input.dataset;
-    const raw = input.value;
-    const value = Math.round(Number(raw) * 10) / 10;
+    const read = parseLength(input.value, { typing: !('final' in input.dataset) });
+    if (read.incomplete) return;
+    if (read.error) {
+      showError(input, read.error);
+      return;
+    }
+    const value = read.empty ? NaN : read.mm;
     const { points } = state;
     if (axis === 'bend') {
-      const most = Math.floor(halfEdge(points, index) * 10) / 10;
-      if (raw === '' || !Number.isFinite(value) || Math.abs(value) > most) {
+      const most = floorToGrid(halfEdge(points, index));
+      if (!(Math.abs(value) <= most)) {
         showError(input, `Enter a bend from ${len(-most)} to ${len(most)}, half the length of this edge.`);
         return;
       }
@@ -433,13 +437,20 @@ export function createOutlineEditor({ maxSize, announce, offWithReason, snap, on
       change(setBend(points, index, value), `field:${index}:${axis}`, input);
       return;
     }
-    if (raw === '' || !Number.isFinite(value) || Math.abs(value) > maxSize) {
+    if (!(Math.abs(value) <= maxSize)) {
       showError(input, `Enter a number from −${floorLen(maxSize)} to ${floorLen(maxSize)} ${unitName()}.`);
       return;
     }
     showError(input, null);
     const point = points[index];
     change(movePoint(points, index, axis === 'x' ? value : point.x, axis === 'y' ? value : point.y), `field:${index}:${axis}`, input);
+  });
+
+  list.addEventListener('focusout', (event) => {
+    const input = event.target;
+    if (!state || !input.dataset.axis || input.getAttribute('aria-invalid') === 'true') return;
+    const point = state.points[Number(input.dataset.index)];
+    if (point) input.value = fieldText(point[input.dataset.axis]);
   });
 
   function nearest(event, spots) {
