@@ -1,5 +1,5 @@
-import { SPECIES, cutList, roundMm } from './model.js';
-import { ceilLen, dims, floorLen, len, unitName } from './format.js';
+import { SPECIES, cutList } from './model.js';
+import { ceilLen, dims, fieldText, floorLen, len, lengthField, parseLength, unitName } from './format.js';
 import { KERF_LIMITS, STOCK_LIMITS, STOCK_PRESETS, TRIM_LIMITS, cuttingOf, cuttingPlan, projectPieces } from './cutplan.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -74,19 +74,24 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     }
   }
 
-  function readMm(input, limits) {
-    const value = Number(input.value);
-    return input.value !== '' && Number.isFinite(value) && value >= limits.min && value <= limits.max ? roundMm(value) : null;
+  const readLength = (input) => parseLength(input.value, { typing: !('final' in input.dataset) });
+
+  function readWithin(input, limits, word) {
+    const read = readLength(input);
+    if (read.incomplete) return null;
+    const value = read.empty ? NaN : read.mm;
+    if (read.error || !(value >= limits.min && value <= limits.max)) {
+      showError(input, read.error ?? `Enter a ${word} from ${ceilLen(limits.min)} to ${floorLen(limits.max)}.`);
+      return null;
+    }
+    showError(input, null);
+    return value;
   }
 
   function sawField(input, field, limits, word) {
     input.addEventListener('input', () => {
-      const value = readMm(input, limits);
-      if (value === null) {
-        showError(input, `Enter a ${word} from ${ceilLen(limits.min)} to ${floorLen(limits.max)}.`);
-        return;
-      }
-      showError(input, null);
+      const value = readWithin(input, limits, word);
+      if (value === null) return;
       const cutting = cuttingOf(getProject());
       if (cutting[field] !== value) onChange({ ...cutting, [field]: value }, field);
     });
@@ -101,22 +106,18 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
 
   function ownField(key, side, label) {
     const wrap = element('div', 'field');
-    const input = element('input', 'num');
-    Object.assign(input, { id: `own-${side}-${key}`, type: 'number', min: String(STOCK_LIMITS.min), max: String(STOCK_LIMITS.max), step: 'any', inputMode: 'decimal' });
-    input.dataset.length = '';
+    const input = lengthField(element('input', 'num'));
+    input.id = `own-${side}-${key}`;
     input.dataset.side = side;
+    input.dataset.group = key;
     const text = element('label', '', `${label} `);
     text.append(input);
     const note = Object.assign(element('p', 'field-error'), { id: `own-${side}-${key}-error` });
     note.setAttribute('aria-live', 'polite');
     wrap.append(text, note);
     input.addEventListener('input', () => {
-      const value = readMm(input, STOCK_LIMITS);
-      if (value === null) {
-        showError(input, `Enter a ${side} from ${ceilLen(STOCK_LIMITS.min)} to ${floorLen(STOCK_LIMITS.max)}.`);
-        return;
-      }
-      showError(input, null);
+      const value = readWithin(input, STOCK_LIMITS, side);
+      if (value === null) return;
       const current = cachedGroup(key)?.stock;
       if (current) setStock(key, { length: current.length, width: current.width, [side]: value, own: true }, `own-${side}-${key}`);
     });
@@ -186,7 +187,7 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     controls.own.hidden = controls.select.value !== OWN;
     for (const input of controls.own.querySelectorAll('input')) {
       if (input === document.activeElement) continue;
-      input.value = String(group.stock[input.dataset.side]);
+      input.value = fieldText(group.stock[input.dataset.side]);
       showError(input, null);
     }
     controls.warnings.replaceChildren(
@@ -346,6 +347,15 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     }
   }
 
+  root.addEventListener('focusout', (event) => {
+    const input = event.target;
+    if (!('length' in input.dataset) || input.getAttribute('aria-invalid') === 'true') return;
+    const cutting = cuttingOf(getProject());
+    if (input === nodes.kerf || input === nodes.trim) input.value = fieldText(cutting[input === nodes.kerf ? 'kerf' : 'trim']);
+    const stock = input.dataset.group && cachedGroup(input.dataset.group)?.stock;
+    if (stock) input.value = fieldText(stock[input.dataset.side]);
+  });
+
   let lastWidth = 0;
   new ResizeObserver(() => {
     if (root.clientWidth === lastWidth) return;
@@ -390,8 +400,8 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     const cutting = cuttingOf(project);
     for (const [input, field] of [[nodes.kerf, 'kerf'], [nodes.trim, 'trim']]) {
       if (input === document.activeElement && input.getAttribute('aria-invalid') === 'true') continue;
-      if (input === document.activeElement && Number(input.value) === cutting[field]) continue;
-      input.value = String(cutting[field]);
+      if (input === document.activeElement && readLength(input).mm === cutting[field]) continue;
+      input.value = fieldText(cutting[field]);
       showError(input, null);
     }
     const empty = project.parts.length === 0;

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { serialize, starterProject } from '../docs/app/src/project.js';
-import { fileName, loadSaved } from '../docs/app/src/storage.js';
+import { fileName, loadSaved, loadUnits, saveUnits } from '../docs/app/src/storage.js';
 
 const KEY = 'woodworking-planner:project';
 const UNREADABLE_KEY = 'woodworking-planner:unreadable-project';
@@ -56,4 +56,24 @@ test('an unreadable save says whether its copy was kept', () => {
   assert.equal(loaded.kept, false);
   assert.match(loaded.error, /newer version/);
   assert.equal(store.get(KEY), text);
+});
+
+test('the unit is remembered per browser and anything else reads as millimetres', () => {
+  const store = fakeStorage();
+  assert.equal(loadUnits(), 'mm');
+  saveUnits('in16');
+  assert.equal(store.get('woodworking-planner:units'), 'in16');
+  assert.equal(loadUnits(), 'in16');
+  fakeStorage({ 'woodworking-planner:units': 'furlongs' });
+  assert.equal(loadUnits(), 'mm');
+  globalThis.localStorage = {
+    getItem: () => {
+      throw new Error('blocked');
+    },
+    setItem: () => {
+      throw new Error('blocked');
+    },
+  };
+  assert.equal(loadUnits(), 'mm');
+  assert.doesNotThrow(() => saveUnits('in32'));
 });

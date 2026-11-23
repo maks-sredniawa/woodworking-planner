@@ -52,6 +52,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
   floor.receiveShadow = true;
   scene.add(floor);
   let grid = null;
+  let floorGrid = { square: 100, block: 10 };
 
   const boards = new THREE.Group();
   scene.add(boards);
@@ -404,15 +405,16 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
 
   function placeGroundAndLight(box) {
     const span = Math.max(2000, (box.max.x - box.min.x) * 3, (box.max.z - box.min.z) * 3);
-    const gridSize = Math.ceil(span / 1000) * 1000;
-    if (!grid || grid.userData.size !== gridSize) {
+    const block = floorGrid.square * floorGrid.block;
+    const gridSize = Math.ceil(span / block) * block;
+    if (!grid || grid.userData.size !== gridSize || grid.userData.square !== floorGrid.square) {
       if (grid) {
         scene.remove(grid);
         grid.geometry.dispose();
         grid.material.dispose();
       }
-      grid = new THREE.GridHelper(gridSize, gridSize / 100, theme.gridMajor, theme.gridMinor);
-      grid.userData.size = gridSize;
+      grid = new THREE.GridHelper(gridSize, Math.round(gridSize / floorGrid.square), theme.gridMajor, theme.gridMinor);
+      Object.assign(grid.userData, { size: gridSize, square: floorGrid.square });
       scene.add(grid);
     }
     const cx = (box.min.x + box.max.x) / 2;
@@ -461,6 +463,12 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
     floor.visible = !on;
     resize();
     setParts(lastParts, lastExtras);
+  }
+
+  function setFloorGrid(square, block) {
+    floorGrid = { square, block };
+    if (lastBox) placeGroundAndLight(lastBox);
+    invalidate();
   }
 
   function setTheme(dark) {
@@ -696,6 +704,7 @@ export function createScene(container, { onSelect, onDrag, dragKind }) {
       liftMode = on;
     },
     setTheme,
+    setFloorGrid,
     fit: () => lastBox && frame(lastBox),
     look: (name) => lastBox && frame(lastBox, VIEWS[name]),
     framesDrawn: () => renderer.info.render.frame,

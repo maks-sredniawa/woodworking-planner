@@ -49,15 +49,22 @@ export const approx = (values) => (values.some(isRounded) ? '≈ ' : '');
 export const dims = (values, lead = '') => `${approx(values)}${lead}${values.map(len).join(' × ')}`;
 
 const steps = (value) => exactMm(value / current.fine);
-export const floorLen = (value) => len(Math.floor(steps(value) + 1e-6) * current.fine + 0);
+export const floorLen = (value) => len(floorToGrid(value));
 export const ceilLen = (value) => len(Math.ceil(steps(value) - 1e-6) * current.fine + 0);
 
-export function fieldText(value) {
-  if (current.den) return fraction(value, current.den, ' ');
-  return String(tenths(value));
+export function fieldText(value, unit = current.id) {
+  const den = UNITS[unit]?.den;
+  return den ? fraction(value, den, ' ') : String(tenths(value));
 }
 
-export const lengthInputMode = () => (current.den ? 'text' : 'decimal');
+export const floorToGrid = (value) => Math.floor(steps(value) + 1e-6) * current.fine + 0;
+
+export function lengthField(input) {
+  Object.assign(input, { type: 'text', inputMode: current.den ? 'text' : 'decimal', autocomplete: 'off', spellcheck: false });
+  input.setAttribute('autocapitalize', 'off');
+  input.dataset.length = '';
+  return input;
+}
 
 const MESSAGES = {
   inches: 'Enter a length such as 3 1/2, 3.5, 6\' 3" or 89mm.',

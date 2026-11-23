@@ -582,8 +582,22 @@ const SHAPE_DEFAULTS = {
   free: { length: 400, width: 300, points: [point(0, 0), point(400, 0), point(400, 200), point(300, 300), point(0, 300)] },
 };
 
-export function makeShape(shape = 'board') {
-  return makePart({ name: SHAPES[shape], shape, ...SHAPE_DEFAULTS[shape] });
+const inches = (value) => exactMm(value * 25.4);
+const inchPoints = (list) => list.map(([x, y]) => point(inches(x), inches(y)));
+const INCH_BOARD = { length: inches(24), width: inches(8), thickness: inches(0.75), cornerRadius: inches(0.75), cutLength: inches(2), cutWidth: inches(2) };
+
+const INCH_SHAPE_DEFAULTS = {
+  board: {},
+  disc: { diameter: inches(16) },
+  dowel: { dowelDiameter: inches(1.25), length: inches(18) },
+  arc: { outerRadius: inches(16), bandWidth: inches(2.5) },
+  triangle: { length: inches(8), width: inches(8) },
+  free: { length: inches(16), width: inches(12), points: inchPoints([[0, 0], [16, 0], [16, 8], [12, 12], [0, 12]]) },
+};
+
+export function makeShape(shape = 'board', { inches: inInches = false } = {}) {
+  const defaults = inInches ? { ...INCH_BOARD, ...INCH_SHAPE_DEFAULTS[shape] } : SHAPE_DEFAULTS[shape];
+  return makePart({ name: SHAPES[shape], shape, ...defaults });
 }
 
 const SWITCHES = ['shape', 'corners', ...Object.keys(CORNERS)];
@@ -592,11 +606,11 @@ const inReach = (value) => Number.isFinite(value) && Math.abs(value) <= MAX_SIZE
 const fitsLimits = (part) => POSITION.every((axis) => inReach(part[axis]));
 const BESIDE_GAP_MM = 50;
 
-export function newPartBeside(parts, shape = 'board') {
-  const fresh = makeShape(shape);
+export function newPartBeside(parts, shape = 'board', { gap = BESIDE_GAP_MM, inches: inInches = false } = {}) {
+  const fresh = makeShape(shape, { inches: inInches });
   const box = projectBounds(parts);
   if (!box) return fresh;
-  const x = [box.max.x + BESIDE_GAP_MM, box.min.x - BESIDE_GAP_MM - extents(fresh).x, 0].find(inReach);
+  const x = [box.max.x + gap, box.min.x - gap - extents(fresh).x, 0].map(exactMm).find(inReach);
   return { ...fresh, x };
 }
 
@@ -680,12 +694,12 @@ function freeX(piece, parts, x, nextX) {
   return undefined;
 }
 
-export function duplicatePart(part, parts = [part]) {
+export function duplicatePart(part, parts = [part], gap = BESIDE_GAP_MM) {
   const copy = { ...part, id: newId(), locked: false, y: 0 };
   const span = extents(part).x;
   const x =
-    freeX(copy, parts, part.x + span + BESIDE_GAP_MM, (blocker) => blocker.max.x + BESIDE_GAP_MM) ??
-    freeX(copy, parts, part.x - span - BESIDE_GAP_MM, (blocker) => blocker.min.x - span - BESIDE_GAP_MM);
+    freeX(copy, parts, part.x + span + gap, (blocker) => blocker.max.x + gap) ??
+    freeX(copy, parts, part.x - span - gap, (blocker) => blocker.min.x - span - gap);
   return x === undefined ? part : { ...copy, x: exactMm(x) };
 }
 
