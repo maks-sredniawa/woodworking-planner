@@ -2390,6 +2390,43 @@ try:
                     barred.screenshot(path=str(HERE / f'units-bar-{width}-{scheme}.png'))
                 assert barred.evaluate('document.documentElement.scrollWidth') <= width, f'at {width} px the bar scrolls sideways'
                 barred.close()
+
+        UNIT_LABELS_BROKEN = '''[...document.querySelectorAll('label')].filter((label) => label.querySelector('[data-unit]') && label.getClientRects().length).flatMap((label) => {
+            const text = document.createRange();
+            text.setStart(label, 0);
+            text.setEndBefore(label.querySelector('input, select'));
+            const tops = [...text.getClientRects()].filter((r) => r.width > 0).map((r) => r.top);
+            const size = parseFloat(getComputedStyle(label).fontSize);
+            const broken = Math.max(...tops) - Math.min(...tops) > 2 || text.getBoundingClientRect().height > size * 1.6;
+            return broken ? [`${label.textContent.trim()}: ${Math.round(text.getBoundingClientRect().height)} px`] : [];
+        })'''
+        for width in (1280, 360):
+            for unit in ('mm', 'in16'):
+                labelled = browser.new_page(viewport={'width': width, 'height': 900})
+                labelled.on('pageerror', lambda e: errors.append(str(e)))
+                labelled.goto(URL)
+                if width < 1000:
+                    labelled.click('#menu-toggle')
+                labelled.get_by_role('combobox', name='Units', exact=True).select_option(unit)
+                if width < 1000:
+                    labelled.click('#menu-toggle')
+                    labelled.click('.tabs [data-tab=cut]')
+                labelled.click('#view-plan')
+                expect(labelled.locator('#kerf')).to_be_visible()
+                checked = labelled.evaluate(UNIT_LABELS_BROKEN)
+                assert not checked, f'at {width} px in {unit} these unit labels break across lines: {checked}'
+                labelled.click('#view-list')
+                if width < 1000:
+                    labelled.click('.tabs [data-tab=parts]')
+                labelled.locator('#parts li').nth(4).locator('.row-main').click()
+                if width < 1000:
+                    labelled.click('.tabs [data-tab=edit]')
+                for corners, field in [('Rounded', 'cornerRadius'), ('Cut', 'cutLength')]:
+                    labelled.click(f'#corners-box .choice:has-text("{corners}")')
+                    expect(labelled.locator(f'#editor [name={field}]')).to_be_visible()
+                    checked = labelled.evaluate(UNIT_LABELS_BROKEN)
+                    assert not checked, f'at {width} px in {unit} these unit labels break across lines: {checked}'
+                labelled.close()
         browser.close()
 finally:
     server.terminate()
