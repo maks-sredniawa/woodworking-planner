@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { legacyPose, makePart, movePart, overlaps, snapPosition, updatePart } from '../docs/app/src/model.js';
-import { joinParts, rotateAssembly, touchingParts } from '../docs/app/src/joints.js';
+import { cutList, legacyPose, makePart, movePart, overlaps, snapPosition, updatePart } from '../docs/app/src/model.js';
+import { cutAllowances, joinParts, rotateAssembly, touchingParts, updateJoint } from '../docs/app/src/joints.js';
+import { setUnits } from '../docs/app/src/format.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
 import { cuttingFromFile } from '../docs/app/src/cutplan.js';
 import { movePoint, rebase, scale, setBend } from '../docs/app/src/free.js';
@@ -108,4 +109,22 @@ test('a cutting plan read from a file keeps a 1/8 in kerf and inch stock sizes',
   const cutting = cuttingFromFile({ kerf: 3.175, trim: 0, stock: { 'pine:19.05': { length: 2438.4, width: 1219.2, own: true } } });
   assert.equal(cutting.kerf, 3.175);
   assert.deepEqual(cutting.stock['pine:19.05'], { length: 2438.4, width: 1219.2, own: true });
+});
+
+test('cut-list rows group on millimetres, so the row count never depends on the unit', () => {
+  const leg = (fields) => makePart({ name: 'Leg', length: 700, width: 45, thickness: 45, pose: legacyPose('yzx'), ...fields });
+  const rail = makePart({ name: 'Rail', length: 600, width: 70, thickness: 20, pose: legacyPose('xyz'), x: 45, y: 500, z: 12 });
+  let project = { name: 'Frame', parts: [leg(), rail, leg({ x: 645 })], joints: [] };
+  for (const [end, length] of [[project.parts[0], 30], [project.parts[2], 30.5]]) {
+    const { project: joined, joint } = joinParts(project, 'tenon', rail.id, end.id);
+    project = updateJoint(joined, joint.id, 'length', length);
+  }
+  const legRows = () => cutList(project.parts, cutAllowances(project)).filter((row) => row.names.includes('Leg'));
+  assert.deepEqual(legRows().map((row) => row.cuts), ['Mortise 30 deep', 'Mortise 30.5 deep']);
+  setUnits('in16');
+  try {
+    assert.deepEqual(legRows().map((row) => row.cuts), ['Mortise 1 3/16 deep', 'Mortise 1 3/16 deep']);
+  } finally {
+    setUnits('mm');
+  }
 });
