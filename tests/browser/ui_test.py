@@ -2293,6 +2293,18 @@ try:
         gauge.fill('10')
         expect(shown.locator('#hardware-rows')).to_contain_text('#10 × ')
         assert shown.evaluate('woodworkingPlanner.project.joints[0].diameter') == 5
+        gauge.select_text()
+        for key in ['#', '1', '2']:
+            gauge.press_sequentially(key)
+            expect(gauge).not_to_have_attribute('aria-invalid', 'true')
+        expect(shown.locator('#hardware-rows')).to_contain_text('#12 × ')
+        gauge.select_text()
+        for key in ['5', '/', '3', '2']:
+            gauge.press_sequentially(key)
+            expect(gauge).not_to_have_attribute('aria-invalid', 'true')
+            expect(card.locator('.joint-error')).to_have_text('')
+        shown.keyboard.press('Tab')
+        expect(gauge).to_have_attribute('aria-invalid', 'true')
         gauge.fill('#7')
         expect(card.locator('.joint-error')).to_have_text('Enter a gauge #3, #4, #6, #8, #9, #10, #12 or #14, or a diameter such as 4mm.')
         gauge.fill('4mm')

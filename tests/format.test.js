@@ -229,6 +229,18 @@ test('a gauge field shows the gauge and takes a gauge or a marked length', () =>
   for (const text of ['#7', '15', 'abc', '#', '5/32']) assert.deepEqual(parseGauge(text), refused, text);
 });
 
+test('a gauge field waits while a gauge or a diameter is half typed', () => {
+  setUnits('in16');
+  for (const text of ['#1', '1', '5', '5/3', '5/32', '4.', '4 m', '15', '3 1/2']) {
+    assert.deepEqual(parseGauge(text, { typing: true }), { incomplete: true }, text);
+  }
+  assert.deepEqual(parseGauge('#8', { typing: true }), { mm: 4 });
+  assert.deepEqual(parseGauge('5/32"', { typing: true }), { mm: 3.96875 });
+  const refused = { error: 'Enter a gauge #3, #4, #6, #8, #9, #10, #12 or #14, or a diameter such as 4mm.' };
+  for (const text of ['#7', '#15', '#2', 'abc', '5/0']) assert.deepEqual(parseGauge(text, { typing: true }), refused, text);
+  for (const text of ['#1', '1', '5', '5/32']) assert.deepEqual(parseGauge(text), refused, text);
+});
+
 test('volume, face and weight read in timber units in inches', () => {
   assert.deepEqual(volume(0.027, true), { value: '0.0270', unit: 'm³' });
   assert.deepEqual(volume(0.00271), { value: '0.0027', unit: 'm³' });

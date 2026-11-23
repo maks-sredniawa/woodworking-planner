@@ -164,14 +164,17 @@ export function parseGauge(text, { typing = false } = {}) {
   const clean = normalise(text);
   if (clean === '') return { empty: true };
   if (typing && clean === '#') return { incomplete: true };
-  const gauge = clean.match(/^#? ?(\d+)$/);
+  const gauge = clean.match(/^(#)? ?(\d+)$/);
   if (gauge) {
-    const size = GAUGES.find(([, each]) => each === Number(gauge[1]));
-    return size ? { mm: size[0] } : { error: GAUGE_ERROR };
+    const size = GAUGES.find(([, each]) => each === Number(gauge[2]));
+    if (size) return { mm: size[0] };
+    const startsGauge = GAUGES.some(([, each]) => String(each).startsWith(gauge[2]));
+    return typing && (!gauge[1] || startsGauge) ? { incomplete: true } : { error: GAUGE_ERROR };
   }
   const length = parseLength(clean, { unit: current.id, typing });
   if (length.incomplete) return length;
   const read = reading(clean);
+  if (typing && read && read !== ZERO && read.system === null) return { incomplete: true };
   if (!read || read === ZERO || read.system === null || length.error) return { error: GAUGE_ERROR };
   return { mm: exactMm(read.value) };
 }
