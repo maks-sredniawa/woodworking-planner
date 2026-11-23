@@ -159,6 +159,13 @@ test('a flush inset door swung into a post still overlaps it', () => {
   assert.deepEqual(assemblyOverlaps(swung), [[joint.part, post.id]]);
 });
 
+test('an open door grazing a piece it does not touch when closed overlaps it, even by under 1 mm', () => {
+  const wall = block('Wall', [-100, -17.5], [244, 700]);
+  const { project, joint } = hungWith(wall);
+  const opened = updateJoint(updateJoint(project, joint.id, 'stops', false), joint.id, 'open', 90);
+  assert.deepEqual(assemblyOverlaps(opened), [[joint.part, wall.id]]);
+});
+
 test('a narrow inset door grazes the far side up to 1 mm and overlaps it where its corner cuts deeper', () => {
   const { project, joint, right } = insetDoor(100);
   const unstopped = updateJoint(project, joint.id, 'stops', false);
