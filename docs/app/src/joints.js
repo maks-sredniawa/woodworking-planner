@@ -14,6 +14,7 @@ import {
   projectBounds,
   recentre,
   rotatePart,
+  MIN_SIZE_MM,
   roundMm,
   snapBodies,
   solidOf,
@@ -85,7 +86,7 @@ function woodDepth(piece, other, footprint) {
   if (!byArea.has(key)) {
     const region = Object.fromEntries(Object.entries(area).map(([axis, span]) => [AXES.indexOf(axis), span]));
     const depth = depthBehind(solidOf(piece), AXES.indexOf(touch.axis), touch.at, touch.sign, region, footprint ? 0 : null);
-    byArea.set(key, roundMm(depth ?? extents(piece)[touch.axis]));
+    byArea.set(key, exactMm(depth ?? extents(piece)[touch.axis]));
   }
   return byArea.get(key);
 }
@@ -94,7 +95,7 @@ function within(region, footprint) {
   return Object.fromEntries(Object.entries(region).map(([axis, [low, high]]) => [axis, [Math.max(low, footprint[axis][0]), Math.min(high, footprint[axis][1])]]));
 }
 
-const spanOf = ([low, high]) => roundMm(high - low);
+const spanOf = ([low, high]) => exactMm(high - low);
 
 function tenonRoom(part, touch) {
   const across = poseAxes(part.pose).thickness[1];
@@ -647,13 +648,12 @@ export function placements(project) {
   return new Map(project.parts.map((part) => [part.id, mech.placement(part.id)]));
 }
 
-const roundBox = (value) => Math.round(value * 10) / 10 + 0;
 
 export function worldBounds(project, id, placement = mechanism(project).placement(id)) {
   const box = bounds(findPart(project, id));
   const corners = [];
   for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(transformPoint(placement, [x, y, z]));
-  const pick = (fn) => Object.fromEntries(AXES.map((axis, i) => [axis, roundBox(fn(...corners.map((corner) => corner[i])))]));
+  const pick = (fn) => Object.fromEntries(AXES.map((axis, i) => [axis, exactMm(fn(...corners.map((corner) => corner[i])))]));
   return { min: pick(Math.min), max: pick(Math.max) };
 }
 
@@ -847,8 +847,8 @@ const counted = (most) => (raw) => {
   return value >= 1 ? value : undefined;
 };
 const millimetres = (most) => (raw) => {
-  const value = Math.round(Number(raw) * 10) / 10;
-  return raw !== '' && Number.isFinite(value) && value > 0 && value <= most ? value : undefined;
+  const value = exactMm(Number(raw));
+  return raw !== '' && Number.isFinite(value) && value >= MIN_SIZE_MM && value <= most ? value : undefined;
 };
 const face = (raw) => (Object.hasOwn(FACES, raw) ? raw : undefined);
 const degrees = (least, most) => (raw) => {
@@ -1080,7 +1080,7 @@ export function rotateAssembly(project, id, axis) {
   const span = (box, each) => box.max[each] - box.min[each];
   const corner = { y: before.min.y };
   for (const each of ['x', 'z']) corner[each] = before.min[each] + recentre(span(before, each), span(after, each));
-  const placed = turned.map((part) => ({ ...part, ...Object.fromEntries(AXES.map((each) => [each, roundMm(corner[each] + part[each] - after.min[each])])) }));
+  const placed = turned.map((part) => ({ ...part, ...Object.fromEntries(AXES.map((each) => [each, exactMm(corner[each] + part[each] - after.min[each])])) }));
   if (placed.some((part) => AXES.some((each) => Math.abs(part[each]) > MAX_SIZE_MM))) return project;
   const byId = new Map(placed.map((part) => [part.id, part]));
   const joints = jointsOf(project).map((joint) => {

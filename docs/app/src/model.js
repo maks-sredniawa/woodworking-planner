@@ -1,8 +1,10 @@
 import { MAX_POINTS, MIN_POINTS, area, arcBend, box, edgeArc, halfEdge, outlineProblem, point, rebase, scale } from './free.js';
+import { exactMm } from './format.js';
 import { TOUCH_MM, convexParts, moveSolid, placeSolid, prism, solidsClash, sweepSpans } from './geometry.js';
 
 export const MAX_SIZE_MM = 10000;
 export const MAX_RADIUS_MM = MAX_SIZE_MM / 2;
+export const MIN_SIZE_MM = 0.1;
 export const MAX_SWEEP_DEG = 360;
 export const MIN_SWEEP_DEG = 1;
 
@@ -346,7 +348,8 @@ function freePointsOf(part) {
 
 function withOutline(part, points) {
   const size = box(points);
-  return { ...part, points, length: roundMm(size.maxX - size.minX), width: roundMm(size.maxY - size.minY) };
+  const measured = points.some((each) => each.bend) ? roundMm : exactMm;
+  return { ...part, points, length: measured(size.maxX - size.minX), width: measured(size.maxY - size.minY) };
 }
 
 const FIT_TRIES = 12;
@@ -376,12 +379,14 @@ function toFree(part, next) {
   if (kept && !shapeProblem(kept)) return kept;
   if (fullRing(part)) return null;
   const sized = part.shape === 'dowel' ? { ...next, thickness: part.dowelDiameter } : next;
-  return withOutline(sized, rebase(freePointsOf(part)));
+  return withOutline(sized, convertedPoints(part));
 }
+
+const convertedPoints = (part) => rebase(freePointsOf(part)).map(({ x, y, bend }) => point(roundMm(x), roundMm(y), roundMm(bend)));
 
 export function freeSwitchProblem(part) {
   if (fullRing(part)) return 'ring';
-  return outlineProblem(rebase(freePointsOf(part)), MAX_SIZE_MM)?.kind ?? null;
+  return outlineProblem(convertedPoints(part), MAX_SIZE_MM)?.kind ?? null;
 }
 
 export function stretchProblem(part, field, value) {
@@ -475,7 +480,7 @@ const NO_ALLOWANCE = { length: 0, width: 0, lengthItems: '', widthItems: '', cut
 
 export function cutSize(part, allowance = NO_ALLOWANCE) {
   const size = blank(part);
-  return { ...size, length: roundMm(size.length + allowance.length), width: roundMm(size.width + allowance.width) };
+  return { ...size, length: exactMm(size.length + allowance.length), width: exactMm(size.width + allowance.width) };
 }
 
 function addedArea(part, allowance) {
@@ -600,12 +605,12 @@ const NOT_ALLOWED = Symbol('not allowed');
 
 function fieldValue(field, raw) {
   if (SIZES.includes(field)) {
-    const value = roundMm(Number(raw));
-    return raw !== '' && Number.isFinite(value) && value > 0 && value <= (SIZE_LIMITS[field] ?? MAX_SIZE_MM) ? value : NOT_ALLOWED;
+    const value = exactMm(Number(raw));
+    return raw !== '' && Number.isFinite(value) && value >= MIN_SIZE_MM && value <= (SIZE_LIMITS[field] ?? MAX_SIZE_MM) ? value : NOT_ALLOWED;
   }
   if (POSITION.includes(field)) {
     const value = Number(raw);
-    return raw !== '' && inReach(value) ? roundMm(value) : NOT_ALLOWED;
+    return raw !== '' && inReach(value) ? exactMm(value) : NOT_ALLOWED;
   }
   if (field === 'sweep') {
     const value = roundMm(Number(raw));
@@ -624,7 +629,7 @@ function pointsValue(raw) {
   if (!Array.isArray(raw) || raw.length < MIN_POINTS || raw.length > MAX_POINTS) return NOT_ALLOWED;
   const numbers = raw.map((each) => [each?.x, each?.y, each?.bend ?? 0]);
   if (!numbers.every((values) => values.every((value) => typeof value === 'number' && inReach(value)))) return NOT_ALLOWED;
-  const points = numbers.map((values) => point(...values.map(roundMm)));
+  const points = numbers.map((values) => point(...values.map(exactMm)));
   return points.every((each, i) => Math.abs(each.bend) <= halfEdge(points, i) + 0.05) ? points : NOT_ALLOWED;
 }
 
@@ -682,7 +687,7 @@ export function duplicatePart(part, parts = [part]) {
   const x =
     freeX(copy, parts, part.x + span + BESIDE_GAP_MM, (blocker) => blocker.max.x + BESIDE_GAP_MM) ??
     freeX(copy, parts, part.x - span - BESIDE_GAP_MM, (blocker) => blocker.min.x - span - BESIDE_GAP_MM);
-  return x === undefined ? part : { ...copy, x: roundMm(x) };
+  return x === undefined ? part : { ...copy, x: exactMm(x) };
 }
 
 export function roundMm(value) {
@@ -773,15 +778,17 @@ export function snapPosition(part, proposed, others, options) {
 }
 
 // Meetings are settled one axis at a time, nearest first, each with the axes already settled in place: an axis tested before its neighbour moved would meet the wrong face, or none.
-export function snapBodies(at, moving, proposed, fixed, { snap = true } = {}) {
+const roundTo = (value, step) => exactMm(Math.round(exactMm(value / step)) * step);
+
+export function snapBodies(at, moving, proposed, fixed, { snap = true, fine = 0.1, grid = SNAP_GRID_MM } = {}) {
   const axes = POSITION.filter((axis) => axis in proposed);
-  if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundMm(proposed[axis])]));
-  const floor = roundMm(at.y - Math.min(...moving.map(({ box }) => box.min.y)));
+  if (!snap) return Object.fromEntries(axes.map((axis) => [axis, roundTo(proposed[axis], fine)]));
+  const floor = exactMm(at.y - Math.min(...moving.map(({ box }) => box.min.y)));
   const result = {};
   const plain = {};
   for (const axis of axes) {
     plain[axis] = nearest(proposed[axis], faceTargets(at, moving, axis, proposed, fixed, floor));
-    result[axis] = roundMm(plain[axis]?.target ?? Math.round(proposed[axis] / SNAP_GRID_MM) * SNAP_GRID_MM);
+    result[axis] = exactMm(plain[axis]?.target ?? roundTo(proposed[axis], grid));
   }
   let unsettled = axes;
   while (unsettled.length) {
@@ -803,7 +810,7 @@ export function movePart(part, position) {
   const next = { ...part };
   for (const axis of POSITION) {
     if (!(axis in position)) continue;
-    const value = roundMm(position[axis]);
+    const value = exactMm(position[axis]);
     if (!inReach(value)) return part;
     next[axis] = value;
   }
@@ -822,6 +829,6 @@ export function rotatePart(part, axis) {
   const before = extents(part);
   const turned = { ...part, pose };
   const after = extents(turned);
-  for (const dim of ['x', 'z']) turned[dim] = roundMm(part[dim] + recentre(before[dim], after[dim]));
+  for (const dim of ['x', 'z']) turned[dim] = exactMm(part[dim] + recentre(before[dim], after[dim]));
   return fitsLimits(turned) ? turned : part;
 }

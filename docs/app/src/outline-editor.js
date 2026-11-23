@@ -16,6 +16,7 @@ import {
   setBend,
 } from './free.js';
 import { dims, floorLen, len, unitName } from './format.js';
+import { roundMm } from './model.js';
 
 const SNAP_MM = 10;
 const NUDGE_MM = 10;
@@ -494,12 +495,12 @@ export function createOutlineEditor({ maxSize, announce, offWithReason, snap, on
     }
     if (drag.kind === 'point') {
       const snapping = snap.get() !== event.altKey;
-      const at = snapping ? [Math.round(x / SNAP_MM) * SNAP_MM, Math.round(y / SNAP_MM) * SNAP_MM] : [x, y];
+      const at = snapping ? [Math.round(x / SNAP_MM) * SNAP_MM, Math.round(y / SNAP_MM) * SNAP_MM] : [roundMm(x), roundMm(y)];
       state.points = movePoint(drag.base, drag.index, ...at);
       if (drag.pointerType !== 'mouse') showChip();
     } else {
       const bend = bendToward(drag.base, drag.index, [x, y]);
-      state.points = setBend(drag.base, drag.index, Math.abs(bend) * view.scale < STRAIGHT_CATCH_PX ? 0 : bend);
+      state.points = setBend(drag.base, drag.index, Math.abs(bend) * view.scale < STRAIGHT_CATCH_PX ? 0 : roundMm(bend));
     }
     draw();
     renderTable(null);

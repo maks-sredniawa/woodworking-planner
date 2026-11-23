@@ -82,14 +82,14 @@ test('totals add volume, face area and weight', () => {
   assert.ok(Math.abs(result.weight - 2.88) < 1e-9);
 });
 
-test('updatePart rejects sizes that are not positive or are too large and rounds to 0.1 mm', () => {
+test('updatePart rejects sizes that are not positive or are too large and keeps the value it is given', () => {
   const part = makePart();
   assert.equal(updatePart(part, 'length', '0'), null);
   assert.equal(updatePart(part, 'length', '-5'), null);
   assert.equal(updatePart(part, 'length', 'abc'), null);
   assert.equal(updatePart(part, 'width', '20000'), null);
   assert.equal(updatePart(part, 'x', ''), null);
-  assert.equal(updatePart(part, 'length', '612.345').length, 612.3);
+  assert.equal(updatePart(part, 'length', '612.345').length, 612.345);
   assert.equal(updatePart(part, 'x', '-40').x, -40);
   assert.equal(updatePart(part, 'species', 'unobtainium'), null);
   assert.equal(updatePart(part, 'pose', '+x+x+y'), null);
@@ -176,7 +176,7 @@ test('movePart changes only the given axes and refuses positions beyond the limi
   const board = makePart({ x: 5, y: 6, z: 7 });
   assert.deepEqual(
     (({ x, y, z }) => ({ x, y, z }))(movePart(board, { x: 12.34 })),
-    { x: 12.3, y: 6, z: 7 },
+    { x: 12.34, y: 6, z: 7 },
   );
   assert.equal(movePart(board, { y: 20000 }), board);
 });

@@ -159,6 +159,11 @@ test('parseLength keeps the value the table in the spec gives, in every unit', (
   }
 });
 
+test('a millimetre field puts what is typed on the 0.1 mm grid, which the model no longer does', () => {
+  assert.deepEqual(parseLength('612.345', { unit: 'mm' }), { mm: 612.3 });
+  assert.deepEqual(parseLength('12.34', { unit: 'mm' }), { mm: 12.3 });
+});
+
 test('parseLength takes the current unit when none is given', () => {
   setUnits('in16');
   assert.deepEqual(parseLength('3 1/2'), { mm: 88.9 });
