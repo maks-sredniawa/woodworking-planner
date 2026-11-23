@@ -1144,23 +1144,34 @@ function stopForLayout(project, jointId) {
   return stop;
 }
 
+const grazes = (shutGap) => shutGap >= -TOUCH_MM && shutGap < GRAZE_MM;
+
+function shutSwing(project, joint) {
+  const mech = mechanism(project);
+  const info = mech.hinges.get(joint.id);
+  if (!info?.line || info.jammed) return null;
+  const shut = mechanism(withJoint(project, { ...joint, open: 0 }));
+  const moving = new Set(movingParts(project, joint.id).map((part) => part.id));
+  const doors = project.parts.filter((part) => moving.has(part.id)).map((part) => ({ part, placement: shut.placement(part.id) }));
+  const closed = doors.map(({ part, placement }) => solidOf(part, placement));
+  const passed = (part) => !moving.has(part.id) && part.id !== joint.to;
+  const shutGap = (solid) => gapTo(closed, solid);
+  return { mech, info, moving, doors, closed, passed, shutGap };
+}
+
 function findStop(project, jointId) {
   const joint = jointsOf(project).find((each) => each.id === jointId);
   if (joint?.kind !== 'hinge' || joint.stops === false) return null;
-  const mech = mechanism(project);
-  const info = mech.hinges.get(jointId);
-  if (!info?.line || info.jammed) return null;
+  const swing = shutSwing(project, joint);
+  if (!swing) return null;
+  const { mech, info, doors, closed, passed, shutGap } = swing;
   const frame = mech.frameOf(info);
   const origin = transformPoint(frame, info.line.origin);
   const direction = apply(frame.m, info.line.direction);
-  const shut = mechanism(withJoint(project, { ...joint, open: 0 }));
-  const moving = new Set(movingParts(project, jointId).map((part) => part.id));
-  const doors = project.parts.filter((part) => moving.has(part.id)).map((part) => ({ part, placement: shut.placement(part.id) }));
   const swung = (angle) => {
     const turn = rotationAbout(origin, direction, angle);
     return doors.map(({ part, placement }) => solidOf(part, compose(turn, placement)));
   };
-  const closed = swung(0);
   const reach = closed.flatMap((solid) => solid.pieces.flatMap((piece) => piece.corners)).map((corner) => aroundLine(corner, origin, direction));
   const radius = Math.max(...reach.map((each) => each.distance));
   const [low, high] = [Math.min(...reach.map((each) => each.along)), Math.max(...reach.map((each) => each.along))];
@@ -1170,12 +1181,12 @@ function findStop(project, jointId) {
     return centre.distance <= radius + size && centre.along >= low - size && centre.along <= high + size;
   };
   const obstacles = project.parts
-    .filter((part) => !moving.has(part.id) && part.id !== joint.to)
+    .filter(passed)
     .map((part) => ({ part, solid: solidOf(part, mech.placement(part.id)) }))
     .filter(({ solid }) => inSwing(solid))
-    .map((obstacle) => ({ ...obstacle, gap: gapTo(closed, obstacle.solid) }))
+    .map((obstacle) => ({ ...obstacle, gap: shutGap(obstacle.solid) }))
     .filter(({ gap }) => gap >= -TOUCH_MM)
-    .map(({ part, solid, gap }) => ({ part, solid, give: gap < GRAZE_MM ? GRAZE_MM : TOUCH_MM }));
+    .map(({ part, solid, gap }) => ({ part, solid, give: grazes(gap) ? GRAZE_MM : TOUCH_MM }));
   if (!obstacles.length) return null;
   const blocker = (angle) => {
     const solids = swung(angle);
@@ -1210,7 +1221,23 @@ function findStop(project, jointId) {
 
 export function assemblyOverlaps(project) {
   const mech = mechanism(project);
-  return overlaps(project.parts, mech.placement);
+  const clashes = overlaps(project.parts, mech.placement);
+  if (!clashes.length) return clashes;
+  const swings = new Map();
+  const swingOf = (joint) => {
+    if (!swings.has(joint.id)) swings.set(joint.id, shutSwing(project, joint));
+    return swings.get(joint.id);
+  };
+  const solid = (id) => solidOf(findPart(project, id), mech.placement(id));
+  const grazing = (door, other) =>
+    jointsOf(project).some((joint) => {
+      if (joint.kind !== 'hinge' || !joint.open) return false;
+      const swing = swingOf(joint);
+      if (!swing?.moving.has(door) || !swing.passed(findPart(project, other))) return false;
+      const now = solid(other);
+      return grazes(swing.shutGap(now)) && solidsGap(solid(door), now) >= -GRAZE_MM;
+    });
+  return clashes.filter(([a, b]) => !grazing(a, b) && !grazing(b, a));
 }
 
 const article = (text) => (/^(8|1[18](?!\d))/.test(text) ? 'an' : 'a');
