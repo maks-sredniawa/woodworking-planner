@@ -427,7 +427,7 @@ try:
             hi, lo = sorted([lum(a), lum(b)], reverse=True)
             return (hi + 0.05) / (lo + 0.05)
         panel = page.evaluate('getComputedStyle(document.querySelector(".bar")).backgroundColor')
-        for field in ['#project-name', '#editor [name=length]', '#field-species']:
+        for field in ['#project-name', '#editor [name=length]', '#field-species', '#units']:
             edge = page.evaluate(f'getComputedStyle(document.querySelector("{field}")).borderTopColor')
             assert contrast(edge, panel) >= 3, f'{field} border {edge} is {contrast(edge, panel):.2f}:1 on {panel}'
 
@@ -1878,7 +1878,7 @@ try:
         dark.wait_for_timeout(600)
         panel = dark.evaluate('getComputedStyle(document.querySelector(".bar")).backgroundColor')
         dark.locator('#parts li').first.locator('.row-main').click()
-        for field in ['#project-name', '#editor .shapes', '#editor [name=length]']:
+        for field in ['#project-name', '#editor .shapes', '#editor [name=length]', '#units']:
             edge = dark.evaluate(f'getComputedStyle(document.querySelector("{field}")).borderTopColor')
             assert contrast(edge, panel) >= 3, f'dark {field} border {edge} is {contrast(edge, panel):.2f}:1'
         dark.screenshot(path=str(HERE / 'dark-1280.png'))

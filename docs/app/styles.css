@@ -95,7 +95,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .more { display: none; }
 .units { display: flex; align-items: center; }
 .units-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.units select { height: 32px; padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
+.units select { height: 32px; padding: 0 4px; border: 1px solid var(--field-line); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .file-error { flex-basis: 100%; margin: 0; color: var(--danger); }
 
 main {
@@ -479,7 +479,7 @@ main {
   .bar-actions button { height: 44px; }
   .units { grid-column: 1 / -1; gap: 12px; }
   .units-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--muted); }
-  .units select { flex: 1; height: 44px; padding: 0 8px; font-size: 16px; border-color: var(--field-line); }
+  .units select { flex: 1; height: 44px; padding: 0 8px; font-size: 16px; }
   .file-error { position: absolute; top: 100%; left: 16px; right: 16px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--danger); border-radius: 8px; }
 
   main { display: flex; flex-direction: column; }
