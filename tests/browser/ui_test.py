@@ -2151,6 +2151,125 @@ try:
         typed.fill('#kerf', '11')
         expect(typed.locator('#kerf-error')).to_have_text('Enter a kerf from 0 to 10.')
         typed.close()
+
+        inch = browser.new_page(viewport={'width': 1280, 'height': 900})
+        inch.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        inch.on('pageerror', lambda e: errors.append(str(e)))
+        inch.goto(URL)
+        units = inch.get_by_role('combobox', name='Units', exact=True)
+        expect(units).to_have_value('mm')
+        expect(inch.locator('#menu-toggle')).to_have_attribute('aria-label', 'Undo, files, units and more')
+        mm_texts = inch.evaluate('[...document.querySelectorAll("#parts .dim, #cut-rows td, #hardware-rows td, #overall, .cut-list th")].map((n) => n.textContent)')
+        inch.locator('#parts li').first.locator('.row-main').click()
+        mm_chip = inch.text_content('#view-sel')
+        units.select_option('in16')
+        expect(inch.locator('#overall')).to_have_text('Overall ≈ 31\u00a01/2 wide × 39\u00a03/8 high × 9\u00a013/16 deep (in)')
+        expect(inch.locator('.cut-list:not(.hardware-list) th').nth(1)).to_have_text('Cut from (in)')
+        expect(inch.locator('.hardware-list th').nth(2)).to_have_text('Size (in)')
+        expect(inch.locator('#editor legend').nth(1)).to_have_text('Size (in)')
+        expect(inch.locator('#editor [name=length]')).to_have_attribute('inputmode', 'text')
+        expect(inch.locator('#editor [name=length]')).to_have_value('39 3/8')
+        expect(inch.locator('#editor .help').filter(has_text='Arrow keys')).to_contain_text('nudge it 1/2 in (Shift: 1/16 in)')
+        assert '1/2 in grid' in inch.get_attribute('#snap', 'title')
+        assert inch.evaluate('localStorage.getItem("woodworking-planner:units")') == 'in16'
+        inch.reload()
+        expect(inch.get_by_role('combobox', name='Units', exact=True)).to_have_value('in16')
+        expect(inch.locator('#overall')).to_contain_text('(in)')
+        inch.locator('#parts li').first.locator('.row-main').click()
+        before = inch.evaluate('woodworkingPlanner.project.parts[0].x')
+        inch.locator('#viewport canvas').focus()
+        inch.keyboard.press('Shift+ArrowRight')
+        assert abs(inch.evaluate('woodworkingPlanner.project.parts[0].x') - before - 25.4 / 16) < 1e-6, 'Shift+arrow did not nudge 1/16 in'
+        inch.keyboard.press('ArrowRight')
+        assert abs(inch.evaluate('woodworkingPlanner.project.parts[0].x') - before - 25.4 / 16 - 12.7) < 1e-6, 'an arrow did not nudge 1/2 in'
+        inch.get_by_role('combobox', name='Units', exact=True).select_option('mm')
+        inch.keyboard.press('Escape')
+        inch.click('#starter')
+        inch.locator('#parts li').first.locator('.row-main').click()
+        assert inch.evaluate('[...document.querySelectorAll("#parts .dim, #cut-rows td, #hardware-rows td, #overall, .cut-list th")].map((n) => n.textContent)') == mm_texts, 'switching back to mm did not restore the millimetre texts'
+        assert inch.text_content('#view-sel') == mm_chip
+        inch.close()
+
+        blocked = browser.new_page(viewport={'width': 1280, 'height': 900})
+        blocked.add_init_script('Object.defineProperty(window, "localStorage", { get() { throw new Error("blocked"); } })')
+        blocked.on('pageerror', lambda e: errors.append(str(e)))
+        blocked.goto(URL)
+        expect(blocked.locator('#parts li')).to_have_count(7)
+        expect(blocked.get_by_role('combobox', name='Units', exact=True)).to_have_value('mm')
+        blocked.get_by_role('combobox', name='Units', exact=True).select_option('in32')
+        expect(blocked.locator('#overall')).to_contain_text('(in)')
+        blocked.close()
+
+        stack = browser.new_page(viewport={'width': 1280, 'height': 900})
+        stack.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        stack.on('pageerror', lambda e: errors.append(str(e)))
+        stack.goto(URL)
+        stack.get_by_role('combobox', name='Units', exact=True).select_option('in16')
+        stack.click('#new-project')
+        for _ in range(3):
+            stack.click('#add')
+        expect(stack.locator('#parts li')).to_have_count(3)
+        expect(stack.locator('#parts li').first.locator('.dim')).to_have_text('24 × 8 × 3/4')
+        expect(stack.locator('#editor [name=x]')).to_have_value('52')
+        for index, floor in [(1, '3/4'), (2, '1 1/2')]:
+            stack.locator('#parts li').nth(index).locator('.row-main').click()
+            stack.fill('#editor [name=x]', '0')
+            stack.fill('#editor [name=y]', floor)
+        assert stack.evaluate('woodworkingPlanner.project.parts.map((p) => p.y)') == [0, 19.05, 38.1]
+        expect(stack.locator('#parts .warn')).to_have_count(0)
+        expect(stack.locator('#joint-add-open')).to_be_visible()
+        thickness = stack.locator('#editor [name=thickness]')
+        thickness.fill('400')
+        expect(stack.locator('#thickness-error')).to_have_text('Enter a size above 0, up to 393 11/16 in.')
+        length = stack.locator('#editor [name=length]')
+        length.fill('')
+        length.press_sequentially('3 1')
+        expect(length).not_to_have_attribute('aria-invalid', 'true')
+        length.press_sequentially('/')
+        expect(length).not_to_have_attribute('aria-invalid', 'true')
+        length.press_sequentially('2')
+        assert stack.evaluate('woodworkingPlanner.project.parts[2].length') == 88.9
+        stack.keyboard.press('Tab')
+        expect(length).to_have_value('3 1/2')
+        length.focus()
+        stack.keyboard.press('ArrowUp')
+        expect(length).to_have_value('3 9/16')
+        assert stack.evaluate('woodworkingPlanner.project.parts[2].length') == 90.4875
+        length.fill('89mm')
+        assert stack.evaluate('woodworkingPlanner.project.parts[2].length') == 89
+        stack.keyboard.press('Tab')
+        expect(length).to_have_value('3 1/2')
+        length.fill('3 1/0')
+        expect(stack.locator('#length-error')).to_have_text('That fraction divides by 0. Enter one such as 1/2.')
+        length.fill('abc')
+        expect(stack.locator('#length-error')).to_have_text('Enter a length such as 3 1/2, 3.5, 6\' 3" or 89mm.')
+        expect(length).to_have_attribute('aria-invalid', 'true')
+        stack.keyboard.press('Tab')
+        expect(length).to_have_value('abc')
+        stack.close()
+
+        for width in (1280, 360, 320):
+            for scheme in ('light', 'dark'):
+                barred = browser.new_page(viewport={'width': width, 'height': 800}, color_scheme=scheme)
+                barred.on('pageerror', lambda e: errors.append(str(e)))
+                barred.goto(URL)
+                expect(barred.locator('#parts li')).to_have_count(7)
+                if width == 1280:
+                    assert barred.locator('#bar').bounding_box()['height'] == 49, f'the bar is not one row at 1280: {barred.locator("#bar").bounding_box()}'
+                    barred.evaluate('document.getElementById("save-state").textContent = "Could not save in this browser"')
+                    assert barred.locator('#bar').bounding_box()['height'] == 49, 'the bar wraps at 1280 with the long status'
+                    barred.locator('#bar').screenshot(path=str(HERE / f'units-bar-{width}-{scheme}.png'))
+                else:
+                    barred.click('#menu-toggle')
+                    select = barred.get_by_role('combobox', name='Units', exact=True)
+                    expect(select).to_be_visible()
+                    expect(barred.locator('.units-label')).to_be_visible()
+                    assert select.bounding_box()['height'] >= 44, 'the units select is under 44 px tall in the phone menu'
+                    select.select_option('in16')
+                    expect(barred.locator('#bar')).to_have_class(re.compile('menu-open'))
+                    barred.screenshot(path=str(HERE / f'units-bar-{width}-{scheme}.png'))
+                assert barred.evaluate('document.documentElement.scrollWidth') <= width, f'at {width} px the bar scrolls sideways'
+                barred.close()
         browser.close()
 finally:
     server.terminate()
