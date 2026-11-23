@@ -15,6 +15,7 @@ import {
   removePoint,
   setBend,
 } from './free.js';
+import { dims, floorLen, len, unitName } from './format.js';
 
 const SNAP_MM = 10;
 const NUDGE_MM = 10;
@@ -39,7 +40,7 @@ const AXES = [
   ['bend', 'bend'],
 ];
 
-export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap, onDone }) {
+export function createOutlineEditor({ maxSize, announce, offWithReason, snap, onDone }) {
   const $ = (id) => document.getElementById(id);
   const dialog = $('outline-dialog');
   const svg = $('outline-svg');
@@ -73,7 +74,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
       return `Points ${a + 1} and ${b + 1} are in the same place. Move one or remove it.`;
     }
     if (problem.kind === 'flat') return 'The outline has no area. Spread the points out.';
-    return `The outline can be at most ${mm(maxSize)} across.`;
+    return `The outline can be at most ${floorLen(maxSize)} across.`;
   }
 
   function open({ name, color, points, returnFocus }) {
@@ -180,7 +181,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
     const [right, bottom] = toPx([size.maxX, size.minY]);
     nodes.push(element('rect', { class: 'blank', x: fixed(left), y: fixed(top), width: fixed(right - left), height: fixed(bottom - top) }));
     const labelY = top - 8 >= 12 ? top - 8 : top + 14;
-    nodes.push(element('text', { class: 'blank-label', x: fixed(left), y: fixed(labelY) }, `Blank ${mm(Math.round((size.maxX - size.minX) * 10) / 10)} × ${mm(Math.round((size.maxY - size.minY) * 10) / 10)}`));
+    nodes.push(element('text', { class: 'blank-label', x: fixed(left), y: fixed(labelY) }, `Blank ${dims([size.maxX - size.minX, size.maxY - size.minY])}`));
     nodes.push(element('path', { class: problem ? 'shape bad' : 'shape', d: pathOf(polygon(points)), fill: state.color }));
     const badEdges = problem?.kind === 'crossing' ? problem.edges : problem?.kind === 'together' ? problem.points : [];
     for (const i of badEdges) nodes.push(element('path', { class: 'edge-bad', d: pathOf(edgePath(points, i), false) }));
@@ -298,8 +299,8 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
 
   function describe(index) {
     const { x, y, bend } = state.points[index];
-    const curve = bend ? `, its edge bent ${mm(bend)}` : '';
-    return `Point ${index + 1} of ${state.points.length}, ${mm(x)} from left, ${mm(y)} from bottom${curve}.`;
+    const curve = bend ? `, its edge bent ${len(bend)}` : '';
+    return `Point ${index + 1} of ${state.points.length}, ${len(x)} from left, ${len(y)} from bottom${curve}.`;
   }
 
   function removePicked() {
@@ -424,7 +425,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
     if (axis === 'bend') {
       const most = Math.floor(halfEdge(points, index) * 10) / 10;
       if (raw === '' || !Number.isFinite(value) || Math.abs(value) > most) {
-        showError(input, `Enter a bend from ${mm(-most)} to ${mm(most)}, half the length of this edge.`);
+        showError(input, `Enter a bend from ${len(-most)} to ${len(most)}, half the length of this edge.`);
         return;
       }
       showError(input, null);
@@ -432,7 +433,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
       return;
     }
     if (raw === '' || !Number.isFinite(value) || Math.abs(value) > maxSize) {
-      showError(input, `Enter a number from −${mm(maxSize)} to ${mm(maxSize)} mm.`);
+      showError(input, `Enter a number from −${floorLen(maxSize)} to ${floorLen(maxSize)} ${unitName()}.`);
       return;
     }
     showError(input, null);
@@ -454,7 +455,7 @@ export function createOutlineEditor({ maxSize, mm, announce, offWithReason, snap
 
   function showChip() {
     const point = state.points[drag.index];
-    chip.textContent = `Point ${drag.index + 1} · ${mm(point.x)}, ${mm(point.y)}`;
+    chip.textContent = `Point ${drag.index + 1} · ${len(point.x)}, ${len(point.y)}`;
     chip.hidden = false;
   }
 

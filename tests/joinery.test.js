@@ -238,13 +238,15 @@ test('a dado groove across a triangle stops at its outline', () => {
 });
 
 
+const shown = ({ key, ...allowance }) => allowance;
+
 test('tenons and dados lengthen the piece that goes in, and the cut piece gets a note', () => {
   let project = frame();
   const [left, , right] = project.parts;
   project = joinParts(project, 'tenon', left.id, project.parts[1].id).project;
   project = joinParts(project, 'tenon', right.id, project.parts[1].id).project;
   const allowances = cutAllowances(project);
-  assert.deepEqual(allowances.get(project.parts[1].id), { length: 60, width: 0, lengthItems: '2 × 30 tenons', widthItems: '', cuts: '' });
+  assert.deepEqual(shown(allowances.get(project.parts[1].id)), { length: 60, width: 0, lengthItems: '2 × 30 tenons', widthItems: '', cuts: '' });
   assert.equal(allowances.get(left.id).cuts, 'Mortise 30 deep');
 
   const through = updateJoint(project, project.joints[0].id, 'through', true);
@@ -258,7 +260,7 @@ test('tenons and dados lengthen the piece that goes in, and the cut piece gets a
   const back = makePart({ name: 'Back', length: 1000, width: 800, thickness: 6, pose: legacyPose('yxz'), z: -6 });
   housed = joinParts({ ...housed, parts: [...housed.parts, back] }, 'dado', back.id, housed.parts[1].id).project;
   const shelfCut = cutAllowances(housed).get(housed.parts[1].id);
-  assert.deepEqual(shelfCut, { length: 12, width: 2, lengthItems: '2 × 6 for dados', widthItems: '2 for a dado', cuts: '' });
+  assert.deepEqual(shown(shelfCut), { length: 12, width: 2, lengthItems: '2 × 6 for dados', widthItems: '2 for a dado', cuts: '' });
   assert.equal(cutAllowances(housed).get(back.id).cuts, 'Dado 18 × 2');
 });
 
@@ -267,7 +269,7 @@ test('dowels add no length and drill a note on both pieces', () => {
   project = joinParts(project, 'dowels', project.parts[0].id, project.parts[1].id).project;
   project = joinParts(project, 'dowels', project.parts[2].id, project.parts[1].id).project;
   const allowances = cutAllowances(project);
-  assert.deepEqual(allowances.get(project.parts[1].id), { length: 0, width: 0, lengthItems: '', widthItems: '', cuts: '8 dowel holes ⌀8' });
+  assert.deepEqual(shown(allowances.get(project.parts[1].id)), { length: 0, width: 0, lengthItems: '', widthItems: '', cuts: '8 dowel holes ⌀8' });
   assert.equal(allowances.get(project.parts[0].id).cuts, '4 dowel holes ⌀8');
 });
 
