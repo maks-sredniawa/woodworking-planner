@@ -1251,6 +1251,10 @@ try:
         expect(flush_card.locator('[data-jf=stops]')).to_be_checked()
         expect(flush_card.locator('.stop-note')).to_be_empty()
         flush_card.locator('[data-jf-act=close]').click()
+        flush_card.locator('input[type=number][data-jf=open]').fill('2')
+        flush.wait_for_function('woodworkingPlanner.project.joints[0].open === 2')
+        expect(flush.locator('#parts li .warn')).to_have_count(0)
+        expect(flush.locator('#parts li').filter(has_text='Overlaps another piece')).to_have_count(0)
         flush_card.locator('[data-jf-act=open-full]').click()
         expect(flush_card.locator('.stop-note')).to_be_empty()
         assert flush.evaluate('woodworkingPlanner.project.joints[0].open') == 180

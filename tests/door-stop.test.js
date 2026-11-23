@@ -143,6 +143,36 @@ test('a narrow inset door whose corner would cut over 1 mm into the far side sto
   assert.equal(swingStop(project, joint.id).angle, 3);
 });
 
+test('a flush inset door opened a few degrees grazes the far side without overlapping it', () => {
+  const { project, joint } = insetDoor(400);
+  for (const angle of [1, 2, 5]) {
+    assert.deepEqual(assemblyOverlaps(updateJoint(project, joint.id, 'open', angle)), [], `open ${angle}°`);
+  }
+  const unstopped = updateJoint(project, joint.id, 'stops', false);
+  assert.deepEqual(assemblyOverlaps(updateJoint(unstopped, joint.id, 'open', 2)), []);
+});
+
+test('a flush inset door swung into a post still overlaps it', () => {
+  const post = block('Post', [250, 300], [300, 350]);
+  const { project, joint } = insetDoor(400, post);
+  const swung = updateJoint(updateJoint(project, joint.id, 'stops', false), joint.id, 'open', 20);
+  assert.deepEqual(assemblyOverlaps(swung), [[joint.part, post.id]]);
+});
+
+test('a narrow inset door grazes the far side up to 1 mm and overlaps it where its corner cuts deeper', () => {
+  const { project, joint, right } = insetDoor(100);
+  const unstopped = updateJoint(project, joint.id, 'stops', false);
+  assert.deepEqual(assemblyOverlaps(updateJoint(unstopped, joint.id, 'open', 3)), []);
+  assert.deepEqual(assemblyOverlaps(updateJoint(unstopped, joint.id, 'open', 9)), [[right.id, joint.part]]);
+});
+
+test('pieces that do not swing still overlap by half a millimetre beside a grazing door', () => {
+  const a = block('A', [600, 700], [400, 450]);
+  const b = block('B', [699.5, 800], [400, 450]);
+  const { project, joint } = insetDoor(400, a, b);
+  assert.deepEqual(assemblyOverlaps(updateJoint(project, joint.id, 'open', 2)), [[a.id, b.id]]);
+});
+
 test('a piece in the swing still stops a flush inset door', () => {
   const post = block('Post', [250, 300], [300, 350]);
   const { project, joint } = insetDoor(400, post);
