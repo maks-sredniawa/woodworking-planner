@@ -60,7 +60,8 @@ export function fieldText(value, unit = current.id) {
 export const floorToGrid = (value) => Math.floor(steps(value) + 1e-6) * current.fine + 0;
 
 export function lengthField(input) {
-  Object.assign(input, { type: 'text', inputMode: current.den ? 'text' : 'decimal', autocomplete: 'off', spellcheck: false });
+  const inches = current.den && !('mmOnly' in input.dataset);
+  Object.assign(input, { type: 'text', inputMode: inches ? 'text' : 'decimal', autocomplete: 'off', spellcheck: false });
   input.setAttribute('autocapitalize', 'off');
   input.dataset.length = '';
   return input;
@@ -147,7 +148,7 @@ export function parseLength(text, { unit = current.id, typing = false, fixed = f
 
 const GAUGES = [[2.5, 3], [3, 4], [3.5, 6], [4, 8], [4.5, 9], [5, 10], [5.5, 12], [6.5, 14]];
 const GAUGE_REACH_MM = 0.25;
-const GAUGE_ERROR = `Enter a gauge ${GAUGES.slice(0, -1).map(([, gauge]) => `#${gauge}`).join(', ')} or #${GAUGES.at(-1)[1]}, or a diameter such as 4mm.`;
+export const GAUGE_ERROR = `Enter a gauge ${GAUGES.slice(0, -1).map(([, gauge]) => `#${gauge}`).join(', ')} or #${GAUGES.at(-1)[1]}, or a diameter such as 4mm.`;
 
 export function gaugeOf(diameter) {
   const nearest = GAUGES.reduce((best, each) => (Math.abs(each[0] - diameter) < Math.abs(best[0] - diameter) ? each : best));

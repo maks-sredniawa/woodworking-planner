@@ -1,5 +1,5 @@
 import { SPECIES, cutList } from './model.js';
-import { ceilLen, dims, fieldText, floorLen, len, lengthField, parseLength, unitName } from './format.js';
+import { ceilLen, dims, fieldText, floorLen, isRounded, len, lengthField, parseLength, unitName } from './format.js';
 import { KERF_LIMITS, STOCK_LIMITS, STOCK_PRESETS, TRIM_LIMITS, cuttingOf, cuttingPlan, projectPieces } from './cutplan.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -41,6 +41,7 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
   const drawings = new Map();
   let cached = { parts: null, joints: null, cutting: null, plan: null };
   let selected = null;
+  let roundedSizes = false;
   const size = (length, width) => dims([length, width]);
 
   const measure = (() => {
@@ -407,6 +408,9 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     const empty = project.parts.length === 0;
     nodes.empty.hidden = !empty;
     const plan = planOf(project);
+    roundedSizes = plan.groups.some((group) =>
+      [group.thickness, group.stock.length, group.stock.width, ...group.sheets.flatMap((sheet) => sheet.placements.flatMap((each) => [each.length, each.width]))].some(isRounded),
+    ) || cutList(project.parts).some((row) => row.shape === 'dowel' && [row.width, row.length].some(isRounded));
     totals(plan);
     if (empty) nodes.totals.hidden = true;
     rods(project);
@@ -432,5 +436,5 @@ export function createPlanView({ root, element, visible, getProject, onPick, onC
     drawings.clear();
   }
 
-  return { render, reset };
+  return { render, reset, rounded: () => roundedSizes };
 }
