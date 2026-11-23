@@ -476,7 +476,7 @@ function shapeKey(part) {
   return ['board', part.corners, size, cornerCount(part), cornerLayout(part)].join(':');
 }
 
-const NO_ALLOWANCE = { length: 0, width: 0, lengthItems: '', widthItems: '', cuts: '' };
+const NO_ALLOWANCE = { length: 0, width: 0, lengthItems: '', widthItems: '', cuts: '', key: '' };
 
 export function cutSize(part, allowance = NO_ALLOWANCE) {
   const size = blank(part);
@@ -496,8 +496,7 @@ export function cutList(parts, allowances = new Map()) {
   for (const part of parts) {
     const allowance = allowances.get(part.id) ?? NO_ALLOWANCE;
     const size = cutSize(part, allowance);
-    const notes = [allowance.lengthItems, allowance.widthItems, allowance.cuts];
-    const key = [part.species, size.length, size.width, size.thickness, shapeKey(part), ...notes].join('|');
+    const key = [part.species, size.length, size.width, size.thickness, shapeKey(part), allowance.key].join('|');
     const group = groups.get(key) ?? {
       species: part.species,
       shape: part.shape,
