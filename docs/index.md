@@ -59,7 +59,8 @@ It opens with an example bookshelf to look around in.
 
 - In inches, the stock sizes in the cutting plan, the saw kerf, the suggested screw, plate and dowel
   sizes, the example bookshelf and the grid of the outline editor are still metric. They are shown
-  in inches, rounded, with `≈` in front. You can type your own stock size.
+  in inches, rounded: fields and gauges show the nearest step, and sizes in the lists and the
+  cutting plan carry `≈` in front. You can type your own stock size.
 - The unit is remembered by your browser, not saved in the project file.
 - Joints are offered only between faces that meet square on, so two parts meeting on a slope, or a
   disc set inside a ring, are not offered for a joint. Two parts take one joint.
