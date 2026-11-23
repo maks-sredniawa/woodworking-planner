@@ -67,18 +67,25 @@ import {
   dims,
   fieldText,
   floorLen,
+  GAUGE_ERROR,
+  area,
   gaugeOf,
+  gaugeText,
   inInches,
+  isRounded,
   len,
   lenUnit,
   lengthField,
   nailSize,
   num,
+  parseGauge,
   parseLength,
   screwSize,
   setUnits,
   unitName,
   units,
+  volume,
+  weight,
 } from './format.js';
 import {
   download,
@@ -99,11 +106,22 @@ import {
 import { createDebugPanel } from './debug.js';
 import { createOutlineEditor } from './outline-editor.js';
 
-const isLengthField = (input) => Boolean(input?.dataset && 'length' in input.dataset);
+const isLengthField = (input) => Boolean(input?.dataset && ('length' in input.dataset || 'gauge' in input.dataset));
 const typing = (input) => !('final' in input.dataset);
-const readField = (input, text = input.value) => parseLength(text, { unit: units().id, typing: typing(input) });
+const mmOnly = (input) => 'mmOnly' in input.dataset;
+
+function readField(input, text = input.value) {
+  if ('gauge' in input.dataset) return parseGauge(text, { typing: typing(input) });
+  return parseLength(text, { unit: mmOnly(input) ? 'mm' : units().id, typing: typing(input), fixed: mmOnly(input) });
+}
+
 const lengthRaw = (read) => (read.empty ? '' : read.mm);
-const shownValue = (input, value) => (isLengthField(input) ? fieldText(value) : String(value));
+
+function shownValue(input, value) {
+  if (!isLengthField(input)) return String(value);
+  if ('gauge' in input.dataset) return gaugeText(value);
+  return fieldText(value, mmOnly(input) ? 'mm' : units().id);
+}
 
 const HISTORY_LIMIT = 100;
 const TYPING_MERGE_MS = 1200;
@@ -404,8 +422,10 @@ function element(tag, className, text) {
 
 const trio = (part) => [part.length, part.width, part.thickness];
 
+const blankSizes = (part, size) => (part.shape === 'dowel' ? [size.width, size.length] : trio(size));
+
 function blankText(part, size = blank(part)) {
-  return part.shape === 'dowel' ? dims([size.width, size.length], '⌀') : dims(trio(size));
+  return dims(blankSizes(part, size), part.shape === 'dowel' ? '⌀' : '');
 }
 
 function cornerSizes(part) {
@@ -758,24 +778,27 @@ function includesText({ lengthItems, widthItems }, short = false) {
   return short ? sentences.map((each) => each[0].toLowerCase() + each.slice(1)).join(' · ') : sentences.join(' · ');
 }
 
+const measured = ({ value, unit }) => `${value} ${unit}`;
 const headings = (table) => [...document.querySelectorAll(`${table} thead th`)].map((th) => th.textContent);
 
 function renderCutList() {
   const allowances = cutAllowances(project);
   const labels = headings('.cut-list:not(.hardware-list)');
+  const rows = cutList(project.parts, allowances);
+  rounded.list = rows.some((row) => blankSizes(row.piece, row).some(isRounded));
   $('cut-rows').replaceChildren(
-    ...cutList(project.parts, allowances).map((row) => {
+    ...rows.map((row) => {
       const tr = document.createElement('tr');
       tr.setAttribute('role', 'row');
-      const volume = (row.count * row.volume) / 1e9;
+      const cubic = (row.count * row.volume) / 1e9;
       const face = (row.count * row.area) / 1e6;
       const cells = [
         [`${row.count} ×`, 'num'],
         [blankText(row.piece, row)],
         [row.names.join(', ')],
         [SPECIES[row.species].label],
-        [`${volume.toFixed(4)} m³`, 'num'],
-        [`${face.toFixed(2)} m²`, 'num'],
+        [measured(volume(cubic)), 'num'],
+        [measured(area(face)), 'num'],
       ];
       cells.forEach(([text, className], i) => {
         const td = element('td', className, text);
@@ -796,14 +819,25 @@ function renderCutList() {
   };
   $('totals').replaceChildren(
     stat(String(sum.count), pieceWord(project.parts)),
-    stat(sum.volume.toFixed(4), 'm³ volume'),
-    stat(sum.area.toFixed(2), 'm² face'),
-    stat(`≈ ${sum.weight.toFixed(1)}`, 'kg'),
+    stat(volume(sum.volume, true).value, `${volume(sum.volume, true).unit} volume`),
+    stat(area(sum.area, true).value, `${area(sum.area, true).unit} face`),
+    stat(weight(sum.weight).value, weight(sum.weight).unit),
   );
   const fixings = hardwareList(project).reduce((count, row) => count + (row.count ?? 0), 0);
   if (fixings) $('totals').append(stat(String(fixings), fixings === 1 ? 'hardware item' : 'hardware items'));
   const box = projectBounds(project.parts);
   $('overall').textContent = box ? `Overall ${approx(overallSizes(box))}${overallText(box)}` : '';
+}
+
+const rounded = { list: false, hardware: false };
+
+function renderRoundedNote() {
+  const box = projectBounds(project.parts);
+  const inPane = cutView === 'plan' ? planView.rounded() : rounded.list || rounded.hardware;
+  const note = $('rounded-note');
+  note.hidden = !(inPane || (box && overallSizes(box).some(isRounded)));
+  const unit = units();
+  note.textContent = `≈ marks a size rounded to the nearest ${unit.den ? `1/${unit.den} in` : '0.1 mm'}.`;
 }
 
 const overallSizes = (box) => ['x', 'y', 'z'].map((axis) => box.max[axis] - box.min[axis]);
@@ -943,17 +977,17 @@ function tenonHelp(joint) {
 
 const JOINT_FORMS = {
   screws: [
-    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'length'], ['length', 'Length (mm)', 'length']] },
+    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'gauge'], ['length', 'Length (mm)', 'length']] },
     { check: ['glued', 'Also glued'] },
   ],
   nails: [
-    { group: 'trio', fields: [['count', 'Nails', 'count'], ['diameter', 'Diameter (mm)', 'length'], ['length', 'Length (mm)', 'length']] },
+    { group: 'trio', fields: [['count', 'Nails', 'count'], ['diameter', 'Diameter (mm)', 'fixed'], ['length', 'Length (mm)', 'length']] },
     { check: ['glued', 'Also glued'] },
   ],
   glue: [{ help: 'Nothing to set. Counts as one glued joint in the hardware list.' }],
   bracket: [
     { group: 'trio', fields: [['count', 'Brackets', 'count'], ['leg', 'Leg (mm)', 'length'], ['width', 'Width (mm)', 'length']] },
-    { legend: 'Screws for each bracket', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'length'], ['screwLength', 'Length (mm)', 'length']] },
+    { legend: 'Screws for each bracket', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'gauge'], ['screwLength', 'Length (mm)', 'length']] },
     { check: ['glued', 'Also glued'] },
   ],
   dado: [
@@ -972,19 +1006,19 @@ const JOINT_FORMS = {
     { check: ['glued', 'Glued'] },
   ],
   pocketScrews: [
-    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'length'], ['length', 'Length (mm)', 'length']] },
+    { group: 'trio', fields: [['count', 'Screws', 'count'], ['diameter', 'Diameter (mm)', 'gauge'], ['length', 'Length (mm)', 'length']] },
     { select: ['face', 'Pockets on the', faceOptions] },
     { check: ['glued', 'Also glued'] },
   ],
   mendingPlate: [
     { group: 'trio', fields: [['count', 'Plates', 'count'], ['length', 'Length (mm)', 'length'], ['width', 'Width (mm)', 'length']] },
-    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'length'], ['screwLength', 'Length (mm)', 'length']] },
+    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'gauge'], ['screwLength', 'Length (mm)', 'length']] },
     { select: ['face', 'On the', faceOptions] },
     { check: ['glued', 'Also glued'] },
   ],
   cornerPlate: [
     { group: 'duo', fields: [['leg', 'Leg (mm)', 'length'], ['width', 'Width (mm)', 'length']] },
-    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'length'], ['screwLength', 'Length (mm)', 'length']] },
+    { legend: 'Screws for each plate', group: 'trio', fields: [['screwsEach', 'Screws', 'whole'], ['screwDiameter', 'Diameter (mm)', 'gauge'], ['screwLength', 'Length (mm)', 'length']] },
     { select: ['face', 'On the', faceOptions] },
     { check: ['glued', 'Also glued'] },
   ],
@@ -992,7 +1026,7 @@ const JOINT_FORMS = {
     { swing: true },
     { select: ['hingeType', 'Type', () => HINGE_TYPES] },
     { group: 'trio', fields: [['count', 'Hinges', 'count'], ['size', 'Length (mm)', 'length'], ['screwsEach', 'Screws each', 'whole']] },
-    { group: 'duo', fields: [['screwDiameter', 'Screw diameter (mm)', 'length'], ['screwLength', 'Screw length (mm)', 'length']] },
+    { group: 'duo', fields: [['screwDiameter', 'Screw diameter (mm)', 'gauge'], ['screwLength', 'Screw length (mm)', 'length']] },
     { group: 'duo', select: ['edge', 'Hinge edge', (joint) => Object.fromEntries(hingeEdges(project, joint).map((edge) => [edge, EDGES[edge]]))], fields: [['opensTo', 'Opens up to (°)', 'deg']] },
     { check: ['stops', 'Stops at the first piece in its way'] },
   ],
@@ -1025,6 +1059,8 @@ const JOINT_ERRORS = {
   get length() {
     return `Enter a size above 0 ${unitName()}.`;
   },
+  fixed: 'Enter a size above 0 mm.',
+  gauge: GAUGE_ERROR,
   deg: 'Enter an angle from 1° to 270°.',
   open: 'Enter an angle from 0° up to how far it opens.',
   apart: 'These pieces no longer touch, so there are no sizes to suggest.',
@@ -1070,14 +1106,27 @@ const NUMBER_INPUTS = {
   whole: { step: '1', inputMode: 'numeric', min: '0' },
 };
 
+const gauged = (kind) => kind === 'gauge' && inInches();
+const fieldKind = (kind) => (kind === 'gauge' && !inInches() ? 'length' : kind);
+
 function jointInput(joint, field, kind) {
   const input = element('input', 'num');
-  if (kind === 'length') lengthField(input);
+  if (kind === 'fixed') input.dataset.mmOnly = '';
+  if (gauged(kind)) {
+    lengthField(input);
+    delete input.dataset.length;
+    input.dataset.gauge = '';
+  } else if (['length', 'gauge', 'fixed'].includes(kind)) lengthField(input);
   else Object.assign(input, { type: 'number', ...NUMBER_INPUTS[kind] });
   input.dataset.jf = field;
   input.dataset.joint = joint.id;
-  input.dataset.check = kind;
+  input.dataset.check = fieldKind(kind);
   return input;
+}
+
+function jointLabel(text, kind) {
+  if (gauged(kind)) return text.replace(/(d)iameter \(mm\)/i, (_, d) => (d === 'D' ? 'Gauge' : 'gauge'));
+  return fieldKind(kind) === 'length' ? text.replace('(mm)', `(${unitName()})`) : text;
 }
 
 function jointSelect(joint, field, options) {
@@ -1154,7 +1203,7 @@ function jointBody(joint) {
     for (const [field, text, kind] of row.fields ?? []) {
       const wrap = element('div', 'field');
       wrap.dataset.jfField = field;
-      wrap.append(labelled(kind === 'length' ? text.replace('(mm)', `(${unitName()})`) : text, jointInput(joint, field, kind)));
+      wrap.append(labelled(jointLabel(text, kind), jointInput(joint, field, kind)));
       group.append(wrap);
     }
     if (group !== holder) holder.append(group);
@@ -1423,13 +1472,15 @@ $('joints').addEventListener('click', keepingFocus((event) => {
   if (result.stopped) sayStop(joint.id);
 }));
 
+const FASTENERS = { Screw: screwSize, 'Pocket screw': screwSize, Nail: nailSize };
+
 function hardwareSize({ item, size }) {
-  if (!size) return '–';
+  if (!size) return { values: [], text: '–' };
+  if (!FASTENERS[item]) return { values: size, text: dims(size, item === 'Dowel pin' ? '⌀' : '') };
   const [diameter, length] = size;
   const labelled = inInches() && (item === 'Nail' || gaugeOf(diameter));
-  if (item === 'Screw' || item === 'Pocket screw') return `${approx(labelled ? [length] : size)}${screwSize(diameter, length)}`;
-  if (item === 'Nail') return `${approx(labelled ? [length] : size)}${nailSize(diameter, length)}`;
-  return dims(size, item === 'Dowel pin' ? '⌀' : '');
+  const values = labelled ? [length] : size;
+  return { values, text: `${approx(values)}${FASTENERS[item](diameter, length)}` };
 }
 
 const USED_ON_SHOWN = 2;
@@ -1446,7 +1497,7 @@ function renderHardware() {
       const cells = [
         [row.count === null ? '–' : `${row.count} ×`, 'num'],
         [row.item],
-        [hardwareSize(row)],
+        [hardwareSize(row).text],
         [usedOn],
       ];
       cells.forEach(([text, className], i) => {
@@ -1458,6 +1509,7 @@ function renderHardware() {
       return tr;
     }),
   );
+  rounded.hardware = rows.some((row) => hardwareSize(row).values.some(isRounded));
   $('hardware-empty').hidden = rows.length > 0;
   document.querySelector('.hardware-list').hidden = rows.length === 0;
 }
@@ -1503,6 +1555,7 @@ const planView = createPlanView({
 
 function renderPlan() {
   planView.render(project, selectedId);
+  renderRoundedNote();
 }
 
 let cutView = loadCutView();
@@ -1621,7 +1674,7 @@ $('editor').addEventListener('submit', (event) => event.preventDefault());
 $('editor').addEventListener('focusout', (event) => {
   const input = event.target;
   const part = selectedPart();
-  if (part && isLengthField(input) && input.getAttribute('aria-invalid') !== 'true') input.value = fieldText(part[input.name]);
+  if (part && input.name in part && isLengthField(input) && input.getAttribute('aria-invalid') !== 'true') input.value = fieldText(part[input.name]);
 });
 
 document.addEventListener(
@@ -1641,12 +1694,12 @@ document.addEventListener(
   (event) => {
     const input = event.target;
     const up = event.key === 'ArrowUp';
-    if ((!up && event.key !== 'ArrowDown') || !isLengthField(input) || event.altKey || event.ctrlKey || event.metaKey) return;
+    if ((!up && event.key !== 'ArrowDown') || !isLengthField(input) || 'gauge' in input.dataset || event.altKey || event.ctrlKey || event.metaKey) return;
     const read = readField(input);
     if (!('mm' in read)) return;
     event.preventDefault();
-    const step = units().fineNudge;
-    input.value = fieldText(read.mm + (up ? step : -step));
+    const step = mmOnly(input) ? 1 : units().fineNudge;
+    input.value = shownValue(input, read.mm + (up ? step : -step));
     input.dispatchEvent(new Event('input', { bubbles: true }));
   },
   true,

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cutList, duplicatePart, legacyPose, makePart, makeShape, movePart, newPartBeside, overlaps, snapPosition, updatePart } from '../docs/app/src/model.js';
-import { cutAllowances, joinParts, rotateAssembly, touchingParts, updateJoint } from '../docs/app/src/joints.js';
-import { setUnits } from '../docs/app/src/format.js';
+import { changeJoint, cutAllowances, hardwareList, joinParts, jointProblem, rotateAssembly, touchingParts, updateJoint } from '../docs/app/src/joints.js';
+import { parseGauge, setUnits } from '../docs/app/src/format.js';
 import { parseProject, serialize } from '../docs/app/src/project.js';
 import { cuttingFromFile } from '../docs/app/src/cutplan.js';
 import { movePoint, rebase, scale, setBend } from '../docs/app/src/free.js';
@@ -150,4 +150,42 @@ test('in inches a new piece starts at inch sizes and lands 2 in beside the other
   assert.equal(newPartBeside([first], 'board', { gap: 50.8, inches: true }).length, 609.6);
   assert.equal(duplicatePart(first, [first], 50.8).x, 660.4);
   assert.equal(duplicatePart(first, [first]).x, 659.6);
+});
+
+test('a screw typed as #8 shares a hardware row with a suggested 4 mm screw', () => {
+  const side = (fields) => makePart({ length: 600, width: 300, thickness: 18, pose: legacyPose('yzx'), ...fields });
+  const top = makePart({ name: 'Top', length: 636, width: 300, thickness: 18, pose: legacyPose('xzy'), y: 600 });
+  let project = { name: 'Box', parts: [side({ name: 'Left' }), side({ name: 'Right', x: 618 }), top], joints: [] };
+  const first = joinParts(project, 'screws', top.id, project.parts[0].id);
+  project = first.project;
+  const second = joinParts(project, 'screws', top.id, project.parts[1].id);
+  project = second.project;
+  setUnits('in16');
+  try {
+    const typed = parseGauge('#8');
+    project = changeJoint(project, first.joint.id, 'diameter', typed.mm).project;
+    project = changeJoint(project, second.joint.id, 'diameter', 4).project;
+    project = changeJoint(project, first.joint.id, 'length', project.joints[1].length).project;
+    const screws = hardwareList(project).filter((row) => row.item === 'Screw');
+    assert.equal(screws.length, 1);
+    assert.deepEqual(screws[0].size, [4, project.joints[1].length]);
+  } finally {
+    setUnits('mm');
+  }
+});
+
+test('a concealed hinge on a thin door is still called too thin in inches', () => {
+  const side = makePart({ name: 'Side', length: 1000, width: 244, thickness: 18, pose: legacyPose('yzx') });
+  const door = makePart({ name: 'Door', length: 800, width: 400, thickness: 12.7, pose: legacyPose('yxz'), z: 244 });
+  const { project, joint } = joinParts({ name: 'Cabinet', parts: [side, door], joints: [] }, 'hinge', door.id, side.id);
+  const concealed = updateJoint(project, joint.id, 'hingeType', 'concealed');
+  setUnits('in16');
+  try {
+    const problem = jointProblem(concealed, joint.id);
+    assert.match(problem, /thick/);
+    assert.equal(problem, 'Concealed hinges need a door at least 11/16 in thick; Door is 1/2 in.');
+  } finally {
+    setUnits('mm');
+  }
+  assert.equal(jointProblem(concealed, joint.id), 'Concealed hinges need a door at least 16 mm thick; Door is 12.7 mm.');
 });

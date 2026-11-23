@@ -2248,6 +2248,112 @@ try:
         expect(length).to_have_value('abc')
         stack.close()
 
+        shown = browser.new_page(viewport={'width': 1280, 'height': 900})
+        shown.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+        shown.on('pageerror', lambda e: errors.append(str(e)))
+        shown.goto(URL)
+        expect(shown.locator('#rounded-note')).to_be_hidden()
+        shown.get_by_role('combobox', name='Units', exact=True).select_option('in16')
+        expect(shown.locator('#rounded-note')).to_have_text('≈ marks a size rounded to the nearest 1/16 in.')
+        expect(shown.locator('#parts .dim').first).to_contain_text('≈ ')
+        expect(shown.locator('#cut-rows')).to_contain_text('bd ft')
+        expect(shown.locator('#cut-rows')).to_contain_text('ft²')
+        expect(shown.locator('#totals')).to_contain_text('bd ft volume')
+        expect(shown.locator('#totals')).to_contain_text(re.compile(r'≈ [\d.]+ lb'))
+        shown.click('#view-plan')
+        expect(shown.locator('#rounded-note')).to_be_visible()
+        expect(shown.locator('.stock-h').first).to_contain_text(' in')
+        shown.click('#view-list')
+        shown.wait_for_timeout(400)
+        shown.screenshot(path=str(HERE / 'units-inches-1280-light.png'))
+        shown.get_by_role('combobox', name='Units', exact=True).select_option('in32')
+        expect(shown.locator('#rounded-note')).to_have_text('≈ marks a size rounded to the nearest 1/32 in.')
+        shown.get_by_role('combobox', name='Units', exact=True).select_option('mm')
+        expect(shown.locator('#rounded-note')).to_be_hidden()
+        expect(shown.locator('#cut-rows')).to_contain_text('m³')
+
+        shown.get_by_role('combobox', name='Units', exact=True).select_option('in16')
+        shown.click('#new-project')
+        for _ in range(3):
+            shown.click('#add')
+        for index, floor in [(1, '3/4'), (2, '1 1/2')]:
+            shown.locator('#parts li').nth(index).locator('.row-main').click()
+            shown.fill('#editor [name=x]', '0')
+            shown.fill('#editor [name=y]', floor)
+        expect(shown.locator('#rounded-note')).to_be_hidden()
+        shown.locator('#parts li').nth(1).locator('.row-main').click()
+        shown.click('#joint-add-open')
+        shown.select_option('#joint-kind', 'screws')
+        shown.select_option('#joint-other', label='Board')
+        shown.click('#joint-add-ok')
+        card = shown.locator('details.joint[open]')
+        gauge = card.get_by_label('Gauge', exact=True)
+        expect(gauge).to_have_value('#8')
+        expect(card.locator('summary .dim')).to_contain_text('#8 × ')
+        gauge.fill('10')
+        expect(shown.locator('#hardware-rows')).to_contain_text('#10 × ')
+        assert shown.evaluate('woodworkingPlanner.project.joints[0].diameter') == 5
+        gauge.fill('#7')
+        expect(card.locator('.joint-error')).to_have_text('Enter a gauge #3, #4, #6, #8, #9, #10, #12 or #14, or a diameter such as 4mm.')
+        gauge.fill('4mm')
+        shown.keyboard.press('Tab')
+        expect(gauge).to_have_value('#8')
+        shown.locator('#parts li').nth(2).locator('.row-main').click()
+        shown.click('#joint-add-open')
+        shown.select_option('#joint-kind', 'nails')
+        shown.click('#joint-add-ok')
+        nail = shown.locator('details.joint[open]').get_by_label('Diameter (mm)', exact=True)
+        expect(nail).to_have_attribute('inputmode', 'decimal')
+        nail.fill('2.5')
+        assert shown.evaluate('woodworkingPlanner.project.joints[1].diameter') == 2.5
+        expect(shown.locator('#hardware-rows')).to_contain_text('2.5 mm × ')
+
+        shown.click('#view-plan')
+        shown.fill('#kerf', '1/8')
+        assert shown.evaluate('woodworkingPlanner.project.cutting.kerf') == 3.175
+        shown.keyboard.press('Tab')
+        expect(shown.locator('#kerf')).to_have_value('1/8')
+        shown.locator('.stock-group select').first.select_option('own')
+        shown.locator('.stock-group .own input').first.fill('96')
+        shown.locator('.stock-group .own input').nth(1).fill('48')
+        assert list(shown.evaluate('Object.values(woodworkingPlanner.project.cutting.stock)[0]').values())[:2] == [2438.4, 1219.2]
+        expect(shown.locator('.stock-h').first).to_contain_text('96 × 48')
+        shown.click('#view-list')
+
+        shown.click('[data-add-shape=free]')
+        expect(shown.locator('#outline-dialog')).to_be_visible()
+        expect(shown.locator('.points-head')).to_contain_text('From left (in)')
+        point = lambda n, axis: shown.get_by_label(f'Point {n}, {axis}', exact=True)
+        expect(point(2, 'from left')).to_have_value('16')
+        point(2, 'from left').fill('16 1/2')
+        expect(point(2, 'from left')).to_have_value('16 1/2')
+        shown.click('#outline-done')
+        expect(shown.locator('#outline-dialog')).to_be_hidden()
+        assert shown.evaluate('woodworkingPlanner.project.parts.at(-1).points[1].x') == 419.1
+        expect(shown.locator('#editor [name=length]')).to_have_value('16 1/2')
+        shown.close()
+
+        for width, scheme in [(360, 'light'), (320, 'dark')]:
+            narrow = browser.new_page(viewport={'width': width, 'height': 800}, color_scheme=scheme)
+            narrow.on('pageerror', lambda e: errors.append(str(e)))
+            narrow.goto(URL)
+            narrow.click('#menu-toggle')
+            narrow.get_by_role('combobox', name='Units', exact=True).select_option('in16')
+            narrow.click('.tabs [data-tab=cut]')
+            expect(narrow.locator('#rounded-note')).to_be_visible()
+            narrow.wait_for_timeout(300)
+            if width == 320:
+                narrow.screenshot(path=str(HERE / 'units-cut-320-dark.png'), full_page=True)
+            narrow.click('#view-plan')
+            expect(narrow.locator('figure.stock-sheet').first).to_be_visible()
+            overflow = narrow.evaluate("""[...document.querySelectorAll('.piece-label')].filter((g) => {
+                const chip = g.querySelector('rect.chip').getBBox();
+                return [...g.querySelectorAll('text')].some((t) => t.getBBox().width > chip.width + 0.5);
+            }).length""")
+            assert overflow == 0, f'at {width} px a drawing label overflows its chip in inches'
+            assert narrow.evaluate('document.documentElement.scrollWidth') <= width, f'at {width} px inches scroll sideways'
+            narrow.close()
+
         for width in (1280, 360, 320):
             for scheme in ('light', 'dark'):
                 barred = browser.new_page(viewport={'width': width, 'height': 800}, color_scheme=scheme)
